@@ -1,0 +1,28 @@
+services:
+  python-cron:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: python-cron-scheduler
+    restart: unless-stopped
+    volumes:
+      # Mount app directory containing Python scripts (read-write for downloads)
+      - ./app:/app/scripts
+      # Mount logs directory to access logs from host
+      - ./logs:/var/log
+      # Mount crontab file so it can be updated without rebuilding
+      - ./crontab:/etc/cron.d/python-cron:ro
+    environment:
+      # Timezone for cron jobs
+      - TZ=Europe/Prague
+      # Python path to find common module
+      - PYTHONPATH=/app/scripts
+    env_file:
+      - .env
+    # Use bridge for local dev, or create a custom network for production
+    # to connect to database container
+    network_mode: bridge
+    # extra_hosts only needed for local dev with Tailscale
+    # Remove or comment out in production when DB is a Docker container
+    extra_hosts:
+      - "james:100.79.143.77"

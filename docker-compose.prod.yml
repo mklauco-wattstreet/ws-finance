@@ -1,0 +1,19 @@
+# Production docker-compose configuration
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+
+services:
+  python-cron:
+    # Remove extra_hosts in production (override to empty)
+    extra_hosts: []
+    # Join the same network as your database container
+    networks:
+      - finance-network
+
+# Use the same network as your PostgreSQL container
+# If your database is on an existing network, set external: true
+# and update the network name to match
+networks:
+  finance-network:
+    external: true
+    # If you need to create the network first, run:
+    # docker network create finance-network

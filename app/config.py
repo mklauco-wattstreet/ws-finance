@@ -1,0 +1,30 @@
+#!/usr/bin/env python3
+"""
+Centralized configuration for all scripts.
+Loads configuration from environment variables.
+"""
+
+import os
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Load environment variables from .env file if it exists
+# Look for .env in parent directory (project root)
+env_path = Path(__file__).parent.parent / '.env'
+if env_path.exists():
+    load_dotenv(dotenv_path=env_path)
+# If .env doesn't exist, assume env vars are already set (e.g., by Docker)
+
+# Database configuration
+DB_HOST = os.getenv("DB_HOST", "localhost")
+DB_USER = os.getenv("DB_USER")
+DB_PASSWORD = os.getenv("DB_PASSWORD")
+DB_NAME = os.getenv("DB_NAME", "finance")
+DB_PORT = int(os.getenv("DB_PORT", "5432"))
+
+# Validate required database credentials
+if not DB_USER or not DB_PASSWORD:
+    raise ValueError(
+        "Database credentials not configured. "
+        "Please set DB_USER and DB_PASSWORD in .env file"
+    )
