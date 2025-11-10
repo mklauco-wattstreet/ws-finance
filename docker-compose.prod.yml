@@ -5,8 +5,6 @@ services:
   python-cron:
     # Remove extra_hosts in production (override to empty)
     extra_hosts: []
-    # Remove network_mode from base config (required to use networks)
-    network_mode: null
     # Join the same network as your database container
     networks:
       - services_default

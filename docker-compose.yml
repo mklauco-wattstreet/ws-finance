@@ -19,9 +19,6 @@ services:
       - PYTHONPATH=/app/scripts
     env_file:
       - .env
-    # Use bridge for local dev, or create a custom network for production
-    # to connect to database container
-    network_mode: bridge
     # extra_hosts only needed for local dev with Tailscale
     # Remove or comment out in production when DB is a Docker container
     extra_hosts:
