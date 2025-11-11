@@ -127,6 +127,7 @@ def setup_certificate(driver, logger):
 
     # Setup password
     try:
+        take_screenshot(driver, "before_password_setup")
         password_field = driver.find_element(By.NAME, "password")
         password_field.clear()
         password_field.send_keys(OTE_LOCAL_STORAGE_PASSWORD)
@@ -134,59 +135,158 @@ def setup_certificate(driver, logger):
         confirm_field = driver.find_element(By.NAME, "confirmedPassword")
         confirm_field.clear()
         confirm_field.send_keys(OTE_LOCAL_STORAGE_PASSWORD)
+        take_screenshot(driver, "password_entered")
 
         # Try both English and Czech for Save button
+        # Note: Text is inside a span, so use . instead of text()
         try:
-            save_btn = driver.find_element(By.XPATH, "//button[contains(text(), 'Save')]")
+            save_btn = driver.find_element(By.XPATH, "//button[contains(., 'Save')]")
+            logger.info("Found Save button (English)")
         except:
-            save_btn = driver.find_element(By.XPATH, "//button[contains(text(), 'Uložit')]")
+            try:
+                save_btn = driver.find_element(By.XPATH, "//button[contains(., 'Uložit')]")
+                logger.info("Found Save button (Czech)")
+            except:
+                # Try finding by class if text search fails
+                save_btn = driver.find_element(By.XPATH, "//button[contains(@class, 'ote-btn-primary')]")
+                logger.info("Found Save button by class")
 
         save_btn.click()
         time.sleep(0.5)
         logger.info("Password saved")
-    except:
-        logger.info("Password already set")
+        take_screenshot(driver, "password_saved")
+    except Exception as e:
+        logger.info(f"Password already set or error: {e}")
+        take_screenshot(driver, "password_already_set")
 
     # Navigate to Certificates in local storage tab
+    logger.info("Looking for Certificates in local storage tab...")
+    take_screenshot(driver, "before_certificates_tab")
+
     try:
-        tab = wait.until(
-            EC.element_to_be_clickable((By.LINK_TEXT, "Certificates in local storage"))
-        )
-        tab.click()
-        time.sleep(0.5)
-    except:
-        pass
+        # Try multiple methods to find the tab
+        tab = None
+        try:
+            # Method 1: Link text
+            tab = WebDriverWait(driver, 5).until(
+                EC.element_to_be_clickable((By.LINK_TEXT, "Certificates in local storage"))
+            )
+            logger.info("Found tab via LINK_TEXT")
+        except:
+            try:
+                # Method 2: Partial link text
+                tab = driver.find_element(By.PARTIAL_LINK_TEXT, "Certificates")
+                logger.info("Found tab via PARTIAL_LINK_TEXT")
+            except:
+                try:
+                    # Method 3: Czech version
+                    tab = driver.find_element(By.PARTIAL_LINK_TEXT, "Certifikáty")
+                    logger.info("Found tab via Czech text")
+                except:
+                    # Method 4: Any link containing certificate-related text
+                    links = driver.find_elements(By.TAG_NAME, "a")
+                    for link in links:
+                        link_text = link.text.lower()
+                        if "certific" in link_text or "certifikát" in link_text:
+                            tab = link
+                            logger.info(f"Found tab with text: {link.text}")
+                            break
+
+        if tab:
+            tab.click()
+            time.sleep(1)
+            logger.info("Clicked Certificates tab")
+            take_screenshot(driver, "certificates_tab_clicked")
+        else:
+            logger.warning("Could not find Certificates tab")
+            take_screenshot(driver, "no_certificates_tab")
+    except Exception as e:
+        logger.error(f"Error navigating to Certificates tab: {e}")
+        take_screenshot(driver, "certificates_tab_error")
 
     # Add certificate - try both English and Czech
+    logger.info("Looking for Add certificate button...")
+    take_screenshot(driver, "before_add_certificate")
+
     try:
+        add_btn = None
+        # Wait a bit for page to stabilize
+        time.sleep(2)
+
         try:
-            add_btn = driver.find_element(By.XPATH, "//button[contains(., 'Add certificate')]")
+            add_btn = WebDriverWait(driver, 5).until(
+                EC.element_to_be_clickable((By.XPATH, "//button[contains(., 'Add certificate')]"))
+            )
+            logger.info("Found 'Add certificate' button (English)")
         except:
-            add_btn = driver.find_element(By.XPATH, "//button[contains(., 'Přidat certifikát')]")
+            try:
+                add_btn = driver.find_element(By.XPATH, "//button[contains(., 'Přidat certifikát')]")
+                logger.info("Found 'Přidat certifikát' button (Czech)")
+            except:
+                # Try to find any button with certificate-related text
+                buttons = driver.find_elements(By.TAG_NAME, "button")
+                for btn in buttons:
+                    btn_text = btn.text.lower()
+                    if "add" in btn_text and "certifi" in btn_text:
+                        add_btn = btn
+                        logger.info(f"Found button with text: {btn.text}")
+                        break
+
+        if not add_btn:
+            logger.error("Could not find Add certificate button")
+            take_screenshot(driver, "no_add_certificate_button")
+            return False
 
         add_btn.click()
-        time.sleep(0.5)
+        logger.info("Clicked Add certificate button")
+        take_screenshot(driver, "add_certificate_clicked")
+        time.sleep(1)
 
         # Upload file
-        file_input = wait.until(
+        logger.info("Looking for file input...")
+        take_screenshot(driver, "before_file_upload")
+
+        file_input = WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.XPATH, "//input[@type='file']"))
         )
-        file_input.send_keys(str(Path(OTE_CERT_PATH).absolute()))
-        time.sleep(0.5)
+        cert_path_str = str(Path(OTE_CERT_PATH).absolute())
+        logger.info(f"Uploading certificate from: {cert_path_str}")
+        file_input.send_keys(cert_path_str)
+        time.sleep(1)
+        take_screenshot(driver, "file_selected")
 
         # Enter certificate password
-        pwd_input = driver.find_element(By.XPATH, "//input[@type='password']")
-        pwd_input.send_keys(OTE_CERT_PASSWORD)
-        time.sleep(0.5)
+        logger.info("Entering certificate password...")
+        pwd_inputs = driver.find_elements(By.XPATH, "//input[@type='password']")
+        if pwd_inputs:
+            # Use the last password field (should be for certificate)
+            pwd_input = pwd_inputs[-1]
+            pwd_input.clear()
+            pwd_input.send_keys(OTE_CERT_PASSWORD)
+            take_screenshot(driver, "cert_password_entered")
+            time.sleep(0.5)
+        else:
+            logger.warning("No password field found for certificate")
 
         # Import - try both English and Czech
+        logger.info("Looking for Import button...")
+        import_btn = None
         try:
             import_btn = driver.find_element(By.XPATH, "//button[contains(., 'Import')]")
+            logger.info("Found 'Import' button")
         except:
-            import_btn = driver.find_element(By.XPATH, "//button[contains(., 'Importovat')]")
+            try:
+                import_btn = driver.find_element(By.XPATH, "//button[contains(., 'Importovat')]")
+                logger.info("Found 'Importovat' button")
+            except:
+                logger.error("Could not find Import button")
+                take_screenshot(driver, "no_import_button")
+                return False
 
         import_btn.click()
-        time.sleep(0.5)
+        logger.info("Clicked Import button")
+        time.sleep(2)
+        take_screenshot(driver, "after_import")
 
         logger.info("✓ Certificate imported successfully")
 
@@ -198,6 +298,9 @@ def setup_certificate(driver, logger):
 
     except Exception as e:
         logger.error(f"Failed to import certificate: {e}")
+        take_screenshot(driver, "certificate_import_error")
+        import traceback
+        logger.error(traceback.format_exc())
         return False
 
 
