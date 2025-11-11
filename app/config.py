@@ -28,3 +28,12 @@ if not DB_USER or not DB_PASSWORD:
         "Database credentials not configured. "
         "Please set DB_USER and DB_PASSWORD in .env file"
     )
+
+# OTE Portal certificate configuration (for authenticated downloads)
+OTE_CERT_PATH = os.getenv("OTE_CERT_PATH")
+OTE_CERT_PASSWORD = os.getenv("OTE_CERT_PASSWORD")
+OTE_LOCAL_STORAGE_PASSWORD = os.getenv("OTE_LOCAL_STORAGE_PASSWORD")
+
+# ENTSO-E API configuration
+ENTSOE_SECURITY_TOKEN = os.getenv("ENTSOE_SECURITY_TOKEN")
+ENTSOE_CONTROL_AREA_DOMAIN = os.getenv("ENTSOE_CONTROL_AREA_DOMAIN", "10YCZ-CEPS-----N")

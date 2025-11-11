@@ -1,8 +1,11 @@
 FROM python:3.11-slim
 
-# Install cron and other necessary packages
+# Install cron, Chromium, OpenSSL, and other necessary packages
 RUN apt-get update && apt-get install -y \
     cron \
+    chromium \
+    chromium-driver \
+    openssl \
     && rm -rf /var/lib/apt/lists/*
 
 # Set working directory

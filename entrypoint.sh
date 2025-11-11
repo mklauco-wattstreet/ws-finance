@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Dump environment variables to a file that cron jobs can source
-printenv | grep -E '^(DB_|PYTHONPATH|TZ)' > /etc/environment_for_cron
+printenv | grep -E '^(DB_|PYTHONPATH|TZ|ENTSOE_|OTE_)' > /etc/environment_for_cron
 
 # Load the crontab from the mounted file
 crontab /etc/cron.d/python-cron

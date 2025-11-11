@@ -12,6 +12,14 @@ services:
       - ./logs:/var/log
       # Mount crontab file so it can be updated without rebuilding
       - ./crontab:/etc/cron.d/python-cron:ro
+      # Mount certificates directory (create ./certs on host and place certificates there)
+      - ./certs:/app/certs:ro
+      # Mount browser profile directory to persist certificates in local storage
+      - ./browser-profile:/app/browser-profile
+      # Mount downloads directory for temporary file downloads
+      - ./downloads:/app/downloads
+      # Mount ote_files directory for final storage
+      - ./ote_files:/app/ote_files
     environment:
       # Timezone for cron jobs
       - TZ=Europe/Prague

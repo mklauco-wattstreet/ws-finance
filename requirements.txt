@@ -12,3 +12,6 @@ psycopg2-binary>=2.9.0
 
 # HTTP (optional - download scripts use stdlib urllib)
 requests>=2.31.0
+
+# Selenium for browser automation
+selenium>=4.15.0

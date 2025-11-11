@@ -32,3 +32,8 @@ Thumbs.db
 
 # data
 app/2025/
+
+# browser
+browser-profile/
+_helpers
+

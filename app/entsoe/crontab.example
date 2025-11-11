@@ -1,0 +1,49 @@
+# ENTSO-E Data Fetcher Crontab Configuration
+#
+# This crontab configuration runs the ENTSO-E data fetcher every 15 minutes
+# to collect imbalance prices and volumes data.
+#
+# Installation:
+#   1. Edit this file to set the correct paths
+#   2. Add to crontab: crontab -e
+#   3. Or use: crontab app/entsoe/crontab.example
+#
+# Note: Adjust paths according to your environment
+#       - Docker: /app/entsoe/fetch_entsoe_data.py
+#       - Local: /Users/mk/ws/ws-finance/app/entsoe/fetch_entsoe_data.py
+
+# Fetch ENTSO-E data every 15 minutes
+# This will fetch the preceding 1 hour of data
+*/15 * * * * /usr/local/bin/python3 /app/entsoe/fetch_entsoe_data.py >> /var/log/entsoe_fetch.log 2>&1
+
+# Alternative: Run with explicit PYTHONPATH (if imports fail)
+# */15 * * * * cd /app && /usr/local/bin/python3 entsoe/fetch_entsoe_data.py >> /var/log/entsoe_fetch.log 2>&1
+
+# Alternative: Run from Docker exec (if running outside container)
+# */15 * * * * docker exec python-cron-scheduler /usr/local/bin/python3 /app/entsoe/fetch_entsoe_data.py >> /var/log/entsoe_fetch.log 2>&1
+
+# Optional: Fetch only prices (A85) - every 15 minutes
+# */15 * * * * /usr/local/bin/python3 /app/entsoe/fetch_entsoe_data.py --document-type A85 >> /var/log/entsoe_prices.log 2>&1
+
+# Optional: Fetch only volumes (A86) - every 15 minutes
+# */15 * * * * /usr/local/bin/python3 /app/entsoe/fetch_entsoe_data.py --document-type A86 >> /var/log/entsoe_volumes.log 2>&1
+
+# Optional: Run with debug logging (for troubleshooting)
+# */15 * * * * /usr/local/bin/python3 /app/entsoe/fetch_entsoe_data.py --debug >> /var/log/entsoe_fetch_debug.log 2>&1
+
+# Cron schedule format:
+# ┌───────────── minute (0 - 59)
+# │ ┌───────────── hour (0 - 23)
+# │ │ ┌───────────── day of month (1 - 31)
+# │ │ │ ┌───────────── month (1 - 12)
+# │ │ │ │ ┌───────────── day of week (0 - 6) (Sunday to Saturday)
+# │ │ │ │ │
+# │ │ │ │ │
+# * * * * * command to execute
+
+# Examples:
+# */15 * * * *    Every 15 minutes
+# 0 * * * *       Every hour (at minute 0)
+# 0 */2 * * *     Every 2 hours
+# 0 9 * * *       Every day at 9:00 AM
+# 0 0 * * 0       Every Sunday at midnight
