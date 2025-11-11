@@ -7,6 +7,7 @@ Optimized for automated daily execution in production environment.
 import sys
 import time
 import shutil
+import subprocess
 from pathlib import Path
 from datetime import datetime, timedelta
 
@@ -391,13 +392,57 @@ def download_daily_payments(driver, logger):
             shutil.move(str(latest_file), str(dest_file))
 
             logger.info(f"✓ File saved: {dest_file}")
-            return True
+            return str(dest_file)  # Return file path for upload
         else:
             logger.error("No XML file found in downloads")
-            return False
+            return None
 
     except Exception as e:
         logger.error(f"Download error: {e}")
+        return None
+
+
+def upload_to_database(xml_file_path, logger):
+    """
+    Upload downloaded XML file to database.
+
+    Args:
+        xml_file_path: Path to the downloaded XML file
+        logger: Logger instance
+
+    Returns:
+        bool: True if upload successful, False otherwise
+    """
+    logger.info("")
+    logger.info("=" * 60)
+    logger.info("Starting database upload...")
+    logger.info("=" * 60)
+    logger.info("")
+
+    try:
+        # Call the upload script - let output flow through naturally
+        result = subprocess.run(
+            ['/usr/local/bin/python3', '/app/scripts/ote_upload_daily_payments.py', xml_file_path],
+            timeout=300  # 5 minute timeout
+        )
+
+        logger.info("")
+        if result.returncode == 0:
+            logger.info("=" * 60)
+            logger.info("✓ Database upload completed successfully")
+            logger.info("=" * 60)
+            return True
+        else:
+            logger.error("=" * 60)
+            logger.error("✗ Database upload failed (see details above)")
+            logger.error("=" * 60)
+            return False
+
+    except subprocess.TimeoutExpired:
+        logger.error("✗ Database upload timeout (exceeded 5 minutes)")
+        return False
+    except Exception as e:
+        logger.error(f"✗ Error running upload script: {e}")
         return False
 
 
@@ -470,8 +515,21 @@ def main():
             else:
                 # Download
                 logger.info("Starting download...")
-                if download_daily_payments(driver, logger):
+                downloaded_file = download_daily_payments(driver, logger)
+
+                if downloaded_file:
                     logger.info("✓ SUCCESS - Daily Payments downloaded")
+
+                    # Upload to database
+                    if upload_to_database(downloaded_file, logger):
+                        logger.info("=" * 60)
+                        logger.info("✓ COMPLETE - Download and upload successful")
+                        logger.info("=" * 60)
+                    else:
+                        logger.error("=" * 60)
+                        logger.error("⚠ PARTIAL SUCCESS - Download OK, Upload FAILED")
+                        logger.error("=" * 60)
+                        exit_code = 1
                 else:
                     logger.error("✗ FAILED - Download unsuccessful")
                     exit_code = 1

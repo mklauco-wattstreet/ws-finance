@@ -43,7 +43,7 @@ ls -la logs/screenshot_*.png
 
 ### 6. Manual Test Run of Production Script
 ```bash
-# Test full download process
+# Test full download AND upload process
 docker exec python-cron-scheduler python3 /app/scripts/ote_production.py
 ```
 
@@ -53,18 +53,41 @@ docker exec python-cron-scheduler python3 /app/scripts/ote_production.py
 ls -la ote_files/$(date +%Y)/$(date +%m)/
 ```
 
-### 8. Verify Crontab is Installed
+### 8. Verify Database Upload
+```bash
+# Check database for uploaded records (requires psql access)
+# Replace with your database access method
+docker exec python-cron-scheduler python3 -c "
+import psycopg2
+from config import DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT
+conn = psycopg2.connect(host=DB_HOST, user=DB_USER, password=DB_PASSWORD, database=DB_NAME, port=DB_PORT)
+cur = conn.cursor()
+cur.execute('SELECT COUNT(*) FROM daily_payments')
+print(f'Total records in daily_payments: {cur.fetchone()[0]}')
+cur.execute('SELECT MAX(delivery_day) FROM daily_payments')
+print(f'Latest delivery day: {cur.fetchone()[0]}')
+conn.close()
+"
+```
+
+### 9. Test Upload Script Separately (Optional)
+```bash
+# Test upload script with existing XML file
+docker exec python-cron-scheduler python3 /app/scripts/ote_upload_daily_payments.py /app/ote_files/2025/11/daily_payments_YYYYMMDD_HHMMSS.xml
+```
+
+### 10. Verify Crontab is Installed
 ```bash
 docker exec python-cron-scheduler crontab -l | grep ote_production
 ```
 
-### 9. Check Logs
+### 11. Check Logs
 ```bash
 # View recent logs
-tail -n 50 logs/cron.log
+tail -n 100 logs/cron.log
 ```
 
-### 10. Test Cron Execution (Optional - Quick Test)
+### 12. Test Cron Execution (Optional - Quick Test)
 ```bash
 # Add temporary test cron that runs in 1 minute
 current_minute=$(date +%M)

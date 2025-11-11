@@ -37,3 +37,7 @@ app/2025/
 browser-profile/
 _helpers
 
+# OTE and ENTSOE data files
+ote_files/
+downloads/
+app/entsoe/data/

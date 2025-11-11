@@ -41,12 +41,12 @@ def setup_logging(debug=False):
     if debug:
         formatter = logging.Formatter(
             '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            datefmt='%H:%M:%S'
+            datefmt='%Y-%m-%dT%H:%M:%S'
         )
     else:
         formatter = logging.Formatter(
             '%(asctime)s - %(levelname)s - %(message)s',
-            datefmt='%H:%M:%S'
+            datefmt='%Y-%m-%dT%H:%M:%S'
         )
 
     handler.setFormatter(formatter)

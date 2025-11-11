@@ -5,7 +5,8 @@ Automated daily downloader for OTE Czech electricity market settlement reports u
 
 ## Scripts
 
-- **`app/ote_production.py`** - Streamlined production script
+- **`app/ote_production.py`** - Streamlined production script (download + upload)
+- **`app/ote_upload_daily_payments.py`** - Database upload script
 - **`app/ote_test_login.py`** - Certificate verification test
 - **`crontab`** - Updated with OTE entry for 09:00 daily
 
@@ -50,9 +51,15 @@ docker exec python-cron-scheduler crontab -l | grep ote
 
 The script runs automatically at 09:00 daily and:
 1. Logs into OTE portal using certificate
-2. Downloads last 7 days of payment data
+2. Downloads last 7 days of payment data (XML format)
 3. Saves XML files to `/app/ote_files/{year}/{month}/`
-4. Logs all operations to `/var/log/ote_download.log`
+4. **Automatically uploads data to `daily_payments` database table**
+5. Logs all operations to `/var/log/cron.log`
+
+The upload process handles:
+- Duplicate detection (skips already uploaded records)
+- Data validation and type conversion
+- Detailed logging of inserted/skipped records
 
 ## Manual Execution
 
