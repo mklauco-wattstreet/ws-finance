@@ -89,16 +89,40 @@ def setup_certificate(driver, logger):
 
     # Navigate to portal
     driver.get("https://portal.ote-cr.cz/common/app/login")
-    time.sleep(0.5)
+    time.sleep(2)  # Give page time to load
 
-    # Click Certificate settings
+    take_screenshot(driver, "setup_page_loaded")
+
+    # Try to switch to English first
     try:
-        cert_btn = driver.find_element(By.XPATH, "//*[contains(text(), 'Certificate')]")
+        switch_to_english(driver, logger)
+    except:
+        logger.debug("Could not switch language")
+
+    # Click Certificate settings - try both English and Czech
+    cert_btn = None
+    try:
+        # Try English first
+        try:
+            cert_btn = wait.until(
+                EC.element_to_be_clickable((By.XPATH, "//*[contains(text(), 'Certificate')]"))
+            )
+            logger.info("Found 'Certificate' button (English)")
+        except:
+            # Try Czech
+            cert_btn = wait.until(
+                EC.element_to_be_clickable((By.XPATH, "//*[contains(text(), 'Certifikát')]"))
+            )
+            logger.info("Found 'Certifikát' button (Czech)")
+
         cert_btn.click()
         time.sleep(0.5)
         logger.info("Opened Certificate settings")
+        take_screenshot(driver, "certificate_settings_opened")
     except Exception as e:
         logger.error(f"Failed to open Certificate settings: {e}")
+        take_screenshot(driver, "setup_error")
+        logger.error("Make sure you're on the login page with Certificate options visible")
         return False
 
     # Setup password
@@ -111,7 +135,12 @@ def setup_certificate(driver, logger):
         confirm_field.clear()
         confirm_field.send_keys(OTE_LOCAL_STORAGE_PASSWORD)
 
-        save_btn = driver.find_element(By.XPATH, "//button[contains(text(), 'Save')]")
+        # Try both English and Czech for Save button
+        try:
+            save_btn = driver.find_element(By.XPATH, "//button[contains(text(), 'Save')]")
+        except:
+            save_btn = driver.find_element(By.XPATH, "//button[contains(text(), 'Uložit')]")
+
         save_btn.click()
         time.sleep(0.5)
         logger.info("Password saved")
@@ -128,9 +157,13 @@ def setup_certificate(driver, logger):
     except:
         pass
 
-    # Add certificate
+    # Add certificate - try both English and Czech
     try:
-        add_btn = driver.find_element(By.XPATH, "//button[contains(., 'Add certificate')]")
+        try:
+            add_btn = driver.find_element(By.XPATH, "//button[contains(., 'Add certificate')]")
+        except:
+            add_btn = driver.find_element(By.XPATH, "//button[contains(., 'Přidat certifikát')]")
+
         add_btn.click()
         time.sleep(0.5)
 
@@ -146,8 +179,12 @@ def setup_certificate(driver, logger):
         pwd_input.send_keys(OTE_CERT_PASSWORD)
         time.sleep(0.5)
 
-        # Import
-        import_btn = driver.find_element(By.XPATH, "//button[contains(., 'Import')]")
+        # Import - try both English and Czech
+        try:
+            import_btn = driver.find_element(By.XPATH, "//button[contains(., 'Import')]")
+        except:
+            import_btn = driver.find_element(By.XPATH, "//button[contains(., 'Importovat')]")
+
         import_btn.click()
         time.sleep(0.5)
 
