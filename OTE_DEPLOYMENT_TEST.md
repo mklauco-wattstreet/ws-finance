@@ -1,0 +1,121 @@
+# OTE Portal Deployment Test Procedure
+
+## Test Commands - Execute in Order
+
+### 1. Rebuild Docker Container with Updated Crontab
+```bash
+docker-compose down
+docker-compose up -d --build
+```
+
+### 2. Verify Container is Running
+```bash
+docker ps | grep python-cron-scheduler
+```
+
+### 3. Check Environment Variables are Set
+```bash
+docker exec python-cron-scheduler env | grep OTE
+```
+Expected output should show:
+- OTE_CERT_PATH
+- OTE_CERT_PASSWORD
+- OTE_LOCAL_STORAGE_PASSWORD
+
+### 4. Initial Certificate Setup
+```bash
+# First time only - imports certificate into browser profile
+docker exec python-cron-scheduler python3 /app/scripts/ote_production.py --setup
+```
+
+### 5. Test Login with Test Script
+```bash
+# Method 1: Quick test with screenshots
+./TEST_OTE_LOGIN.sh
+
+# Method 2: Manual test
+docker exec python-cron-scheduler python3 /app/scripts/ote_test_login.py
+
+# Copy screenshots to review
+docker cp python-cron-scheduler:/var/log/. logs/
+ls -la logs/screenshot_*.png
+```
+
+### 6. Manual Test Run of Production Script
+```bash
+# Test full download process
+docker exec python-cron-scheduler python3 /app/scripts/ote_production.py
+```
+
+### 7. Check Downloaded Files
+```bash
+# Check if XML files were downloaded
+ls -la ote_files/$(date +%Y)/$(date +%m)/
+```
+
+### 8. Verify Crontab is Installed
+```bash
+docker exec python-cron-scheduler crontab -l | grep ote_production
+```
+
+### 9. Check Logs
+```bash
+# View recent logs
+tail -n 50 logs/cron.log
+```
+
+### 10. Test Cron Execution (Optional - Quick Test)
+```bash
+# Add temporary test cron that runs in 1 minute
+current_minute=$(date +%M)
+next_minute=$(( (current_minute + 2) % 60 ))
+docker exec python-cron-scheduler bash -c "crontab -l > /tmp/cron_test && echo '$next_minute * * * * export \$(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 ote_production.py >> /var/log/cron.log 2>&1' >> /tmp/cron_test && crontab /tmp/cron_test"
+
+# Wait 2-3 minutes then check logs
+sleep 180
+tail -n 50 logs/cron.log
+
+# Remove test cron and restore original
+docker exec python-cron-scheduler crontab /etc/cron.d/python-cron
+```
+
+## Troubleshooting Commands
+
+### Reset Certificate (if needed)
+```bash
+# Clear browser profile and re-setup
+rm -rf browser-profile/*
+docker exec python-cron-scheduler python3 /app/scripts/ote_production.py --setup
+docker exec python-cron-scheduler python3 /app/scripts/ote_test_login.py
+```
+
+### Debug Mode Run
+```bash
+docker exec python-cron-scheduler python3 /app/scripts/ote_production.py --debug
+```
+
+### Check Container Logs
+```bash
+docker logs python-cron-scheduler --tail 100
+```
+
+### Interactive Shell
+```bash
+docker exec -it python-cron-scheduler bash
+```
+
+## Expected Results
+
+1. **Certificate Setup**: Should show "✓ Certificate imported successfully"
+2. **Login Test**: Should show "TEST RESULT: PASSED ✓"
+3. **Production Run**: Should download XML files to `ote_files/{year}/{month}/`
+4. **Crontab**: Should show entry for 09:00 daily execution
+
+## Success Criteria
+
+- [ ] Certificate imports without errors
+- [ ] Login test passes
+- [ ] Manual production run downloads XML files
+- [ ] Files appear in `ote_files/` directory
+- [ ] Crontab entry is active
+- [ ] No errors in logs/cron.log
