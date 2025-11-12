@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Balancing_MarketDocument xmlns="urn:iec62325.351:tc57wg16:451-6:balancingdocument:3:0">
+	<mRID>1</mRID>
+	<revisionNumber>1</revisionNumber>
+	<type>A86</type>								<!-- A86 = Imbalance volume -->
+	<process.processType>A16</process.processType>	<!-- A16 = Realised -->
+	<sender_MarketParticipant.mRID codingScheme="A01">10XDE-VE-TRANSMK</sender_MarketParticipant.mRID>
+	<sender_MarketParticipant.marketRole.type>A04</sender_MarketParticipant.marketRole.type>	<!-- (code of Srole associated with MarketParticipant)
+    																								A39 = Data Provider
+																									A35 = MOL Responsible
+																									A04 = System Operator or TSO
+																									A32 = Market Information Aggregator
+    																							-->
+	<receiver_MarketParticipant.mRID codingScheme="A01">10X1001A1001A450</receiver_MarketParticipant.mRID>	<!-- (code of doc. recipient) -->
+	<receiver_MarketParticipant.marketRole.type>A32</receiver_MarketParticipant.marketRole.type> 			<!-- A32 = Market Information Aggregator -->
+	<createdDateTime>2013-12-18T13:15:21Z</createdDateTime>
+	<docStatus>
+		<value>A02</value>		<!-- A01 = Intermediate | A02 = Final |  A13 withdrawn -->
+	</docStatus>
+	<controlArea_Domain.mRID codingScheme="A01">10YDE-VE-------2</controlArea_Domain.mRID>	<!-- Scheduling Area or Imbalance Area -->
+	<period.timeInterval>
+		<start>2013-12-18T12:00Z</start>
+		<end>2013-12-18T13:00Z</end>
+	</period.timeInterval>
+	<TimeSeries>
+		<mRID>1</mRID>
+		<businessType>A19</businessType>								<!-- A19 = Balance energy deviation -->
+		<flowDirection.direction>A01</flowDirection.direction>			<!-- A01 = Surplus | A02 = Deficit | A03 = Balanced (when quantity is 0) -->
+		<quantity_Measure_Unit.name>MWH</quantity_Measure_Unit.name>	<!-- MWH = Megawatt hours -->
+		<curveType>A01</curveType>	<!-- A01 = Sequential fixed block |	A03 = Variable sized blocks-->
+		<!-- <cancelledTS>A01</cancelledTS>	A01 = Yes – the time series data has been withdrawn -->
+		<Period>
+			<timeInterval>
+				<start>2013-12-18T12:00Z</start>
+				<end>2013-12-18T13:00Z</end>
+			</timeInterval>
+			<resolution>PT60M</resolution>
+			<Point>
+				<position>1</position>
+				<quantity>100</quantity>
+				<secondaryQuantity>4.8716</secondaryQuantity> <!-- The difference between measured and scheduled flows on all interconnectors -->
+			</Point>
+		</Period>
+	</TimeSeries>
+</Balancing_MarketDocument>

@@ -15,8 +15,10 @@ class EntsoeParser:
     """Parser for ENTSO-E XML responses."""
 
     # XML namespaces used by ENTSO-E
+    # Note: API may return different versions (3:0 or 4:4)
     NAMESPACES = {
-        'ns': 'urn:iec62325.351:tc57wg16:451-6:balancingdocument:3:0'
+        'ns': 'urn:iec62325.351:tc57wg16:451-6:balancingdocument:3:0',
+        'ns4': 'urn:iec62325.351:tc57wg16:451-6:balancingdocument:4:4'
     }
 
     @staticmethod
@@ -51,41 +53,67 @@ class EntsoeParser:
 
         Returns:
             List of dictionaries containing parsed data
+
+        Raises:
+            ValueError: If response is an acknowledgement (no data available)
         """
         root = ET.fromstring(xml_content)
 
+        # Check if this is an acknowledgement (no data) response
+        if 'acknowledgementdocument' in root.tag.lower():
+            # Extract reason if available
+            reason_elem = root.find('.//{*}Reason')
+            if reason_elem is not None:
+                code_elem = reason_elem.find('{*}code')
+                text_elem = reason_elem.find('{*}text')
+                code = code_elem.text if code_elem is not None else 'Unknown'
+                text = text_elem.text if text_elem is not None else 'No data available'
+                raise ValueError(f"No data available - Code {code}: {text}")
+            raise ValueError("No data available - received acknowledgement document")
+
         records = []
 
-        # Find all TimeSeries elements
-        for timeseries in root.findall('.//ns:TimeSeries', self.NAMESPACES):
+        # Find all TimeSeries elements using wildcard namespace
+        timeseries_elements = root.findall('.//{*}TimeSeries')
+
+        for timeseries in timeseries_elements:
             # Get period information
-            period = timeseries.find('.//ns:Period', self.NAMESPACES)
+            period = timeseries.find('.//{*}Period')
             if period is None:
                 continue
 
             # Get time interval
-            time_interval = period.find('ns:timeInterval', self.NAMESPACES)
+            time_interval = period.find('{*}timeInterval')
             if time_interval is None:
                 continue
 
-            start_str = time_interval.find('ns:start', self.NAMESPACES).text
-            end_str = time_interval.find('ns:end', self.NAMESPACES).text
+            start_elem = time_interval.find('{*}start')
+            end_elem = time_interval.find('{*}end')
+            if start_elem is None or end_elem is None:
+                continue
+
+            start_str = start_elem.text
+            end_str = end_elem.text
 
             period_start = self.parse_timestamp(start_str)
             period_end = self.parse_timestamp(end_str)
 
             # Get resolution (e.g., PT15M for 15 minutes)
-            resolution = period.find('ns:resolution', self.NAMESPACES).text
+            resolution_elem = period.find('{*}resolution')
+            resolution = resolution_elem.text if resolution_elem is not None else 'PT15M'
             interval_minutes = self._parse_resolution(resolution)
 
             # Get business type (to distinguish price types)
-            business_type = timeseries.find('ns:businessType', self.NAMESPACES)
+            business_type = timeseries.find('{*}businessType')
             business_type_value = business_type.text if business_type is not None else None
 
             # Parse all points in the period
-            for point in period.findall('ns:Point', self.NAMESPACES):
-                position = int(point.find('ns:position', self.NAMESPACES).text)
-                price_amount = point.find('ns:imbalance_Price.amount', self.NAMESPACES)
+            for point in period.findall('{*}Point'):
+                position_elem = point.find('{*}position')
+                if position_elem is None:
+                    continue
+                position = int(position_elem.text)
+                price_amount = point.find('{*}imbalance_Price.amount')
 
                 if price_amount is not None:
                     # Calculate timestamp for this point
@@ -113,41 +141,65 @@ class EntsoeParser:
 
         Returns:
             List of dictionaries containing parsed data
+
+        Raises:
+            ValueError: If response is an acknowledgement (no data available)
         """
         root = ET.fromstring(xml_content)
 
+        # Check if this is an acknowledgement (no data) response
+        if 'acknowledgementdocument' in root.tag.lower():
+            # Extract reason if available
+            reason_elem = root.find('.//{*}Reason')
+            if reason_elem is not None:
+                code_elem = reason_elem.find('{*}code')
+                text_elem = reason_elem.find('{*}text')
+                code = code_elem.text if code_elem is not None else 'Unknown'
+                text = text_elem.text if text_elem is not None else 'No data available'
+                raise ValueError(f"No data available - Code {code}: {text}")
+            raise ValueError("No data available - received acknowledgement document")
+
         records = []
 
-        # Find all TimeSeries elements
-        for timeseries in root.findall('.//ns:TimeSeries', self.NAMESPACES):
+        # Find all TimeSeries elements using wildcard namespace
+        for timeseries in root.findall('.//{*}TimeSeries'):
             # Get period information
-            period = timeseries.find('.//ns:Period', self.NAMESPACES)
+            period = timeseries.find('.//{*}Period')
             if period is None:
                 continue
 
             # Get time interval
-            time_interval = period.find('ns:timeInterval', self.NAMESPACES)
+            time_interval = period.find('{*}timeInterval')
             if time_interval is None:
                 continue
 
-            start_str = time_interval.find('ns:start', self.NAMESPACES).text
-            end_str = time_interval.find('ns:end', self.NAMESPACES).text
+            start_elem = time_interval.find('{*}start')
+            end_elem = time_interval.find('{*}end')
+            if start_elem is None or end_elem is None:
+                continue
+
+            start_str = start_elem.text
+            end_str = end_elem.text
 
             period_start = self.parse_timestamp(start_str)
             period_end = self.parse_timestamp(end_str)
 
             # Get resolution (e.g., PT15M for 15 minutes)
-            resolution = period.find('ns:resolution', self.NAMESPACES).text
+            resolution_elem = period.find('{*}resolution')
+            resolution = resolution_elem.text if resolution_elem is not None else 'PT15M'
             interval_minutes = self._parse_resolution(resolution)
 
             # Get business type
-            business_type = timeseries.find('ns:businessType', self.NAMESPACES)
+            business_type = timeseries.find('{*}businessType')
             business_type_value = business_type.text if business_type is not None else None
 
             # Parse all points in the period
-            for point in period.findall('ns:Point', self.NAMESPACES):
-                position = int(point.find('ns:position', self.NAMESPACES).text)
-                quantity = point.find('ns:quantity', self.NAMESPACES)
+            for point in period.findall('{*}Point'):
+                position_elem = point.find('{*}position')
+                if position_elem is None:
+                    continue
+                position = int(position_elem.text)
+                quantity = point.find('{*}quantity')
 
                 if quantity is not None:
                     # Calculate timestamp for this point

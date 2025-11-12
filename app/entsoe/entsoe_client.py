@@ -21,7 +21,9 @@ from config import ENTSOE_SECURITY_TOKEN, ENTSOE_CONTROL_AREA_DOMAIN
 class EntsoeClient:
     """Client for interacting with ENTSO-E Transparency Platform API."""
 
-    BASE_URL = "https://web-api.tp.entsoe.eu/api"
+    # Updated to use temporary endpoint due to performance issues
+    BASE_URL = "https://external-api.tp.entsoe.eu/api"
+    # Fallback URL if needed: "https://web-api.tp.entsoe.eu/api"
 
     # Document types
     DOC_TYPE_IMBALANCE_PRICES = "A85"  # 17.1.G Imbalance prices
@@ -80,7 +82,7 @@ class EntsoeClient:
         query_string = "&".join([f"{key}={value}" for key, value in params.items()])
         return f"{self.BASE_URL}?{query_string}"
 
-    def fetch_data(self, document_type, period_start, period_end, timeout=30):
+    def fetch_data(self, document_type, period_start, period_end, timeout=60):
         """
         Fetch data from ENTSO-E API.
 
@@ -98,6 +100,10 @@ class EntsoeClient:
             ValueError: If response format is unexpected
         """
         url = self._build_url(document_type, period_start, period_end)
+        print(f"\n=== DEBUG: ENTSO-E API Request ===")
+        print(f"URL: {url}")
+        print(f"Endpoint: {self.BASE_URL}")
+        print(f"==================================\n")
 
         try:
             response = requests.get(url, timeout=timeout)
@@ -192,16 +198,20 @@ class EntsoeClient:
         return self.fetch_data(self.DOC_TYPE_IMBALANCE_VOLUMES, period_start, period_end)
 
     @staticmethod
-    def get_preceding_hour_range(reference_time=None):
+    def get_preceding_hour_range(reference_time=None, lag_hours=3):
         """
         Get the time range for the preceding hour (for scheduled runs).
 
-        For example, if current time is 07:30, returns:
+        Includes a lag to account for data availability delay.
+        Default lag is 3 hours to ensure data is available.
+
+        For example, if current time is 10:30 with 3-hour lag:
             period_start: 06:30
             period_end: 07:30
 
         Args:
             reference_time: Reference datetime (defaults to now)
+            lag_hours: Hours to lag behind current time (default 3)
 
         Returns:
             tuple: (period_start, period_end) as datetime objects
@@ -209,9 +219,12 @@ class EntsoeClient:
         if reference_time is None:
             reference_time = datetime.now()
 
+        # Apply lag for data availability
+        lagged_time = reference_time - timedelta(hours=lag_hours)
+
         # Round down to nearest 15 minutes
-        minutes = (reference_time.minute // 15) * 15
-        period_end = reference_time.replace(minute=minutes, second=0, microsecond=0)
+        minutes = (lagged_time.minute // 15) * 15
+        period_end = lagged_time.replace(minute=minutes, second=0, microsecond=0)
 
         # One hour before
         period_start = period_end - timedelta(hours=1)
