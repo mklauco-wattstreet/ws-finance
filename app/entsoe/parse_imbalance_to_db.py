@@ -60,22 +60,22 @@ class ImbalanceDataParser:
                 # Get time interval
                 time_interval = period.find('{*}timeInterval')
                 start_elem = time_interval.find('{*}start')
+                end_elem = time_interval.find('{*}end')
                 period_start = self.parse_timestamp(start_elem.text)
+                period_end = self.parse_timestamp(end_elem.text)
 
                 # Get resolution
                 resolution_elem = period.find('{*}resolution')
                 resolution = resolution_elem.text if resolution_elem is not None else 'PT15M'
                 resolution_minutes = int(resolution[2:-1]) if 'M' in resolution else 60
 
+                # Calculate how many intervals are in this Period
+                period_duration_minutes = int((period_end - period_start).total_seconds() / 60)
+                num_intervals = period_duration_minutes // resolution_minutes
+
                 # Process each Point
                 for point in period.findall('{*}Point'):
                     position = int(point.find('{*}position').text)
-
-                    # Calculate actual timestamp for this point
-                    point_time = period_start + timedelta(minutes=(position - 1) * resolution_minutes)
-                    trade_date = point_time.date()
-                    period_num = self.calculate_period_number(point_time)
-                    time_interval_str = self.format_time_interval(point_time, resolution_minutes)
 
                     # Get price and category
                     price_amount = float(point.find('{*}imbalance_Price.amount').text)
@@ -89,35 +89,81 @@ class ImbalanceDataParser:
                         price_type = fp.find('{*}priceDescriptor.type').text
                         financial_prices[price_type] = amount
 
-                    # Initialize or update the key
-                    key = (trade_date, period_num)
-                    if key not in self.prices_data:
-                        self.prices_data[key] = {
-                            'trade_date': trade_date,
-                            'period': period_num,
-                            'time_interval': time_interval_str,
-                            'status': doc_status,
-                            'pos_imb_price_czk_mwh': 0.0,
-                            'pos_imb_scarcity_czk_mwh': 0.0,
-                            'pos_imb_incentive_czk_mwh': 0.0,
-                            'pos_imb_financial_neutrality_czk_mwh': 0.0,
-                            'neg_imb_price_czk_mwh': 0.0,
-                            'neg_imb_scarcity_czk_mwh': 0.0,
-                            'neg_imb_incentive_czk_mwh': 0.0,
-                            'neg_imb_financial_neutrality_czk_mwh': 0.0,
-                        }
+                    # If there's only one Point but the Period spans multiple intervals,
+                    # apply the same value to ALL intervals in the Period
+                    if len(period.findall('{*}Point')) == 1 and num_intervals > 1:
+                        # Apply to all intervals in this Period
+                        for interval_idx in range(num_intervals):
+                            point_time = period_start + timedelta(minutes=interval_idx * resolution_minutes)
+                            trade_date = point_time.date()
+                            period_num = self.calculate_period_number(point_time)
+                            time_interval_str = self.format_time_interval(point_time, resolution_minutes)
 
-                    # Store based on category
-                    if category == 'A04':  # Excess balance (positive)
-                        self.prices_data[key]['pos_imb_price_czk_mwh'] = price_amount
-                        self.prices_data[key]['pos_imb_scarcity_czk_mwh'] = financial_prices.get('A01', 0.0)
-                        self.prices_data[key]['pos_imb_incentive_czk_mwh'] = financial_prices.get('A02', 0.0)
-                        self.prices_data[key]['pos_imb_financial_neutrality_czk_mwh'] = financial_prices.get('A03', 0.0)
-                    elif category == 'A05':  # Insufficient balance (negative)
-                        self.prices_data[key]['neg_imb_price_czk_mwh'] = price_amount
-                        self.prices_data[key]['neg_imb_scarcity_czk_mwh'] = financial_prices.get('A01', 0.0)
-                        self.prices_data[key]['neg_imb_incentive_czk_mwh'] = financial_prices.get('A02', 0.0)
-                        self.prices_data[key]['neg_imb_financial_neutrality_czk_mwh'] = financial_prices.get('A03', 0.0)
+                            # Initialize or update the key
+                            key = (trade_date, period_num)
+                            if key not in self.prices_data:
+                                self.prices_data[key] = {
+                                    'trade_date': trade_date,
+                                    'period': period_num,
+                                    'time_interval': time_interval_str,
+                                    'status': doc_status,
+                                    'pos_imb_price_czk_mwh': 0.0,
+                                    'pos_imb_scarcity_czk_mwh': 0.0,
+                                    'pos_imb_incentive_czk_mwh': 0.0,
+                                    'pos_imb_financial_neutrality_czk_mwh': 0.0,
+                                    'neg_imb_price_czk_mwh': 0.0,
+                                    'neg_imb_scarcity_czk_mwh': 0.0,
+                                    'neg_imb_incentive_czk_mwh': 0.0,
+                                    'neg_imb_financial_neutrality_czk_mwh': 0.0,
+                                }
+
+                            # Store based on category
+                            if category == 'A04':  # Excess balance (positive)
+                                self.prices_data[key]['pos_imb_price_czk_mwh'] = price_amount
+                                self.prices_data[key]['pos_imb_scarcity_czk_mwh'] = financial_prices.get('A01', 0.0)
+                                self.prices_data[key]['pos_imb_incentive_czk_mwh'] = financial_prices.get('A02', 0.0)
+                                self.prices_data[key]['pos_imb_financial_neutrality_czk_mwh'] = financial_prices.get('A03', 0.0)
+                            elif category == 'A05':  # Insufficient balance (negative)
+                                self.prices_data[key]['neg_imb_price_czk_mwh'] = price_amount
+                                self.prices_data[key]['neg_imb_scarcity_czk_mwh'] = financial_prices.get('A01', 0.0)
+                                self.prices_data[key]['neg_imb_incentive_czk_mwh'] = financial_prices.get('A02', 0.0)
+                                self.prices_data[key]['neg_imb_financial_neutrality_czk_mwh'] = financial_prices.get('A03', 0.0)
+                    else:
+                        # Normal case: one Point per interval
+                        point_time = period_start + timedelta(minutes=(position - 1) * resolution_minutes)
+                        trade_date = point_time.date()
+                        period_num = self.calculate_period_number(point_time)
+                        time_interval_str = self.format_time_interval(point_time, resolution_minutes)
+
+                        # Initialize or update the key
+                        key = (trade_date, period_num)
+                        if key not in self.prices_data:
+                            self.prices_data[key] = {
+                                'trade_date': trade_date,
+                                'period': period_num,
+                                'time_interval': time_interval_str,
+                                'status': doc_status,
+                                'pos_imb_price_czk_mwh': 0.0,
+                                'pos_imb_scarcity_czk_mwh': 0.0,
+                                'pos_imb_incentive_czk_mwh': 0.0,
+                                'pos_imb_financial_neutrality_czk_mwh': 0.0,
+                                'neg_imb_price_czk_mwh': 0.0,
+                                'neg_imb_scarcity_czk_mwh': 0.0,
+                                'neg_imb_incentive_czk_mwh': 0.0,
+                                'neg_imb_financial_neutrality_czk_mwh': 0.0,
+                            }
+
+                        # Store based on category
+                        if category == 'A04':  # Excess balance (positive)
+                            self.prices_data[key]['pos_imb_price_czk_mwh'] = price_amount
+                            self.prices_data[key]['pos_imb_scarcity_czk_mwh'] = financial_prices.get('A01', 0.0)
+                            self.prices_data[key]['pos_imb_incentive_czk_mwh'] = financial_prices.get('A02', 0.0)
+                            self.prices_data[key]['pos_imb_financial_neutrality_czk_mwh'] = financial_prices.get('A03', 0.0)
+                        elif category == 'A05':  # Insufficient balance (negative)
+                            self.prices_data[key]['neg_imb_price_czk_mwh'] = price_amount
+                            self.prices_data[key]['neg_imb_scarcity_czk_mwh'] = financial_prices.get('A01', 0.0)
+                            self.prices_data[key]['neg_imb_incentive_czk_mwh'] = financial_prices.get('A02', 0.0)
+                            self.prices_data[key]['neg_imb_financial_neutrality_czk_mwh'] = financial_prices.get('A03', 0.0)
 
         print(f"Parsed {len(self.prices_data)} price records")
 
@@ -147,21 +193,22 @@ class ImbalanceDataParser:
                 # Get time interval
                 time_interval = period.find('{*}timeInterval')
                 start_elem = time_interval.find('{*}start')
+                end_elem = time_interval.find('{*}end')
                 period_start = self.parse_timestamp(start_elem.text)
+                period_end = self.parse_timestamp(end_elem.text)
 
                 # Get resolution
                 resolution_elem = period.find('{*}resolution')
                 resolution = resolution_elem.text if resolution_elem is not None else 'PT15M'
                 resolution_minutes = int(resolution[2:-1]) if 'M' in resolution else 60
 
+                # Calculate how many intervals are in this Period
+                period_duration_minutes = int((period_end - period_start).total_seconds() / 60)
+                num_intervals = period_duration_minutes // resolution_minutes
+
                 # Process each Point
                 for point in period.findall('{*}Point'):
                     position = int(point.find('{*}position').text)
-
-                    # Calculate actual timestamp for this point
-                    point_time = period_start + timedelta(minutes=(position - 1) * resolution_minutes)
-                    trade_date = point_time.date()
-                    period_num = self.calculate_period_number(point_time)
 
                     # Get quantity
                     quantity_elem = point.find('{*}quantity')
@@ -171,13 +218,35 @@ class ImbalanceDataParser:
                     secondary_elem = point.find('{*}secondaryQuantity')
                     difference = float(secondary_elem.text) if secondary_elem is not None else None
 
-                    # Store volume data
-                    key = (trade_date, period_num)
-                    self.volumes_data[key] = {
-                        'imbalance_mwh': quantity,
-                        'difference_mwh': difference,
-                        'situation': situation
-                    }
+                    # If there's only one Point but the Period spans multiple intervals,
+                    # apply the same value to ALL intervals in the Period
+                    if len(period.findall('{*}Point')) == 1 and num_intervals > 1:
+                        # Apply to all intervals in this Period
+                        for interval_idx in range(num_intervals):
+                            point_time = period_start + timedelta(minutes=interval_idx * resolution_minutes)
+                            trade_date = point_time.date()
+                            period_num = self.calculate_period_number(point_time)
+
+                            # Store volume data for each interval
+                            key = (trade_date, period_num)
+                            self.volumes_data[key] = {
+                                'imbalance_mwh': quantity,
+                                'difference_mwh': difference,
+                                'situation': situation
+                            }
+                    else:
+                        # Normal case: one Point per interval
+                        point_time = period_start + timedelta(minutes=(position - 1) * resolution_minutes)
+                        trade_date = point_time.date()
+                        period_num = self.calculate_period_number(point_time)
+
+                        # Store volume data
+                        key = (trade_date, period_num)
+                        self.volumes_data[key] = {
+                            'imbalance_mwh': quantity,
+                            'difference_mwh': difference,
+                            'situation': situation
+                        }
 
         print(f"Parsed {len(self.volumes_data)} volume records")
 
