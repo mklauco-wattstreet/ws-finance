@@ -19,7 +19,7 @@ import sys
 import argparse
 import logging
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 # Add parent to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -42,33 +42,25 @@ def setup_logging(debug=False):
     return logging.getLogger(__name__)
 
 
-def get_preceding_hour_range(lag_hours=3):
+def get_three_hour_range():
     """
-    Get the time range for the preceding hour with a lag.
+    Get 3-hour time range starting from current time rounded down to nearest 15 minutes.
 
-    ENTSO-E data is not available immediately. We use a 3-hour lag
-    to ensure data is available when we fetch it.
-
-    Returns current time minus lag, rounded down to nearest 15 minutes,
-    and period start is 1 hour before that.
-
-    Args:
-        lag_hours: Hours to lag behind current time (default 3)
+    ENTSO-E API requires UTC times. Container runs in CET, so we convert to UTC.
+    We fetch 3 hours of data to ensure we have current data.
 
     Returns:
-        tuple: (period_start, period_end) as datetime objects
+        tuple: (period_start, period_end) as datetime objects in UTC
     """
-    now = datetime.now()
-
-    # Apply lag for data availability
-    lagged_time = now - timedelta(hours=lag_hours)
+    # Get current time in UTC
+    now_utc = datetime.now(timezone.utc)
 
     # Round down to nearest 15 minutes
-    minutes = (lagged_time.minute // 15) * 15
-    period_end = lagged_time.replace(minute=minutes, second=0, microsecond=0)
+    minutes = (now_utc.minute // 15) * 15
+    period_end = now_utc.replace(minute=minutes, second=0, microsecond=0)
 
-    # One hour before
-    period_start = period_end - timedelta(hours=1)
+    # 3 hours before
+    period_start = period_end - timedelta(hours=3)
 
     return period_start, period_end
 
@@ -258,9 +250,9 @@ def main():
 
     logger.info("")
 
-    # Calculate time period
-    period_start, period_end = get_preceding_hour_range()
-    logger.info(f"Period: {period_start.strftime('%Y-%m-%d %H:%M')} to {period_end.strftime('%Y-%m-%d %H:%M')}")
+    # Calculate time period (UTC)
+    period_start, period_end = get_three_hour_range()
+    logger.info(f"Period (UTC): {period_start.strftime('%Y-%m-%d %H:%M')} to {period_end.strftime('%Y-%m-%d %H:%M')}")
 
     # Setup file paths
     start_str = period_start.strftime('%Y%m%d%H%M')

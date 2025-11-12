@@ -8,7 +8,7 @@ This module provides functionality to fetch data from the ENTSO-E Transparency P
 import sys
 import io
 import zipfile
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import requests
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -50,12 +50,22 @@ class EntsoeClient:
         """
         Format datetime to ENTSO-E API format (yyyyMMddHHmm).
 
+        ENTSO-E API requires UTC timestamps. If datetime is timezone-aware,
+        it will be converted to UTC. If naive, it's assumed to be UTC.
+
         Args:
-            dt: datetime object
+            dt: datetime object (naive or timezone-aware)
 
         Returns:
-            str: Formatted timestamp
+            str: Formatted timestamp in UTC
         """
+        # If timezone-aware, convert to UTC
+        if dt.tzinfo is not None:
+            dt = dt.astimezone(timezone.utc)
+
+        # Remove timezone info for formatting (API expects naive format)
+        dt = dt.replace(tzinfo=None)
+
         return dt.strftime("%Y%m%d%H%M")
 
     def _build_url(self, document_type, period_start, period_end):

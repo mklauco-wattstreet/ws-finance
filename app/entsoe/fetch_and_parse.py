@@ -11,7 +11,7 @@ Example:
 
 import sys
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Add parent to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -29,9 +29,9 @@ def main():
     start_str = sys.argv[1]
     end_str = sys.argv[2]
 
-    # Parse datetime
-    start_dt = datetime.strptime(start_str, '%Y%m%d%H%M')
-    end_dt = datetime.strptime(end_str, '%Y%m%d%H%M')
+    # Parse datetime (assume UTC)
+    start_dt = datetime.strptime(start_str, '%Y%m%d%H%M').replace(tzinfo=timezone.utc)
+    end_dt = datetime.strptime(end_str, '%Y%m%d%H%M').replace(tzinfo=timezone.utc)
 
     print(f"\n{'=' * 80}")
     print(f"ENTSO-E Fetch and Parse Pipeline")

@@ -13,7 +13,7 @@ Example:
 import sys
 import argparse
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Add parent to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -41,9 +41,9 @@ def main():
     # Setup logging
     logger = setup_logging(debug=args.debug)
 
-    # Parse datetime
-    period_start = datetime.strptime(args.start_period, '%Y%m%d%H%M')
-    period_end = datetime.strptime(args.end_period, '%Y%m%d%H%M')
+    # Parse datetime (assume UTC)
+    period_start = datetime.strptime(args.start_period, '%Y%m%d%H%M').replace(tzinfo=timezone.utc)
+    period_end = datetime.strptime(args.end_period, '%Y%m%d%H%M').replace(tzinfo=timezone.utc)
 
     logger.info("")
     logger.info("╔══════════════════════════════════════════════════════════╗")
