@@ -278,17 +278,10 @@ class ImbalanceDataParser:
             if key in self.volumes_data:
                 record.update(self.volumes_data[key])
             else:
-                # Missing volume data
-                if key in self.prices_data:
-                    # Price exists but no volume - keep NULL
-                    record['imbalance_mwh'] = None
-                    record['difference_mwh'] = None
-                    record['situation'] = None
-                else:
-                    # Both missing - fill with zero and surplus
-                    record['imbalance_mwh'] = 0.0
-                    record['difference_mwh'] = 0.0
-                    record['situation'] = 'surplus'
+                # Missing volume data - fill with zero and surplus
+                record['imbalance_mwh'] = 0.0
+                record['difference_mwh'] = None
+                record['situation'] = 'surplus'
 
             self.combined_data.append(record)
 
