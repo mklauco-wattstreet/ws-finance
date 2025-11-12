@@ -110,10 +110,6 @@ class EntsoeClient:
             ValueError: If response format is unexpected
         """
         url = self._build_url(document_type, period_start, period_end)
-        print(f"\n=== DEBUG: ENTSO-E API Request ===")
-        print(f"URL: {url}")
-        print(f"Endpoint: {self.BASE_URL}")
-        print(f"==================================\n")
 
         try:
             response = requests.get(url, timeout=timeout)

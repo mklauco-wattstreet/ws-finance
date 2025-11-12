@@ -141,14 +141,21 @@ def main():
             # Upload data
             logger.info("")
             logger.info("Uploading to database...")
-            inserted, skipped = upload_to_database(conn, data_parser, logger, dry_run=False)
+            inserted, skipped, inserted_records = upload_to_database(conn, data_parser, logger, dry_run=False)
 
             logger.info(f"✓ Upload complete:")
             logger.info(f"  - Inserted: {inserted} records")
             logger.info(f"  - Skipped (duplicates): {skipped} records")
 
+            if inserted_records:
+                logger.info("")
+                logger.info("Inserted intervals:")
+                for time_interval, period in inserted_records:
+                    logger.info(f"  • {time_interval} (Period {period})")
+
         finally:
             conn.close()
+            logger.info("")
             logger.info("Database connection closed")
     else:
         logger.info("")

@@ -44,8 +44,6 @@ class ImbalanceDataParser:
 
     def parse_prices_xml(self, xml_file_path: str):
         """Parse A85 (Imbalance Prices) XML file."""
-        print(f"\n=== Parsing Prices XML: {xml_file_path} ===")
-
         tree = ET.parse(xml_file_path)
         root = tree.getroot()
 
@@ -165,11 +163,9 @@ class ImbalanceDataParser:
                             self.prices_data[key]['neg_imb_incentive_czk_mwh'] = financial_prices.get('A02', 0.0)
                             self.prices_data[key]['neg_imb_financial_neutrality_czk_mwh'] = financial_prices.get('A03', 0.0)
 
-        print(f"Parsed {len(self.prices_data)} price records")
 
     def parse_volumes_xml(self, xml_file_path: str):
         """Parse A86 (Imbalance Volumes) XML file."""
-        print(f"\n=== Parsing Volumes XML: {xml_file_path} ===")
 
         tree = ET.parse(xml_file_path)
         root = tree.getroot()
@@ -248,11 +244,9 @@ class ImbalanceDataParser:
                             'situation': situation
                         }
 
-        print(f"Parsed {len(self.volumes_data)} volume records")
 
     def combine_data(self):
         """Combine prices and volumes data."""
-        print(f"\n=== Combining Data ===")
 
         # Get all unique keys from both datasets
         all_keys = set(self.prices_data.keys()) | set(self.volumes_data.keys())
@@ -298,7 +292,6 @@ class ImbalanceDataParser:
 
             self.combined_data.append(record)
 
-        print(f"Combined {len(self.combined_data)} records")
 
     def _calculate_time_interval_from_period(self, period_num: int) -> str:
         """Calculate time interval string from period number."""

@@ -154,15 +154,16 @@ def upload_to_database(conn, parser, logger, dry_run=False):
         dry_run: If True, only check for duplicates but don't insert
 
     Returns:
-        tuple: (inserted_count, skipped_count)
+        tuple: (inserted_count, skipped_count, inserted_records)
     """
     if not parser.combined_data:
         logger.warning("No data to upload")
-        return 0, 0
+        return 0, 0, []
 
     cursor = conn.cursor()
     inserted = 0
     skipped = 0
+    inserted_records = []
 
     insert_query = """
         INSERT INTO entsoe_imbalance_prices (
@@ -178,16 +179,16 @@ def upload_to_database(conn, parser, logger, dry_run=False):
     for record in parser.combined_data:
         trade_date = record['trade_date']
         period = record['period']
+        time_interval = record['time_interval']
 
         # Check if exists
         if check_if_exists(conn, trade_date, period):
-            logger.debug(f"Record exists: {trade_date} period {period} - skipping")
             skipped += 1
             continue
 
         if dry_run:
-            logger.debug(f"DRY RUN: Would insert {trade_date} period {period}")
             inserted += 1
+            inserted_records.append((time_interval, period))
             continue
 
         # Insert record
@@ -212,10 +213,10 @@ def upload_to_database(conn, parser, logger, dry_run=False):
 
             cursor.execute(insert_query, values)
             inserted += 1
-            logger.debug(f"Inserted: {trade_date} period {period}")
+            inserted_records.append((time_interval, period))
 
         except Exception as e:
-            logger.error(f"Failed to insert {trade_date} period {period}: {e}")
+            logger.error(f"Failed to insert {time_interval} (Period {period}): {e}")
             conn.rollback()
             continue
 
@@ -223,7 +224,7 @@ def upload_to_database(conn, parser, logger, dry_run=False):
         conn.commit()
 
     cursor.close()
-    return inserted, skipped
+    return inserted, skipped, inserted_records
 
 
 def main():
@@ -328,14 +329,21 @@ def main():
             # Upload data (table must already exist)
             logger.info("")
             logger.info("Uploading to database...")
-            inserted, skipped = upload_to_database(conn, data_parser, logger, dry_run=False)
+            inserted, skipped, inserted_records = upload_to_database(conn, data_parser, logger, dry_run=False)
 
             logger.info(f"✓ Upload complete:")
             logger.info(f"  - Inserted: {inserted} records")
             logger.info(f"  - Skipped (duplicates): {skipped} records")
 
+            if inserted_records:
+                logger.info("")
+                logger.info("Inserted intervals:")
+                for time_interval, period in inserted_records:
+                    logger.info(f"  • {time_interval} (Period {period})")
+
         finally:
             conn.close()
+            logger.info("")
             logger.info("Database connection closed")
     else:
         logger.info("")
