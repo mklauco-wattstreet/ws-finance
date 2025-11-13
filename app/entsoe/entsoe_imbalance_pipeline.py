@@ -84,88 +84,28 @@ def connect_database(logger):
         return None
 
 
-def create_table_if_not_exists(conn, logger):
-    """Create entsoe_imbalance_prices table if it doesn't exist."""
-    cursor = conn.cursor()
-
-    create_table_sql = """
-    CREATE TABLE IF NOT EXISTS entsoe_imbalance_prices (
-        id SERIAL PRIMARY KEY,
-        trade_date DATE NOT NULL,
-        period INTEGER NOT NULL,
-        time_interval VARCHAR(11) NOT NULL,
-        pos_imb_price_czk_mwh NUMERIC(15, 3) NOT NULL,
-        pos_imb_scarcity_czk_mwh NUMERIC(15, 3) NOT NULL,
-        pos_imb_incentive_czk_mwh NUMERIC(15, 3) NOT NULL,
-        pos_imb_financial_neutrality_czk_mwh NUMERIC(15, 3) NOT NULL,
-        neg_imb_price_czk_mwh NUMERIC(15, 3) NOT NULL,
-        neg_imb_scarcity_czk_mwh NUMERIC(15, 3) NOT NULL,
-        neg_imb_incentive_czk_mwh NUMERIC(15, 3) NOT NULL,
-        neg_imb_financial_neutrality_czk_mwh NUMERIC(15, 3) NOT NULL,
-        imbalance_mwh NUMERIC(12, 5),
-        difference_mwh NUMERIC(12, 5),
-        situation VARCHAR NOT NULL,
-        status VARCHAR NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE (trade_date, period),
-        UNIQUE (trade_date, time_interval)
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_entsoe_imb_prices_trade_date
-        ON entsoe_imbalance_prices(trade_date);
-    CREATE INDEX IF NOT EXISTS idx_entsoe_imb_prices_period
-        ON entsoe_imbalance_prices(period);
-    """
-
-    try:
-        cursor.execute(create_table_sql)
-        conn.commit()
-        logger.debug("Table entsoe_imbalance_prices verified/created")
-        return True
-    except Exception as e:
-        conn.rollback()
-        logger.error(f"Failed to create table: {e}")
-        return False
-    finally:
-        cursor.close()
-
-
-def check_if_exists(conn, trade_date, period):
-    """Check if record already exists for given trade_date and period."""
-    cursor = conn.cursor()
-    query = """
-        SELECT COUNT(*) FROM entsoe_imbalance_prices
-        WHERE trade_date = %s AND period = %s
-    """
-    cursor.execute(query, (trade_date, period))
-    count = cursor.fetchone()[0]
-    cursor.close()
-    return count > 0
-
-
 def upload_to_database(conn, parser, logger, dry_run=False):
     """
-    Upload parsed data to database.
+    Upload parsed data to database using UPSERT.
 
     Args:
         conn: Database connection
         parser: ImbalanceDataParser with combined_data
         logger: Logger instance
-        dry_run: If True, only check for duplicates but don't insert
+        dry_run: If True, don't actually insert/update
 
     Returns:
-        tuple: (inserted_count, skipped_count, inserted_records)
+        tuple: (upserted_count, upserted_records)
     """
     if not parser.combined_data:
         logger.warning("No data to upload")
-        return 0, 0, []
+        return 0, []
 
     cursor = conn.cursor()
-    inserted = 0
-    skipped = 0
-    inserted_records = []
+    upserted = 0
+    upserted_records = []
 
-    insert_query = """
+    upsert_query = """
         INSERT INTO entsoe_imbalance_prices (
             trade_date, period, time_interval,
             pos_imb_price_czk_mwh, pos_imb_scarcity_czk_mwh,
@@ -174,24 +114,33 @@ def upload_to_database(conn, parser, logger, dry_run=False):
             neg_imb_incentive_czk_mwh, neg_imb_financial_neutrality_czk_mwh,
             imbalance_mwh, difference_mwh, situation, status
         ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (trade_date, time_interval)
+        DO UPDATE SET
+            period = EXCLUDED.period,
+            pos_imb_price_czk_mwh = EXCLUDED.pos_imb_price_czk_mwh,
+            pos_imb_scarcity_czk_mwh = EXCLUDED.pos_imb_scarcity_czk_mwh,
+            pos_imb_incentive_czk_mwh = EXCLUDED.pos_imb_incentive_czk_mwh,
+            pos_imb_financial_neutrality_czk_mwh = EXCLUDED.pos_imb_financial_neutrality_czk_mwh,
+            neg_imb_price_czk_mwh = EXCLUDED.neg_imb_price_czk_mwh,
+            neg_imb_scarcity_czk_mwh = EXCLUDED.neg_imb_scarcity_czk_mwh,
+            neg_imb_incentive_czk_mwh = EXCLUDED.neg_imb_incentive_czk_mwh,
+            neg_imb_financial_neutrality_czk_mwh = EXCLUDED.neg_imb_financial_neutrality_czk_mwh,
+            imbalance_mwh = EXCLUDED.imbalance_mwh,
+            difference_mwh = EXCLUDED.difference_mwh,
+            situation = EXCLUDED.situation,
+            status = EXCLUDED.status
     """
 
     for record in parser.combined_data:
-        trade_date = record['trade_date']
-        period = record['period']
         time_interval = record['time_interval']
-
-        # Check if exists
-        if check_if_exists(conn, trade_date, period):
-            skipped += 1
-            continue
+        period = record['period']
 
         if dry_run:
-            inserted += 1
-            inserted_records.append((time_interval, period))
+            upserted += 1
+            upserted_records.append((time_interval, period))
             continue
 
-        # Insert record
+        # Insert or update record
         try:
             values = (
                 record['trade_date'],
@@ -211,12 +160,12 @@ def upload_to_database(conn, parser, logger, dry_run=False):
                 record['status']
             )
 
-            cursor.execute(insert_query, values)
-            inserted += 1
-            inserted_records.append((time_interval, period))
+            cursor.execute(upsert_query, values)
+            upserted += 1
+            upserted_records.append((time_interval, period))
 
         except Exception as e:
-            logger.error(f"Failed to insert {time_interval} (Period {period}): {e}")
+            logger.error(f"Failed to upsert {time_interval} (Period {period}): {e}")
             conn.rollback()
             continue
 
@@ -224,7 +173,7 @@ def upload_to_database(conn, parser, logger, dry_run=False):
         conn.commit()
 
     cursor.close()
-    return inserted, skipped, inserted_records
+    return upserted, upserted_records
 
 
 def main():
@@ -329,16 +278,15 @@ def main():
             # Upload data (table must already exist)
             logger.info("")
             logger.info("Uploading to database...")
-            inserted, skipped, inserted_records = upload_to_database(conn, data_parser, logger, dry_run=False)
+            upserted, upserted_records = upload_to_database(conn, data_parser, logger, dry_run=False)
 
             logger.info(f"✓ Upload complete:")
-            logger.info(f"  - Inserted: {inserted} records")
-            logger.info(f"  - Skipped (duplicates): {skipped} records")
+            logger.info(f"  - Upserted: {upserted} records")
 
-            if inserted_records:
+            if upserted_records:
                 logger.info("")
-                logger.info("Inserted intervals:")
-                for time_interval, period in inserted_records:
+                logger.info("Upserted intervals:")
+                for time_interval, period in upserted_records:
                     logger.info(f"  • {time_interval} (Period {period})")
 
         finally:
