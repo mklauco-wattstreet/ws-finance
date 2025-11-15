@@ -1,0 +1,674 @@
+#!/usr/bin/env python3
+"""
+OTE Portal Trade Balance Downloader
+Downloads trade balance reports from the OTE portal.
+"""
+
+import sys
+import time
+import shutil
+import subprocess
+from pathlib import Path
+from datetime import datetime, timedelta
+
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException
+
+from common import setup_logging
+from config import OTE_CERT_PATH, OTE_CERT_PASSWORD, OTE_LOCAL_STORAGE_PASSWORD
+
+
+def take_screenshot(driver, name):
+    """Take screenshot with timestamp."""
+    try:
+        timestamp = datetime.now().strftime("%H%M%S")
+        filename = f"/var/log/screenshot_{timestamp}_{name}.png"
+        driver.save_screenshot(filename)
+        print(f"📸 Screenshot: {filename}")
+    except:
+        pass
+
+
+def cleanup_old_screenshots(logger):
+    """Delete all screenshots from previous runs."""
+    import glob
+    screenshot_files = glob.glob("/var/log/screenshot_*.png")
+    if screenshot_files:
+        for f in screenshot_files:
+            try:
+                Path(f).unlink()
+            except:
+                pass
+        logger.info(f"Cleaned up {len(screenshot_files)} old screenshot(s)")
+
+
+def init_browser():
+    """Initialize Chrome browser for headless execution."""
+    chrome_options = Options()
+    chrome_options.binary_location = "/usr/bin/chromium"
+    chrome_options.add_argument("--user-data-dir=/app/browser-profile")
+
+    # Download settings
+    download_dir = "/app/downloads"
+    Path(download_dir).mkdir(parents=True, exist_ok=True)
+
+    prefs = {
+        "download.default_directory": download_dir,
+        "download.prompt_for_download": False,
+        "download.directory_upgrade": True,
+        "safebrowsing.enabled": False
+    }
+    chrome_options.add_experimental_option("prefs", prefs)
+
+    # Headless mode for production
+    chrome_options.add_argument("--headless=new")
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("--disable-gpu")
+    chrome_options.add_argument("--window-size=1920,1080")
+    chrome_options.add_argument("--ignore-certificate-errors")
+
+    service = Service(executable_path="/usr/bin/chromedriver")
+    driver = webdriver.Chrome(service=service, options=chrome_options)
+    driver.implicitly_wait(10)
+
+    return driver
+
+
+def setup_certificate(driver, logger):
+    """Setup certificate for first-time initialization."""
+    wait = WebDriverWait(driver, 15)
+
+    logger.info("Setting up certificate...")
+
+    # Navigate to portal
+    driver.get("https://portal.ote-cr.cz/common/app/login")
+    time.sleep(2)
+
+    take_screenshot(driver, "setup_page_loaded")
+
+    # Try to switch to English first
+    try:
+        switch_to_english(driver, logger)
+    except:
+        logger.debug("Could not switch language")
+
+    # Click Certificate settings - try both English and Czech
+    cert_btn = None
+    try:
+        try:
+            cert_btn = wait.until(
+                EC.element_to_be_clickable((By.XPATH, "//*[contains(text(), 'Certificate')]"))
+            )
+            logger.info("Found 'Certificate' button (English)")
+        except:
+            cert_btn = wait.until(
+                EC.element_to_be_clickable((By.XPATH, "//*[contains(text(), 'Certifikát')]"))
+            )
+            logger.info("Found 'Certifikát' button (Czech)")
+
+        cert_btn.click()
+        time.sleep(0.5)
+        logger.info("Opened Certificate settings")
+        take_screenshot(driver, "certificate_settings_opened")
+    except Exception as e:
+        logger.error(f"Failed to open Certificate settings: {e}")
+        take_screenshot(driver, "setup_error")
+        return False
+
+    # Setup password
+    try:
+        take_screenshot(driver, "before_password_setup")
+        password_field = driver.find_element(By.NAME, "password")
+        password_field.clear()
+        password_field.send_keys(OTE_LOCAL_STORAGE_PASSWORD)
+
+        confirm_field = driver.find_element(By.NAME, "confirmedPassword")
+        confirm_field.clear()
+        confirm_field.send_keys(OTE_LOCAL_STORAGE_PASSWORD)
+        take_screenshot(driver, "password_entered")
+
+        # Try both English and Czech for Save button
+        try:
+            save_btn = driver.find_element(By.XPATH, "//button[contains(., 'Save')]")
+            logger.info("Found Save button (English)")
+        except:
+            try:
+                save_btn = driver.find_element(By.XPATH, "//button[contains(., 'Uložit')]")
+                logger.info("Found Save button (Czech)")
+            except:
+                save_btn = driver.find_element(By.XPATH, "//button[contains(@class, 'ote-btn-primary')]")
+                logger.info("Found Save button by class")
+
+        save_btn.click()
+        time.sleep(0.5)
+        logger.info("Password saved")
+        take_screenshot(driver, "password_saved")
+    except Exception as e:
+        logger.info(f"Password already set or error: {e}")
+        take_screenshot(driver, "password_already_set")
+
+    # Navigate to Certificates in local storage tab
+    logger.info("Looking for Certificates in local storage tab...")
+    take_screenshot(driver, "before_certificates_tab")
+
+    try:
+        tab = None
+        try:
+            tab = WebDriverWait(driver, 5).until(
+                EC.element_to_be_clickable((By.LINK_TEXT, "Certificates in local storage"))
+            )
+            logger.info("Found tab via LINK_TEXT")
+        except:
+            try:
+                tab = driver.find_element(By.PARTIAL_LINK_TEXT, "Certificates")
+                logger.info("Found tab via PARTIAL_LINK_TEXT")
+            except:
+                try:
+                    tab = driver.find_element(By.PARTIAL_LINK_TEXT, "Certifikáty")
+                    logger.info("Found tab via Czech text")
+                except:
+                    links = driver.find_elements(By.TAG_NAME, "a")
+                    for link in links:
+                        link_text = link.text.lower()
+                        if "certific" in link_text or "certifikát" in link_text:
+                            tab = link
+                            logger.info(f"Found tab with text: {link.text}")
+                            break
+
+        if tab:
+            tab.click()
+            time.sleep(1)
+            logger.info("Clicked Certificates tab")
+            take_screenshot(driver, "certificates_tab_clicked")
+        else:
+            logger.warning("Could not find Certificates tab")
+            take_screenshot(driver, "no_certificates_tab")
+    except Exception as e:
+        logger.error(f"Error navigating to Certificates tab: {e}")
+        take_screenshot(driver, "certificates_tab_error")
+
+    # Add certificate
+    logger.info("Looking for Add certificate button...")
+    take_screenshot(driver, "before_add_certificate")
+
+    try:
+        add_btn = None
+        time.sleep(2)
+
+        try:
+            add_btn = WebDriverWait(driver, 5).until(
+                EC.element_to_be_clickable((By.XPATH, "//button[contains(., 'Add certificate')]"))
+            )
+            logger.info("Found 'Add certificate' button (English)")
+        except:
+            try:
+                add_btn = driver.find_element(By.XPATH, "//button[contains(., 'Přidat certifikát')]")
+                logger.info("Found 'Přidat certifikát' button (Czech)")
+            except:
+                buttons = driver.find_elements(By.TAG_NAME, "button")
+                for btn in buttons:
+                    btn_text = btn.text.lower()
+                    if "add" in btn_text and "certifi" in btn_text:
+                        add_btn = btn
+                        logger.info(f"Found button with text: {btn.text}")
+                        break
+
+        if not add_btn:
+            logger.error("Could not find Add certificate button")
+            take_screenshot(driver, "no_add_certificate_button")
+            return False
+
+        add_btn.click()
+        logger.info("Clicked Add certificate button")
+        take_screenshot(driver, "add_certificate_clicked")
+        time.sleep(1)
+
+        # Upload file
+        logger.info("Looking for file input...")
+        take_screenshot(driver, "before_file_upload")
+
+        file_input = WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.XPATH, "//input[@type='file']"))
+        )
+        cert_path_str = str(Path(OTE_CERT_PATH).absolute())
+        logger.info(f"Uploading certificate from: {cert_path_str}")
+        file_input.send_keys(cert_path_str)
+        time.sleep(1)
+        take_screenshot(driver, "file_selected")
+
+        # Enter certificate password
+        logger.info("Entering certificate password...")
+        pwd_inputs = driver.find_elements(By.XPATH, "//input[@type='password']")
+        if pwd_inputs:
+            pwd_input = pwd_inputs[-1]
+            pwd_input.clear()
+            pwd_input.send_keys(OTE_CERT_PASSWORD)
+            take_screenshot(driver, "cert_password_entered")
+            time.sleep(0.5)
+        else:
+            logger.warning("No password field found for certificate")
+
+        # Import
+        logger.info("Looking for Import button...")
+        import_btn = None
+        try:
+            import_btn = driver.find_element(By.XPATH, "//button[contains(., 'Import')]")
+            logger.info("Found 'Import' button")
+        except:
+            try:
+                import_btn = driver.find_element(By.XPATH, "//button[contains(., 'Importovat')]")
+                logger.info("Found 'Importovat' button")
+            except:
+                logger.error("Could not find Import button")
+                take_screenshot(driver, "no_import_button")
+                return False
+
+        import_btn.click()
+        logger.info("Clicked Import button")
+        time.sleep(2)
+        take_screenshot(driver, "after_import")
+
+        logger.info("✓ Certificate imported successfully")
+
+        # Mark as imported
+        cert_file = Path("/app/browser-profile/.cert_imported")
+        cert_file.touch()
+
+        return True
+
+    except Exception as e:
+        logger.error(f"Failed to import certificate: {e}")
+        take_screenshot(driver, "certificate_import_error")
+        import traceback
+        logger.error(traceback.format_exc())
+        return False
+
+
+def switch_to_english(driver, logger):
+    """Ensure English language is selected."""
+    try:
+        time.sleep(0.5)
+
+        # Find language button
+        spans = driver.find_elements(By.XPATH, "//button//span[text()='EN' or text()='CZ']")
+        if spans:
+            lang_text = spans[0].text.strip()
+            lang_button = spans[0].find_element(By.XPATH, "..")
+
+            if lang_text == 'EN':
+                logger.info("Switching to English...")
+                lang_button.click()
+                time.sleep(0.5)
+            elif lang_text == 'CZ':
+                logger.info("Already in English")
+    except Exception as e:
+        logger.debug(f"Language switch: {e}")
+
+
+def login_to_portal(driver, logger):
+    """Login to OTE portal."""
+    wait = WebDriverWait(driver, 15)
+
+    try:
+        # Check if already logged in
+        if "Watt Street, s.r.o." in driver.page_source:
+            logger.info("✓ Already logged in!")
+            return True
+
+        # Find login button
+        login_btn = None
+        try:
+            login_btn = driver.find_element(By.XPATH, "//button[contains(., 'Log in')]")
+        except:
+            try:
+                login_btn = driver.find_element(By.XPATH, "//button[contains(., 'Přihlásit')]")
+            except:
+                logger.error("Login button not found")
+                return False
+
+        login_btn.click()
+        time.sleep(0.5)
+        take_screenshot(driver, "after_login_button")
+
+        # Enter password if needed
+        try:
+            password_field = WebDriverWait(driver, 5).until(
+                EC.presence_of_element_located((By.XPATH, "//input[@type='password']"))
+            )
+            password_field.clear()
+            password_field.send_keys(OTE_LOCAL_STORAGE_PASSWORD)
+
+            confirm_btn = driver.find_element(By.XPATH, "//button[contains(., 'Confirm')]")
+            confirm_btn.click()
+            time.sleep(0.5)
+        except TimeoutException:
+            pass
+
+        # Click Sign if present
+        try:
+            sign_btn = WebDriverWait(driver, 5).until(
+                EC.element_to_be_clickable((By.XPATH, "//button[contains(., 'Sign')]"))
+            )
+            sign_btn.click()
+            time.sleep(3)
+            take_screenshot(driver, "after_sign")
+        except TimeoutException:
+            pass
+
+        # Verify login
+        time.sleep(0.5)
+        take_screenshot(driver, "login_verification")
+        current_url = driver.current_url
+
+        if "Watt Street, s.r.o." in driver.page_source or "dashboard" in current_url or "login" not in current_url:
+            logger.info("✓ Login successful")
+            return True
+
+        logger.error("Login failed")
+        take_screenshot(driver, "login_failed")
+        return False
+
+    except Exception as e:
+        logger.error(f"Login error: {e}")
+        return False
+
+
+def set_date_field(driver, field, date_value):
+    """Set date field using Ctrl+A method."""
+    try:
+        driver.execute_script("arguments[0].removeAttribute('readonly')", field)
+        time.sleep(0.2)
+
+        field.click()
+        time.sleep(0.2)
+
+        field.send_keys(Keys.CONTROL + "a")
+        field.send_keys(date_value)
+
+        return field.get_attribute("value") == date_value
+
+    except:
+        return False
+
+
+def download_trade_balance(driver, logger):
+    """Download Trade Balance report."""
+    wait = WebDriverWait(driver, 15)
+
+    try:
+        logger.info("Navigating to Trade Balance...")
+
+        # Navigate: Settlement > Reports > Trade balance
+        settlement = wait.until(
+            EC.element_to_be_clickable((By.XPATH, "//*[contains(text(), 'Settlement')]"))
+        )
+        settlement.click()
+        time.sleep(0.5)
+        take_screenshot(driver, "settlement_clicked")
+
+        reports = wait.until(
+            EC.element_to_be_clickable((By.XPATH, "//*[contains(text(), 'Reports')]"))
+        )
+        reports.click()
+        time.sleep(0.5)
+        take_screenshot(driver, "reports_clicked")
+
+        trade_balance = wait.until(
+            EC.element_to_be_clickable((By.XPATH, "//*[contains(text(), 'Trade balance')]"))
+        )
+        trade_balance.click()
+        time.sleep(0.5)
+        take_screenshot(driver, "trade_balance_page")
+
+        # Set dates: fromDate = Yesterday, toDate = Tomorrow
+        yesterday = datetime.now() - timedelta(days=1)
+        tomorrow = datetime.now() + timedelta(days=1)
+
+        from_date_str = yesterday.strftime("%d/%m/%Y")
+        to_date_str = tomorrow.strftime("%d/%m/%Y")
+
+        logger.info(f"Downloading data from {from_date_str} to {to_date_str}")
+
+        # Set date fields
+        from_field = driver.find_element(By.NAME, "fromDate")
+        to_field = driver.find_element(By.NAME, "toDate")
+
+        if not set_date_field(driver, from_field, from_date_str):
+            logger.error("Failed to set from date")
+            return None
+
+        if not set_date_field(driver, to_field, to_date_str):
+            logger.error("Failed to set to date")
+            return None
+
+        take_screenshot(driver, "dates_set")
+
+        # Click Retrieve
+        retrieve_btn = wait.until(
+            EC.element_to_be_clickable((By.XPATH, "//button[contains(., 'Retrieve')]"))
+        )
+        retrieve_btn.click()
+        logger.info("Retrieving data...")
+
+        # Wait for data
+        time.sleep(10)
+        take_screenshot(driver, "after_retrieve")
+
+        # Check if data exists
+        if "No data matches" in driver.page_source:
+            logger.warning("No data found for selected dates")
+            take_screenshot(driver, "no_data_found")
+            return None
+
+        logger.info("Data loaded, downloading...")
+
+        # Click download button
+        download_btn = wait.until(EC.element_to_be_clickable(
+            (By.XPATH, "//button[contains(@class, 'ote-btn-secondary') and contains(@class, 'ote-icon')]")
+        ))
+        download_btn.click()
+        time.sleep(0.5)
+        take_screenshot(driver, "download_dialog")
+
+        # Click Export button
+        logger.info("Clicking Export button...")
+        export_btn = wait.until(EC.element_to_be_clickable(
+            (By.XPATH, "//button[contains(., 'Export')]")
+        ))
+        export_btn.click()
+        logger.info("Exporting...")
+
+        time.sleep(5)
+
+        # Check for downloaded file
+        download_dir = Path("/app/downloads")
+        xlsx_files = list(download_dir.glob("*.xlsx"))
+
+        if xlsx_files:
+            latest_file = max(xlsx_files, key=lambda p: p.stat().st_mtime)
+
+            # Move to final location - use yesterday's date for directory
+            dest_dir = Path(f"/app/ote_files/{yesterday.year}/{yesterday.month:02d}")
+            dest_dir.mkdir(parents=True, exist_ok=True)
+
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+            dest_file = dest_dir / f"Trade_balance_{timestamp}.xlsx"
+            shutil.move(str(latest_file), str(dest_file))
+
+            logger.info(f"✓ File saved: {dest_file}")
+            return str(dest_file)  # Return file path for upload
+        else:
+            logger.error("No XLSX file found in downloads")
+            return None
+
+    except Exception as e:
+        logger.error(f"Download error: {e}")
+        take_screenshot(driver, "download_error")
+        import traceback
+        logger.error(traceback.format_exc())
+        return None
+
+
+def upload_to_database(xlsx_file_path, logger):
+    """
+    Upload downloaded XLSX file to database.
+
+    Args:
+        xlsx_file_path: Path to the downloaded XLSX file
+        logger: Logger instance
+
+    Returns:
+        bool: True if upload successful, False otherwise
+    """
+    logger.info("")
+    logger.info("=" * 60)
+    logger.info("Starting database upload...")
+    logger.info("=" * 60)
+    logger.info("")
+
+    try:
+        # Get the directory containing the file (e.g., /app/ote_files/2025/11)
+        file_path = Path(xlsx_file_path)
+        file_dir = file_path.parent
+
+        # Call the upload script for the directory
+        result = subprocess.run(
+            ['/usr/local/bin/python3', '/app/scripts/upload_ote_trade_balance.py', str(file_dir)],
+            timeout=300  # 5 minute timeout
+        )
+
+        logger.info("")
+        if result.returncode == 0:
+            logger.info("=" * 60)
+            logger.info("✓ Database upload completed successfully")
+            logger.info("=" * 60)
+            return True
+        else:
+            logger.error("=" * 60)
+            logger.error("✗ Database upload failed (see details above)")
+            logger.error("=" * 60)
+            return False
+
+    except subprocess.TimeoutExpired:
+        logger.error("✗ Database upload timeout (exceeded 5 minutes)")
+        return False
+    except Exception as e:
+        logger.error(f"✗ Error running upload script: {e}")
+        return False
+
+
+def logout(driver):
+    """Logout from portal."""
+    try:
+        avatar_btn = driver.find_element(By.XPATH,
+            "//button[contains(@class, 'ote-header-icon') and contains(@class, 'header-icon-avatar')]")
+        avatar_btn.click()
+        time.sleep(0.5)
+
+        logout_item = driver.find_element(By.XPATH,
+            "//div[@role='listitem' and @data-menu-item-value='logout']")
+        logout_item.click()
+    except:
+        pass
+
+
+def main():
+    # Setup logging
+    logger = setup_logging(debug='--debug' in sys.argv)
+
+    logger.info("=" * 60)
+    logger.info("OTE Portal Trade Balance Downloader")
+    logger.info(f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    logger.info("=" * 60)
+
+    # Clean up old screenshots
+    cleanup_old_screenshots(logger)
+
+    # Check configuration
+    if not OTE_LOCAL_STORAGE_PASSWORD:
+        logger.error("OTE_LOCAL_STORAGE_PASSWORD not configured")
+        sys.exit(1)
+
+    driver = None
+    exit_code = 0
+
+    try:
+        # Initialize browser
+        logger.info("Starting browser...")
+        driver = init_browser()
+
+        # Handle --setup flag
+        if '--setup' in sys.argv:
+            logger.info("Certificate setup mode")
+            if not OTE_CERT_PATH or not OTE_CERT_PASSWORD:
+                logger.error("OTE_CERT_PATH and OTE_CERT_PASSWORD required for setup")
+                sys.exit(1)
+
+            if setup_certificate(driver, logger):
+                logger.info("✓ Certificate setup completed successfully")
+            else:
+                logger.error("Certificate setup failed")
+                exit_code = 1
+        else:
+            # Normal download mode
+            logger.info("Navigating to portal...")
+            driver.get("https://portal.ote-cr.cz/common/app/login")
+            time.sleep(0.5)
+
+            # Switch to English
+            switch_to_english(driver, logger)
+
+            # Login
+            logger.info("Logging in...")
+            if not login_to_portal(driver, logger):
+                logger.error("Login failed")
+                exit_code = 1
+            else:
+                # Download
+                logger.info("Starting download...")
+                downloaded_file = download_trade_balance(driver, logger)
+
+                if downloaded_file:
+                    logger.info("✓ SUCCESS - Trade Balance downloaded")
+
+                    # Upload to database
+                    if upload_to_database(downloaded_file, logger):
+                        logger.info("=" * 60)
+                        logger.info("✓ COMPLETE - Download and upload successful")
+                        logger.info("=" * 60)
+                    else:
+                        logger.error("=" * 60)
+                        logger.error("⚠ PARTIAL SUCCESS - Download OK, Upload FAILED")
+                        logger.error("=" * 60)
+                        exit_code = 1
+                else:
+                    logger.error("✗ FAILED - Download unsuccessful")
+                    exit_code = 1
+
+    except KeyboardInterrupt:
+        logger.info("\nInterrupted")
+        exit_code = 130
+    except Exception as e:
+        logger.error(f"Unexpected error: {e}", exc_info=True)
+        exit_code = 1
+    finally:
+        if driver:
+            try:
+                logout(driver)
+                driver.quit()
+                logger.info("Browser closed")
+            except:
+                pass
+
+    sys.exit(exit_code)
+
+
+if __name__ == "__main__":
+    main()

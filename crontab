@@ -19,6 +19,9 @@
 # PRODUCTION - Download OTE daily settlement reports at 09:00
 0 09 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 ote_production.py >> /var/log/cron.log 2>&1
 
+# PRODUCTION - Download OTE trade balance reports every 3 hours
+0 */2 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 ote_trade_balance_downloader.py >> /var/log/cron.log 2>&1
+
 # PRODUCTION - ENTSO-E Imbalance Data Pipeline - Complete workflow every 15 minutes
 # Fetches imbalance prices (A85) and volumes (A86), parses, and uploads to database
 */15 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 entsoe/entsoe_imbalance_pipeline.py >> /var/log/cron.log 2>&1
