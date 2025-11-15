@@ -11,14 +11,14 @@ if ! docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
     exit 1
 fi
 
-# Reload the crontab from the mounted file
-docker exec ${CONTAINER_NAME} crontab /etc/cron.d/python-cron
+# Reload cron daemon to pick up changes in /etc/cron.d/
+docker exec ${CONTAINER_NAME} /bin/sh -c "touch /etc/cron.d/python-cron && kill -HUP \$(pgrep cron)"
 
 if [ $? -eq 0 ]; then
     echo "Crontab reloaded successfully!"
     echo ""
     echo "Current crontab:"
-    docker exec ${CONTAINER_NAME} crontab -l
+    docker exec ${CONTAINER_NAME} cat /etc/cron.d/python-cron
 else
     echo "Error: Failed to reload crontab"
     exit 1
