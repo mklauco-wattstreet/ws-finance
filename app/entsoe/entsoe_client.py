@@ -15,28 +15,26 @@ from pathlib import Path
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from config import ENTSOE_SECURITY_TOKEN, ENTSOE_CONTROL_AREA_DOMAIN
+from config import ENTSOE_BASE_URL, ENTSOE_SECURITY_TOKEN, ENTSOE_CONTROL_AREA_DOMAIN
 
 
 class EntsoeClient:
     """Client for interacting with ENTSO-E Transparency Platform API."""
 
-    # Updated to use temporary endpoint due to performance issues
-    BASE_URL = "https://external-api.tp.entsoe.eu/api"
-    # Fallback URL if needed: "https://web-api.tp.entsoe.eu/api"
-
     # Document types
     DOC_TYPE_IMBALANCE_PRICES = "A85"  # 17.1.G Imbalance prices
     DOC_TYPE_IMBALANCE_VOLUMES = "A86"  # 17.1.H Total Imbalance Volumes
 
-    def __init__(self, security_token=None, control_area_domain=None):
+    def __init__(self, security_token=None, control_area_domain=None, base_url=None):
         """
         Initialize ENTSO-E client.
 
         Args:
             security_token: API security token (defaults to env var)
             control_area_domain: Control area domain code (defaults to env var)
+            base_url: API base URL (defaults to env var)
         """
+        self.base_url = base_url or ENTSOE_BASE_URL
         self.security_token = security_token or ENTSOE_SECURITY_TOKEN
         self.control_area_domain = control_area_domain or ENTSOE_CONTROL_AREA_DOMAIN
 
@@ -90,7 +88,7 @@ class EntsoeClient:
 
         # Build query string
         query_string = "&".join([f"{key}={value}" for key, value in params.items()])
-        return f"{self.BASE_URL}?{query_string}"
+        return f"{self.base_url}?{query_string}"
 
     def fetch_data(self, document_type, period_start, period_end, timeout=60):
         """

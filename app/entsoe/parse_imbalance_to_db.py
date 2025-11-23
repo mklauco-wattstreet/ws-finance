@@ -17,6 +17,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Dict, Optional
 from collections import defaultdict
+import zoneinfo
 
 
 class ImbalanceDataParser:
@@ -26,15 +27,38 @@ class ImbalanceDataParser:
         self.prices_data = {}  # {(trade_date, period): {...}}
         self.volumes_data = {}  # {(trade_date, period): {...}}
         self.combined_data = []  # Final combined dataset
+        # Prague timezone for Czech market data alignment
+        self.prague_tz = zoneinfo.ZoneInfo("Europe/Prague")
 
     def parse_timestamp(self, timestamp_str: str) -> datetime:
-        """Parse ISO 8601 timestamp."""
+        """Parse ISO 8601 timestamp (always in UTC from ENTSO-E)."""
         if timestamp_str.endswith('Z'):
             timestamp_str = timestamp_str[:-1] + '+00:00'
         return datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
 
+    def convert_to_local_time(self, dt_utc: datetime) -> datetime:
+        """
+        Convert UTC datetime to Prague local time (CET/CEST).
+
+        This is critical for alignment with OTE-CR data which uses Czech local time.
+        Czech Republic uses CET (UTC+1) in winter and CEST (UTC+2) in summer.
+
+        Args:
+            dt_utc: UTC datetime (timezone-aware)
+
+        Returns:
+            datetime in Prague timezone
+        """
+        return dt_utc.astimezone(self.prague_tz)
+
     def calculate_period_number(self, dt: datetime) -> int:
-        """Calculate period number (1-96) for a given datetime."""
+        """
+        Calculate period number (1-96) for a given datetime.
+
+        Note: The datetime should be in Prague local time to align with OTE-CR periods.
+        Period 1 = 00:00-00:15 CET/CEST
+        Period 96 = 23:45-00:00 CET/CEST
+        """
         return (dt.hour * 4) + (dt.minute // 15) + 1
 
     def format_time_interval(self, start_dt: datetime, resolution_minutes: int) -> str:
@@ -108,10 +132,12 @@ class ImbalanceDataParser:
                 }
 
                 for interval_idx in range(num_intervals):
-                    point_time = period_start + timedelta(minutes=interval_idx * resolution_minutes)
-                    trade_date = point_time.date()
-                    period_num = self.calculate_period_number(point_time)
-                    time_interval_str = self.format_time_interval(point_time, resolution_minutes)
+                    point_time_utc = period_start + timedelta(minutes=interval_idx * resolution_minutes)
+                    # Convert to Prague local time for trade_date and period calculation
+                    point_time_local = self.convert_to_local_time(point_time_utc)
+                    trade_date = point_time_local.date()
+                    period_num = self.calculate_period_number(point_time_local)
+                    time_interval_str = self.format_time_interval(point_time_local, resolution_minutes)
 
                     position = interval_idx + 1  # Position is 1-indexed
 
@@ -239,9 +265,11 @@ class ImbalanceDataParser:
                 last_difference = None
 
                 for interval_idx in range(num_intervals):
-                    point_time = period_start + timedelta(minutes=interval_idx * resolution_minutes)
-                    trade_date = point_time.date()
-                    period_num = self.calculate_period_number(point_time)
+                    point_time_utc = period_start + timedelta(minutes=interval_idx * resolution_minutes)
+                    # Convert to Prague local time for trade_date and period calculation
+                    point_time_local = self.convert_to_local_time(point_time_utc)
+                    trade_date = point_time_local.date()
+                    period_num = self.calculate_period_number(point_time_local)
 
                     position = interval_idx + 1  # Position is 1-indexed
 
