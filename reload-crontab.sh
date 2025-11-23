@@ -22,11 +22,22 @@ docker exec ${CONTAINER_NAME} /bin/sh -c "kill -HUP \$(pgrep cron)"
 if [ $? -eq 0 ]; then
     echo "✓ Crontab reloaded successfully!"
     echo ""
-    echo "=== Mounted file content (from /etc/cron.d/python-cron) ==="
-    docker exec ${CONTAINER_NAME} head -15 /etc/cron.d/python-cron
+    echo "=== HOST FILE (./crontab on host) ==="
+    cat crontab | grep -v "^#" | grep -v "^$"
     echo ""
-    echo "=== Loaded crontab (what cron is actually using) ==="
-    docker exec ${CONTAINER_NAME} crontab -l | head -15
+    echo "=== CONTAINER MOUNTED FILE (/etc/cron.d/python-cron) ==="
+    docker exec ${CONTAINER_NAME} cat /etc/cron.d/python-cron | grep -v "^#" | grep -v "^$"
+    echo ""
+    echo "=== LOADED CRONTAB (what cron is actually using) ==="
+    docker exec ${CONTAINER_NAME} crontab -l | grep -v "^#" | grep -v "^$"
+    echo ""
+    echo "=== FILE COMPARISON ==="
+    if diff <(cat crontab) <(docker exec ${CONTAINER_NAME} cat /etc/cron.d/python-cron) > /dev/null 2>&1; then
+        echo "✓ Host file and container mounted file are IDENTICAL"
+    else
+        echo "✗ WARNING: Host file and container mounted file are DIFFERENT!"
+        echo "   This means the volume mount is not syncing properly."
+    fi
 else
     echo "✗ Error: Failed to reload crontab"
     exit 1
