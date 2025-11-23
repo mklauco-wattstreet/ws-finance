@@ -26,6 +26,10 @@
 # Fetches imbalance prices (A85) and volumes (A86), parses, and uploads to database
 */15 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 entsoe/entsoe_imbalance_pipeline.py >> /var/log/cron.log 2>&1
 
+# PRODUCTION - ENTSO-E XML Cleanup - Daily at 2 AM
+# Retention policy: Delete XML files older than 1 day (keep only last 24 hours for verification)
+0 02 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 entsoe/cleanup_old_xml.py >> /var/log/cron.log 2>&1
+
 # to OTE-CR the login to OTE portal
 # root@33fd41015364:/app/scripts# export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 ote_OTE-CR_login.py
 
