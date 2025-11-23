@@ -11,15 +11,23 @@ if ! docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
     exit 1
 fi
 
-# Reload cron daemon to pick up changes in /etc/cron.d/
+# First, reload the crontab from the mounted file (critical step!)
+echo "Loading updated crontab from mounted file..."
+docker exec ${CONTAINER_NAME} /bin/sh -c "crontab /etc/cron.d/python-cron"
+
+# Then, reload cron daemon to pick up changes
+echo "Signaling cron daemon to reload..."
 docker exec ${CONTAINER_NAME} /bin/sh -c "kill -HUP \$(pgrep cron)"
 
 if [ $? -eq 0 ]; then
-    echo "Crontab reloaded successfully!"
+    echo "✓ Crontab reloaded successfully!"
     echo ""
-    echo "Current crontab:"
-    docker exec ${CONTAINER_NAME} cat /etc/cron.d/python-cron
+    echo "=== Mounted file content (from /etc/cron.d/python-cron) ==="
+    docker exec ${CONTAINER_NAME} head -15 /etc/cron.d/python-cron
+    echo ""
+    echo "=== Loaded crontab (what cron is actually using) ==="
+    docker exec ${CONTAINER_NAME} crontab -l | head -15
 else
-    echo "Error: Failed to reload crontab"
+    echo "✗ Error: Failed to reload crontab"
     exit 1
 fi
