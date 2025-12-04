@@ -7,30 +7,30 @@
 # - Download all missing files from last download date + 1 to yesterday
 # - If no files exist, download last 7 days
 
-# OTE-CR - Download day-ahead prices at 13:04
+# OTE-CR - Download day-ahead prices daily at 16:00
 0 16 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 download_day_ahead_prices.py >> /var/log/cron.log 2>&1
 
-# OTE-CR - Download imbalance prices at 13:05
+# OTE-CR - Download imbalance prices every 2 hours
 0 */2 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 download_imbalance_prices.py >> /var/log/cron.log 2>&1
 
-# OTE-CR - Download intraday prices at 13:06
+# OTE-CR - Download intraday prices every 2 hours
 0 */2 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 download_intraday_prices.py >> /var/log/cron.log 2>&1
 
-# PRODUCTION - Download OTE daily settlement reports at 09:00
+# OTE-CR - Download OTE daily settlement reports at 09:00
 0 09 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 ote_production.py >> /var/log/cron.log 2>&1
 
-# PRODUCTION - Download OTE trade balance reports every 3 hours
+# OTE-CR - Download OTE trade balance reports every 2 hours
 0 */2 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 ote_trade_balance_downloader.py >> /var/log/cron.log 2>&1
 
-# PRODUCTION - ENTSO-E Imbalance Data Pipeline - Complete workflow every 15 minutes
+# ENTSO-E - Imbalance data pipeline every 15 minutes
 # Fetches imbalance prices (A85) and volumes (A86), parses, and uploads to database
 */15 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 entsoe/entsoe_imbalance_pipeline.py >> /var/log/cron.log 2>&1
 
-# PRODUCTION - ENTSO-E XML Cleanup - Daily at 2 AM
+# ENTSO-E - XML cleanup daily at 02:00
 # Retention policy: Delete XML files older than 1 day (keep only last 24 hours for verification)
 0 02 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 entsoe/cleanup_old_xml.py >> /var/log/cron.log 2>&1
 
-# to OTE-CR the login to OTE portal
-# root@33fd41015364:/app/scripts# export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 ote_OTE-CR_login.py
+# Manual test command for OTE portal login:
+# export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 ote_OTE-CR_login.py
 
 # Empty line required at end of crontab file
