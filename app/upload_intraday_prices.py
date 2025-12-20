@@ -20,7 +20,7 @@ from psycopg2 import extras
 import pandas as pd
 
 # Import database configuration
-from config import DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT
+from config import DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT, DB_SCHEMA
 
 
 def parse_date_from_filename(filename):
@@ -231,7 +231,8 @@ def process_directory(directory_path):
             password=DB_PASSWORD,
             database=DB_NAME,
             port=DB_PORT,
-            connect_timeout=10
+            connect_timeout=10,
+            options=f'-c search_path={DB_SCHEMA}'
         )
         print("✓ Database connection established\n")
     except Exception as e:

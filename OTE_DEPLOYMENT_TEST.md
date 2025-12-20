@@ -62,9 +62,9 @@ import psycopg2
 from config import DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT
 conn = psycopg2.connect(host=DB_HOST, user=DB_USER, password=DB_PASSWORD, database=DB_NAME, port=DB_PORT)
 cur = conn.cursor()
-cur.execute('SELECT COUNT(*) FROM daily_payments')
-print(f'Total records in daily_payments: {cur.fetchone()[0]}')
-cur.execute('SELECT MAX(delivery_day) FROM daily_payments')
+cur.execute('SELECT COUNT(*) FROM ote_daily_payments')
+print(f'Total records in ote_daily_payments: {cur.fetchone()[0]}')
+cur.execute('SELECT MAX(delivery_day) FROM ote_daily_payments')
 print(f'Latest delivery day: {cur.fetchone()[0]}')
 conn.close()
 "

@@ -20,7 +20,7 @@ from psycopg2 import extras
 import pandas as pd
 
 # Import database configuration and logging
-from config import DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT
+from config import DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT, DB_SCHEMA
 from common import setup_logging, print_banner
 
 # Cutoff date for format change
@@ -449,7 +449,8 @@ def process_directory(directory_path, logger, debug_mode=False):
                 password=DB_PASSWORD,
                 database=DB_NAME,
                 port=DB_PORT,
-                connect_timeout=10
+                connect_timeout=10,
+                options=f'-c search_path={DB_SCHEMA}'
             )
             logger.info("✓ Database connection established\n")
         except Exception as e:

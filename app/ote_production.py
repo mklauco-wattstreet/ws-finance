@@ -431,10 +431,10 @@ def download_daily_payments(driver, logger):
         report.click()
         time.sleep(0.5)
 
-        daily_payments = wait.until(
+        ote_daily_payments = wait.until(
             EC.element_to_be_clickable((By.XPATH, "//*[contains(text(), 'Daily payments')]"))
         )
-        daily_payments.click()
+        ote_daily_payments.click()
         time.sleep(0.5)
         take_screenshot(driver, "daily_payments_page")
 

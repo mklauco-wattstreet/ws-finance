@@ -85,7 +85,7 @@ python3 /app/ote_production.py --setup
 ├── ote_files/                 # Archived XML files
 │   └── {year}/
 │       └── {month}/
-│           └── daily_payments_{timestamp}.xml
+│           └── ote_daily_payments_{timestamp}.xml
 └── browser-profile/           # Chrome profile with certificate
     └── .cert_imported         # Certificate setup flag
 ```

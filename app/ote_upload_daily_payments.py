@@ -14,7 +14,7 @@ import psycopg2
 from psycopg2 import OperationalError, DatabaseError, IntegrityError
 
 # Import database configuration and logging
-from config import DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT
+from config import DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT, DB_SCHEMA
 from common import setup_logging
 
 # XML namespace for OTE portal exports
@@ -155,7 +155,8 @@ def insert_records(records, logger):
             password=DB_PASSWORD,
             database=DB_NAME,
             port=DB_PORT,
-            connect_timeout=10
+            connect_timeout=10,
+            options=f'-c search_path={DB_SCHEMA}'
         )
 
         logger.info("✓ Database connection established")
@@ -165,7 +166,7 @@ def insert_records(records, logger):
         # Prepare duplicate check query
         # Check for duplicates based on delivery_day, settlement_version, settlement_item, and type_of_payment
         check_query = """
-            SELECT COUNT(*) FROM daily_payments
+            SELECT COUNT(*) FROM ote_daily_payments
             WHERE delivery_day = %s
               AND settlement_version = %s
               AND settlement_item = %s
@@ -174,7 +175,7 @@ def insert_records(records, logger):
 
         # Prepare INSERT statement
         insert_query = """
-            INSERT INTO daily_payments (
+            INSERT INTO ote_daily_payments (
                 delivery_day,
                 settlement_version,
                 settlement_item,

@@ -26,7 +26,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from entsoe.entsoe_client import EntsoeClient
 from entsoe.parse_imbalance_to_db import ImbalanceDataParser
-from config import DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT
+from config import DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT, DB_SCHEMA
 import psycopg2
 from psycopg2 import extras
 
@@ -75,7 +75,8 @@ def connect_database(logger):
             password=DB_PASSWORD,
             database=DB_NAME,
             port=DB_PORT,
-            connect_timeout=10
+            connect_timeout=10,
+            options=f'-c search_path={DB_SCHEMA}'
         )
         logger.info(f"✓ Connected to {DB_NAME}@{DB_HOST}:{DB_PORT}")
         return conn

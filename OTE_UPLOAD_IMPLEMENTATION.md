@@ -90,9 +90,9 @@ import psycopg2
 from config import DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT
 conn = psycopg2.connect(host=DB_HOST, user=DB_USER, password=DB_PASSWORD, database=DB_NAME, port=DB_PORT)
 cur = conn.cursor()
-cur.execute('SELECT COUNT(*) FROM daily_payments')
+cur.execute('SELECT COUNT(*) FROM ote_daily_payments')
 print(f'Total records: {cur.fetchone()[0]}')
-cur.execute('SELECT delivery_day, settlement_version, type_of_payment, amount_excl_vat FROM daily_payments ORDER BY delivery_day DESC LIMIT 5')
+cur.execute('SELECT delivery_day, settlement_version, type_of_payment, amount_excl_vat FROM ote_daily_payments ORDER BY delivery_day DESC LIMIT 5')
 print('\nLatest 5 records:')
 for row in cur.fetchall():
     print(row)
@@ -179,19 +179,19 @@ grep ERROR logs/cron.log
 ### Check Database State:
 ```sql
 -- Total records
-SELECT COUNT(*) FROM daily_payments;
+SELECT COUNT(*) FROM ote_daily_payments;
 
 -- Latest delivery day
-SELECT MAX(delivery_day) FROM daily_payments;
+SELECT MAX(delivery_day) FROM ote_daily_payments;
 
 -- Records by type
 SELECT type_of_payment, COUNT(*)
-FROM daily_payments
+FROM ote_daily_payments
 GROUP BY type_of_payment;
 
 -- Recent uploads (based on unique combinations)
 SELECT delivery_day, COUNT(*) as record_count
-FROM daily_payments
+FROM ote_daily_payments
 GROUP BY delivery_day
 ORDER BY delivery_day DESC
 LIMIT 7;
