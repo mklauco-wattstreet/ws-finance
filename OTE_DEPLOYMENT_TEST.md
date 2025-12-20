@@ -10,12 +10,12 @@ docker-compose up -d --build
 
 ### 2. Verify Container is Running
 ```bash
-docker ps | grep python-cron-scheduler
+docker ps | grep entsoe-ote-data-uploader
 ```
 
 ### 3. Check Environment Variables are Set
 ```bash
-docker exec python-cron-scheduler env | grep OTE
+docker exec entsoe-ote-data-uploader env | grep OTE
 ```
 Expected output should show:
 - OTE_CERT_PATH
@@ -25,7 +25,7 @@ Expected output should show:
 ### 4. Initial Certificate Setup
 ```bash
 # First time only - imports certificate into browser profile
-docker exec python-cron-scheduler python3 /app/scripts/ote_production.py --setup
+docker exec entsoe-ote-data-uploader python3 /app/scripts/ote_production.py --setup
 ```
 
 ### 5. Test Login with Test Script
@@ -34,17 +34,17 @@ docker exec python-cron-scheduler python3 /app/scripts/ote_production.py --setup
 ./TEST_OTE_LOGIN.sh
 
 # Method 2: Manual test
-docker exec python-cron-scheduler python3 /app/scripts/ote_test_login.py
+docker exec entsoe-ote-data-uploader python3 /app/scripts/ote_test_login.py
 
 # Copy screenshots to review
-docker cp python-cron-scheduler:/var/log/. logs/
+docker cp entsoe-ote-data-uploader:/var/log/. logs/
 ls -la logs/screenshot_*.png
 ```
 
 ### 6. Manual Test Run of Production Script
 ```bash
 # Test full download AND upload process
-docker exec python-cron-scheduler python3 /app/scripts/ote_production.py
+docker exec entsoe-ote-data-uploader python3 /app/scripts/ote_production.py
 ```
 
 ### 7. Check Downloaded Files
@@ -57,7 +57,7 @@ ls -la ote_files/$(date +%Y)/$(date +%m)/
 ```bash
 # Check database for uploaded records (requires psql access)
 # Replace with your database access method
-docker exec python-cron-scheduler python3 -c "
+docker exec entsoe-ote-data-uploader python3 -c "
 import psycopg2
 from config import DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT
 conn = psycopg2.connect(host=DB_HOST, user=DB_USER, password=DB_PASSWORD, database=DB_NAME, port=DB_PORT)
@@ -73,12 +73,12 @@ conn.close()
 ### 9. Test Upload Script Separately (Optional)
 ```bash
 # Test upload script with existing XML file
-docker exec python-cron-scheduler python3 /app/scripts/ote_upload_daily_payments.py /app/ote_files/2025/11/daily_payments_YYYYMMDD_HHMMSS.xml
+docker exec entsoe-ote-data-uploader python3 /app/scripts/ote_upload_daily_payments.py /app/ote_files/2025/11/daily_payments_YYYYMMDD_HHMMSS.xml
 ```
 
 ### 10. Verify Crontab is Installed
 ```bash
-docker exec python-cron-scheduler crontab -l | grep ote_production
+docker exec entsoe-ote-data-uploader crontab -l | grep ote_production
 ```
 
 ### 11. Check Logs
@@ -92,14 +92,14 @@ tail -n 100 logs/cron.log
 # Add temporary test cron that runs in 1 minute
 current_minute=$(date +%M)
 next_minute=$(( (current_minute + 2) % 60 ))
-docker exec python-cron-scheduler bash -c "crontab -l > /tmp/cron_test && echo '$next_minute * * * * export \$(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 ote_production.py >> /var/log/cron.log 2>&1' >> /tmp/cron_test && crontab /tmp/cron_test"
+docker exec entsoe-ote-data-uploader bash -c "crontab -l > /tmp/cron_test && echo '$next_minute * * * * export \$(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 ote_production.py >> /var/log/cron.log 2>&1' >> /tmp/cron_test && crontab /tmp/cron_test"
 
 # Wait 2-3 minutes then check logs
 sleep 180
 tail -n 50 logs/cron.log
 
 # Remove test cron and restore original
-docker exec python-cron-scheduler crontab /etc/cron.d/python-cron
+docker exec entsoe-ote-data-uploader crontab /etc/cron.d/entsoe-ote-cron
 ```
 
 ## Troubleshooting Commands
@@ -108,23 +108,23 @@ docker exec python-cron-scheduler crontab /etc/cron.d/python-cron
 ```bash
 # Clear browser profile and re-setup
 rm -rf browser-profile/*
-docker exec python-cron-scheduler python3 /app/scripts/ote_production.py --setup
-docker exec python-cron-scheduler python3 /app/scripts/ote_test_login.py
+docker exec entsoe-ote-data-uploader python3 /app/scripts/ote_production.py --setup
+docker exec entsoe-ote-data-uploader python3 /app/scripts/ote_test_login.py
 ```
 
 ### Debug Mode Run
 ```bash
-docker exec python-cron-scheduler python3 /app/scripts/ote_production.py --debug
+docker exec entsoe-ote-data-uploader python3 /app/scripts/ote_production.py --debug
 ```
 
 ### Check Container Logs
 ```bash
-docker logs python-cron-scheduler --tail 100
+docker logs entsoe-ote-data-uploader --tail 100
 ```
 
 ### Interactive Shell
 ```bash
-docker exec -it python-cron-scheduler bash
+docker exec -it entsoe-ote-data-uploader bash
 ```
 
 ## Expected Results

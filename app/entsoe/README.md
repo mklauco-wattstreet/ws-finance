@@ -149,7 +149,7 @@ python3 entsoe/entsoe_parser.py
 ### Test in Docker
 
 ```bash
-docker exec python-cron-scheduler bash -c "cd /app/scripts && python3 entsoe/fetch_entsoe_data.py --debug"
+docker exec entsoe-ote-data-uploader bash -c "cd /app/scripts && python3 entsoe/fetch_entsoe_data.py --debug"
 ```
 
 ## Troubleshooting

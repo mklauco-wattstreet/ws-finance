@@ -2,7 +2,7 @@
 # Usage: docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 
 services:
-  python-cron:
+  entsoe-ote-data-uploader:
     # Remove extra_hosts in production (override to empty)
     extra_hosts: []
     # Join the same network as your database container

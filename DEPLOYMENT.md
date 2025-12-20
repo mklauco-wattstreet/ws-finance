@@ -62,19 +62,19 @@ DB_HOST=finance-db
 docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 
 # Verify it's running
-docker ps | grep python-cron
+docker ps | grep entsoe-ote-data-uploader
 
 # Check logs
-docker logs python-cron-scheduler
+docker logs entsoe-ote-data-uploader
 ```
 
 **5. Test the connection:**
 ```bash
 # Check if container can reach database
-docker exec python-cron-scheduler getent hosts <DB_HOST>
+docker exec entsoe-ote-data-uploader getent hosts <DB_HOST>
 
 # Run a manual test
-docker exec python-cron-scheduler /usr/local/bin/python3 /app/scripts/download_day_ahead_prices.py
+docker exec entsoe-ote-data-uploader /usr/local/bin/python3 /app/scripts/download_day_ahead_prices.py
 ```
 
 **6. Update crontab schedule:**

@@ -170,12 +170,12 @@ docker-compose restart
 
 ### Execute a script manually
 ```bash
-docker-compose exec python-cron python /app/scripts/your_script.py
+docker-compose exec entsoe-ote-data-uploader python /app/scripts/your_script.py
 ```
 
 ### Check crontab inside container
 ```bash
-docker-compose exec python-cron crontab -l
+docker-compose exec entsoe-ote-data-uploader crontab -l
 ```
 
 ## Development vs Production
@@ -218,7 +218,7 @@ services:
 ## Troubleshooting
 
 ### Cron jobs not running
-1. Check crontab syntax: `docker-compose exec python-cron crontab -l`
+1. Check crontab syntax: `docker-compose exec entsoe-ote-data-uploader crontab -l`
 2. Verify logs: `tail -f logs/cron.log`
 3. Ensure script paths are `/app/scripts/your_script.py`
 

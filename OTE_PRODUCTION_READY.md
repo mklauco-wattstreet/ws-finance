@@ -29,12 +29,12 @@ docker-compose up -d --build
 ### 3. Certificate Installation
 Run once to import certificate:
 ```bash
-docker exec python-cron-scheduler python3 /app/scripts/ote_production.py --setup
+docker exec entsoe-ote-data-uploader python3 /app/scripts/ote_production.py --setup
 ```
 
 ### 4. Verify Setup
 ```bash
-docker exec python-cron-scheduler python3 /app/scripts/ote_test_login.py
+docker exec entsoe-ote-data-uploader python3 /app/scripts/ote_test_login.py
 ```
 
 ## Production Deployment
@@ -44,7 +44,7 @@ Entry runs daily at 09:00 Europe/Prague time.
 
 ### Verify Crontab
 ```bash
-docker exec python-cron-scheduler crontab -l | grep ote
+docker exec entsoe-ote-data-uploader crontab -l | grep ote
 ```
 
 ## Daily Operation

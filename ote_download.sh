@@ -4,7 +4,7 @@
 # To be run daily at 09:00 via crontab
 
 # Run the downloader
-docker exec python-cron-scheduler bash -c "cd /app/scripts && python3 ote_final.py --debug"
+docker exec entsoe-ote-data-uploader bash -c "cd /app/scripts && python3 ote_final.py --debug"
 
 # Check exit status
 if [ $? -eq 0 ]; then

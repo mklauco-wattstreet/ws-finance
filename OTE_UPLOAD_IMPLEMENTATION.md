@@ -70,13 +70,13 @@ Enhanced to:
 ls -la ote_files/2025/11/
 
 # Test upload with that file
-docker exec python-cron-scheduler python3 /app/scripts/ote_upload_daily_payments.py /app/ote_files/2025/11/daily_payments_YYYYMMDD_HHMMSS.xml
+docker exec entsoe-ote-data-uploader python3 /app/scripts/ote_upload_daily_payments.py /app/ote_files/2025/11/daily_payments_YYYYMMDD_HHMMSS.xml
 ```
 
 ### 2. Test Complete Workflow (Download + Upload)
 ```bash
 # Run production script manually
-docker exec python-cron-scheduler python3 /app/scripts/ote_production.py
+docker exec entsoe-ote-data-uploader python3 /app/scripts/ote_production.py
 
 # Check logs for both download and upload
 tail -n 100 logs/cron.log
@@ -85,7 +85,7 @@ tail -n 100 logs/cron.log
 ### 3. Verify Database Records
 ```bash
 # Check if records were inserted
-docker exec python-cron-scheduler python3 -c "
+docker exec entsoe-ote-data-uploader python3 -c "
 import psycopg2
 from config import DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT
 conn = psycopg2.connect(host=DB_HOST, user=DB_USER, password=DB_PASSWORD, database=DB_NAME, port=DB_PORT)
@@ -162,7 +162,7 @@ conn.close()
 - Downloaded XML files are kept in `/app/ote_files`
 - Can be manually re-uploaded using:
   ```bash
-  docker exec python-cron-scheduler python3 /app/scripts/ote_upload_daily_payments.py <xml_file_path>
+  docker exec entsoe-ote-data-uploader python3 /app/scripts/ote_upload_daily_payments.py <xml_file_path>
   ```
 
 ## Monitoring
@@ -214,7 +214,7 @@ LIMIT 7;
 
 1. **Test the complete workflow:**
    ```bash
-   docker exec python-cron-scheduler python3 /app/scripts/ote_production.py
+   docker exec entsoe-ote-data-uploader python3 /app/scripts/ote_production.py
    ```
 
 2. **Verify database records were inserted**

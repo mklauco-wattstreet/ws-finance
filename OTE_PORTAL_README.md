@@ -84,7 +84,7 @@ volumes:
 ### First Time Setup (Import Certificate)
 
 ```bash
-docker exec python-cron-scheduler bash -c "/usr/local/bin/python3 /app/scripts/download_ote_portal.py --setup --debug"
+docker exec entsoe-ote-data-uploader bash -c "/usr/local/bin/python3 /app/scripts/download_ote_portal.py --setup --debug"
 ```
 
 This only needs to be run once. The certificate is stored in the browser profile.
@@ -92,7 +92,7 @@ This only needs to be run once. The certificate is stored in the browser profile
 ### Regular Download
 
 ```bash
-docker exec python-cron-scheduler bash -c "/usr/local/bin/python3 /app/scripts/download_ote_portal.py --debug"
+docker exec entsoe-ote-data-uploader bash -c "/usr/local/bin/python3 /app/scripts/download_ote_portal.py --debug"
 ```
 
 ## Daily Payments Download Flow
@@ -157,13 +157,13 @@ All steps capture screenshots to `/var/log/screenshot_*.png`:
 ### Retrieve Screenshots
 
 ```bash
-docker cp python-cron-scheduler:/var/log/screenshot_*.png logs/
+docker cp entsoe-ote-data-uploader:/var/log/screenshot_*.png logs/
 ```
 
 ### Check Logs
 
 ```bash
-docker logs python-cron-scheduler
+docker logs entsoe-ote-data-uploader
 ```
 
 ## Technical Details

@@ -4,7 +4,7 @@
 printenv | grep -E '^(DB_|PYTHONPATH|TZ|ENTSOE_|OTE_)' > /etc/environment_for_cron
 
 # Load the crontab from the mounted file
-crontab /etc/cron.d/python-cron
+crontab /etc/cron.d/entsoe-ote-cron
 
 # Start cron in foreground
 echo "Starting cron service..."

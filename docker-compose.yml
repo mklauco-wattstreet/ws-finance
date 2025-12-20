@@ -1,9 +1,9 @@
 services:
-  python-cron:
+  entsoe-ote-data-uploader:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: python-cron-scheduler
+    container_name: entsoe-ote-data-uploader
     restart: unless-stopped
     volumes:
       # Mount app directory containing Python scripts (read-write for downloads)
@@ -11,7 +11,7 @@ services:
       # Mount logs directory to access logs from host
       - ./logs:/var/log
       # Mount crontab file so it can be updated without rebuilding
-      - ./crontab:/etc/cron.d/python-cron:ro
+      - ./crontab:/etc/cron.d/entsoe-ote-cron:ro
       # Mount certificates directory (create ./certs on host and place certificates there)
       - ./certs:/app/certs:ro
       # Mount browser profile directory to persist certificates in local storage

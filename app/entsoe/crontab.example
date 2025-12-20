@@ -20,7 +20,7 @@
 # */15 * * * * cd /app && /usr/local/bin/python3 entsoe/fetch_entsoe_data.py >> /var/log/entsoe_fetch.log 2>&1
 
 # Alternative: Run from Docker exec (if running outside container)
-# */15 * * * * docker exec python-cron-scheduler /usr/local/bin/python3 /app/entsoe/fetch_entsoe_data.py >> /var/log/entsoe_fetch.log 2>&1
+# */15 * * * * docker exec entsoe-ote-data-uploader /usr/local/bin/python3 /app/entsoe/fetch_entsoe_data.py >> /var/log/entsoe_fetch.log 2>&1
 
 # Optional: Fetch only prices (A85) - every 15 minutes
 # */15 * * * * /usr/local/bin/python3 /app/entsoe/fetch_entsoe_data.py --document-type A85 >> /var/log/entsoe_prices.log 2>&1

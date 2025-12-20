@@ -35,7 +35,7 @@ Edit `docker-compose.prod.yml` and replace `finance-network` with your actual ne
 
 ```yaml
 services:
-  python-cron:
+  entsoe-ote-data-uploader:
     networks:
       - your-actual-network-name  # Line 10
 
@@ -80,10 +80,10 @@ docker ps | grep postgres
 docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 
 # Verify running
-docker ps | grep python-cron
+docker ps | grep entsoe-ote-data-uploader
 
 # Check logs
-docker logs python-cron-scheduler
+docker logs entsoe-ote-data-uploader
 ```
 
 ---
@@ -92,7 +92,7 @@ docker logs python-cron-scheduler
 
 ```bash
 # Test DNS resolution
-docker exec python-cron-scheduler getent hosts postgres
+docker exec entsoe-ote-data-uploader getent hosts postgres
 
 # Should output something like:
 # 172.18.0.2    postgres
@@ -104,7 +104,7 @@ docker exec python-cron-scheduler getent hosts postgres
 
 ```bash
 # Run a manual test
-docker exec python-cron-scheduler bash -c "export \$(cat /etc/environment_for_cron | xargs) && /usr/local/bin/python3 /app/scripts/download_day_ahead_prices.py"
+docker exec entsoe-ote-data-uploader bash -c "export \$(cat /etc/environment_for_cron | xargs) && /usr/local/bin/python3 /app/scripts/download_day_ahead_prices.py"
 
 # Check logs
 tail -f logs/cron.log
@@ -145,7 +145,7 @@ Then reload:
 
 ```bash
 # View logs
-docker logs -f python-cron-scheduler
+docker logs -f entsoe-ote-data-uploader
 tail -f logs/cron.log
 
 # Reload crontab after changes
@@ -158,13 +158,13 @@ docker-compose restart
 docker-compose down
 
 # View crontab
-docker exec python-cron-scheduler crontab -l
+docker exec entsoe-ote-data-uploader crontab -l
 
 # Manual test download
-docker exec python-cron-scheduler /usr/local/bin/python3 /app/scripts/download_day_ahead_prices.py
+docker exec entsoe-ote-data-uploader /usr/local/bin/python3 /app/scripts/download_day_ahead_prices.py
 
 # Manual test upload
-docker exec python-cron-scheduler bash -c "export \$(cat /etc/environment_for_cron | xargs) && /usr/local/bin/python3 /app/scripts/upload_day_ahead_prices.py 2025/11"
+docker exec entsoe-ote-data-uploader bash -c "export \$(cat /etc/environment_for_cron | xargs) && /usr/local/bin/python3 /app/scripts/upload_day_ahead_prices.py 2025/11"
 ```
 
 ---
@@ -174,20 +174,20 @@ docker exec python-cron-scheduler bash -c "export \$(cat /etc/environment_for_cr
 **Container can't connect to database:**
 ```bash
 # 1. Check both containers are on same network
-docker inspect python-cron-scheduler | grep -A 10 Networks
+docker inspect entsoe-ote-data-uploader | grep -A 10 Networks
 docker inspect <postgres-container> | grep -A 10 Networks
 
 # 2. Test DNS resolution
-docker exec python-cron-scheduler getent hosts <DB_HOST>
+docker exec entsoe-ote-data-uploader getent hosts <DB_HOST>
 
 # 3. Check environment variables
-docker exec python-cron-scheduler cat /etc/environment_for_cron
+docker exec entsoe-ote-data-uploader cat /etc/environment_for_cron
 ```
 
 **Crontab not running:**
 ```bash
 # Check crontab is loaded
-docker exec python-cron-scheduler crontab -l
+docker exec entsoe-ote-data-uploader crontab -l
 
 # Reload crontab
 ./reload-crontab.sh
@@ -199,7 +199,7 @@ tail -f logs/cron.log
 **Environment variables not found:**
 ```bash
 # Verify env file exists
-docker exec python-cron-scheduler cat /etc/environment_for_cron
+docker exec entsoe-ote-data-uploader cat /etc/environment_for_cron
 
 # Should show:
 # DB_HOST=postgres
@@ -250,7 +250,7 @@ docker exec python-cron-scheduler cat /etc/environment_for_cron
 - [ ] Create `.env` from `.env.production.example`
 - [ ] Set `DB_HOST` to PostgreSQL container name in `.env`
 - [ ] Deploy: `docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build`
-- [ ] Test database connection: `docker exec python-cron-scheduler getent hosts postgres`
+- [ ] Test database connection: `docker exec entsoe-ote-data-uploader getent hosts postgres`
 - [ ] Run manual test download
 - [ ] Edit `crontab` for production schedule
 - [ ] Reload crontab: `./reload-crontab.sh`

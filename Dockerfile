@@ -16,13 +16,13 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy crontab file
-COPY crontab /etc/cron.d/python-cron
+COPY crontab /etc/cron.d/entsoe-ote-cron
 
 # Give execution rights on the cron job
-RUN chmod 0644 /etc/cron.d/python-cron
+RUN chmod 0644 /etc/cron.d/entsoe-ote-cron
 
 # Apply cron job
-RUN crontab /etc/cron.d/python-cron
+RUN crontab /etc/cron.d/entsoe-ote-cron
 
 # Create the log file to be able to run tail
 RUN touch /var/log/cron.log
