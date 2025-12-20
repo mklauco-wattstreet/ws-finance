@@ -149,7 +149,7 @@ def upload_to_database(records, conn, trade_date):
     cursor = conn.cursor()
 
     insert_query = """
-        INSERT INTO prices_imbalance (
+        INSERT INTO ote_prices_imbalance (
             trade_date, period, time_interval,
             system_imbalance_mwh, absolute_imbalance_sum_mwh,
             positive_imbalance_mwh, negative_imbalance_mwh,
