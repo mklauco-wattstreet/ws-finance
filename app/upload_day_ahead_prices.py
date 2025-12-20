@@ -361,7 +361,7 @@ def upload_to_database(records, conn, trade_date):
     cursor = conn.cursor()
 
     insert_query = """
-        INSERT INTO prices_day_ahead (
+        INSERT INTO ote_prices_day_ahead (
             trade_date, period, time_interval,
             price_15min_eur_mwh, volume_mwh,
             purchase_15min_products_mwh, purchase_60min_products_mwh,

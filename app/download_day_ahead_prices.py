@@ -96,7 +96,7 @@ def download_report(date, base_dir, logger):
 
     Args:
         date: datetime object
-        base_dir: Base directory for organizing files (prices_day_ahead)
+        base_dir: Base directory for organizing files (ote_prices_day_ahead)
         logger: Logger instance
 
     Returns:
@@ -146,7 +146,7 @@ def main():
     # Setup logging
     logger = setup_logging(debug=debug_mode)
 
-    # Get the script's directory (prices_day_ahead)
+    # Get the script's directory (ote_prices_day_ahead)
     script_dir = Path(__file__).parent.absolute()
 
     if auto_mode:
