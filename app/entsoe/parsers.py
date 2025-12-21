@@ -728,6 +728,194 @@ class GenerationParser(BaseParser):
         return result
 
 
+class CrossBorderFlowsParser(BaseParser):
+    """Parser for ENTSO-E Cross-Border Physical Flows (A11) - Wide Format.
+
+    Aggregates flows from all CZ borders into wide-format columns per timestamp.
+
+    Border Columns:
+    - flow_de_mw: Physical flow to/from Germany
+    - flow_at_mw: Physical flow to/from Austria
+    - flow_pl_mw: Physical flow to/from Poland
+    - flow_sk_mw: Physical flow to/from Slovakia
+    - flow_total_net_mw: Sum of all border flows
+
+    Flow Direction Convention:
+    - Positive = Import into CZ (in_Domain == CZ_BZN)
+    - Negative = Export from CZ (out_Domain == CZ_BZN)
+
+    Resolution Priority: PT15M > PT60M (if both present, use 15-minute data)
+    """
+
+    # EIC code for Czech Republic
+    CZ_BZN = "10YCZ-CEPS-----N"
+
+    # Neighbor EIC to column suffix mapping
+    NEIGHBOR_TO_COLUMN = {
+        "10YDE-EON------1": "de",  # Germany TenneT
+        "10YAT-APG------L": "at",  # Austria
+        "10YPL-AREA-----S": "pl",  # Poland
+        "10YSK-SEPS-----K": "sk",  # Slovakia
+    }
+
+    # All wide-format border columns
+    FLOW_COLUMNS = ['flow_de_mw', 'flow_at_mw', 'flow_pl_mw', 'flow_sk_mw']
+
+    def __init__(self):
+        super().__init__()
+        # Intermediate storage: key=delivery_datetime, value={column: (value, resolution)}
+        self._wide_data: Dict[datetime, Dict[str, tuple]] = {}
+        import logging
+        self.logger = logging.getLogger(__name__)
+
+    def parse_xml(self, xml_file_path: str) -> List[Dict[str, Any]]:
+        """
+        Parse A11 (Physical Flows) XML file.
+
+        This method parses a single XML file for one border direction.
+        Call multiple times for all border pairs, then call get_wide_format_data().
+
+        Args:
+            xml_file_path: Path to A11 XML file
+
+        Returns:
+            Empty list (use get_wide_format_data() after parsing all XMLs)
+        """
+        tree = ET.parse(xml_file_path)
+        root = tree.getroot()
+
+        for timeseries in root.findall('.//{*}TimeSeries'):
+            # Get domain directions
+            in_domain_elem = timeseries.find('.//{*}in_Domain.mRID')
+            out_domain_elem = timeseries.find('.//{*}out_Domain.mRID')
+
+            in_domain = in_domain_elem.text if in_domain_elem is not None else None
+            out_domain = out_domain_elem.text if out_domain_elem is not None else None
+
+            if in_domain is None or out_domain is None:
+                self.logger.warning(f"Missing domain info in TimeSeries, skipping")
+                continue
+
+            # Determine flow direction and neighbor
+            if in_domain == self.CZ_BZN:
+                # Import into CZ from neighbor (positive)
+                neighbor_eic = out_domain
+                direction = 1.0
+            elif out_domain == self.CZ_BZN:
+                # Export from CZ to neighbor (negative)
+                neighbor_eic = in_domain
+                direction = -1.0
+            else:
+                # Neither domain is CZ, skip
+                continue
+
+            # Get column suffix for this neighbor
+            col_suffix = self.NEIGHBOR_TO_COLUMN.get(neighbor_eic)
+            if col_suffix is None:
+                self.logger.debug(f"Unknown neighbor EIC: {neighbor_eic}, skipping")
+                continue
+
+            column = f"flow_{col_suffix}_mw"
+
+            for period in timeseries.findall('{*}Period'):
+                self._process_flow_period(period, column, direction)
+
+        return []
+
+    def _process_flow_period(self, period: ET.Element, column: str, direction: float) -> None:
+        """Process a single Period element from A11 XML."""
+        time_interval = period.find('{*}timeInterval')
+        start_elem = time_interval.find('{*}start')
+        end_elem = time_interval.find('{*}end')
+        period_start = self.parse_timestamp(start_elem.text)
+        period_end = self.parse_timestamp(end_elem.text)
+
+        resolution_elem = period.find('{*}resolution')
+        resolution = resolution_elem.text if resolution_elem is not None else 'PT15M'
+        resolution_minutes = self.get_resolution_minutes(resolution)
+
+        for point in period.findall('{*}Point'):
+            position = int(point.find('{*}position').text)
+            quantity_elem = point.find('{*}quantity')
+            quantity = float(quantity_elem.text) if quantity_elem is not None else 0.0
+
+            # Apply direction (positive for import, negative for export)
+            flow_value = quantity * direction
+
+            interval_idx = position - 1
+            point_time_utc = period_start + timedelta(minutes=interval_idx * resolution_minutes)
+            point_time_local = self.convert_to_local_time(point_time_utc)
+
+            # Use local datetime as key (aligned with Prague timezone)
+            # Remove timezone info for storage (will be naive datetime in local time)
+            delivery_datetime = point_time_local.replace(tzinfo=None)
+
+            # Initialize key if not exists
+            if delivery_datetime not in self._wide_data:
+                self._wide_data[delivery_datetime] = {'columns': {}}
+
+            # Resolution priority: PT15M (15) > PT60M (60)
+            current = self._wide_data[delivery_datetime]['columns'].get(column)
+            if current is None:
+                # First value for this column
+                self._wide_data[delivery_datetime]['columns'][column] = (flow_value, resolution_minutes)
+            else:
+                existing_value, existing_res = current
+                if resolution_minutes < existing_res:
+                    # New data has finer resolution, replace
+                    self._wide_data[delivery_datetime]['columns'][column] = (flow_value, resolution_minutes)
+                elif resolution_minutes == existing_res:
+                    # Same resolution, same direction - use latest value (should be same)
+                    # Note: For A11, we expect one direction per XML, so no aggregation needed
+                    self._wide_data[delivery_datetime]['columns'][column] = (flow_value, resolution_minutes)
+
+    def get_wide_format_data(self, area_id: str = None) -> List[Dict[str, Any]]:
+        """
+        Convert intermediate data to final wide-format records.
+
+        Args:
+            area_id: Area ID to use (defaults to CZ_BZN)
+
+        Returns:
+            List of wide-format flow records (one row per timestamp)
+        """
+        if area_id is None:
+            area_id = self.CZ_BZN
+
+        result = []
+
+        for delivery_datetime in sorted(self._wide_data.keys()):
+            data = self._wide_data[delivery_datetime]
+
+            record = {
+                'delivery_datetime': delivery_datetime,
+                'area_id': area_id,
+            }
+
+            # Add all flow columns, defaulting to None for missing
+            total = 0.0
+            has_any_flow = False
+            for col in self.FLOW_COLUMNS:
+                col_data = data['columns'].get(col)
+                if col_data:
+                    record[col] = col_data[0]
+                    total += col_data[0]
+                    has_any_flow = True
+                else:
+                    record[col] = None
+
+            # Calculate total net flow
+            record['flow_total_net_mw'] = total if has_any_flow else None
+
+            result.append(record)
+
+        return result
+
+    def clear(self) -> None:
+        """Clear intermediate data for reuse."""
+        self._wide_data.clear()
+
+
 # Backward compatibility alias
 ImbalanceDataParser = ImbalanceParser
 

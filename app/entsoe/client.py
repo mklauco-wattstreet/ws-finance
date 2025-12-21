@@ -39,6 +39,7 @@ class EntsoeClient:
     DOC_TYPE_ACTUAL_LOAD = "A65"  # 6.1.A Actual Total Load
     DOC_TYPE_LOAD_FORECAST = "A65"  # 6.1.B Day-Ahead Total Load Forecast
     DOC_TYPE_GENERATION_PER_TYPE = "A75"  # 14.1.C/D Actual Generation per Type
+    DOC_TYPE_CROSS_BORDER_FLOWS = "A11"  # 12.1.F Physical Flows
 
     # Process types for A65 differentiation
     PROCESS_TYPE_REALISED = "A16"  # Actual load
@@ -146,17 +147,21 @@ class EntsoeClient:
         period_start: datetime,
         period_end: datetime,
         process_type: Optional[str] = None,
-        psr_type: Optional[str] = None
+        psr_type: Optional[str] = None,
+        in_domain: Optional[str] = None,
+        out_domain: Optional[str] = None
     ) -> str:
         """
         Build API request URL.
 
         Args:
-            document_type: Document type code (A85, A86, A65, A75)
+            document_type: Document type code (A85, A86, A65, A75, A11)
             period_start: Start datetime
             period_end: End datetime
             process_type: Optional process type (A01, A16)
             psr_type: Optional PSR type for generation queries (B01-B20)
+            in_domain: Optional in_Domain for A11 cross-border flows
+            out_domain: Optional out_Domain for A11 cross-border flows
 
         Returns:
             str: Complete API URL (token masked in logs)
@@ -183,6 +188,14 @@ class EntsoeClient:
         if document_type == self.DOC_TYPE_GENERATION_PER_TYPE:
             params["in_Domain"] = params.pop("controlArea_Domain")
 
+        # For A11 (cross-border flows), use in_Domain and out_Domain
+        if document_type == self.DOC_TYPE_CROSS_BORDER_FLOWS:
+            params.pop("controlArea_Domain")
+            if in_domain:
+                params["in_Domain"] = in_domain
+            if out_domain:
+                params["out_Domain"] = out_domain
+
         # Build query string
         query_string = "&".join([f"{key}={value}" for key, value in params.items()])
         return f"{self.base_url}?{query_string}"
@@ -194,17 +207,21 @@ class EntsoeClient:
         period_end: datetime,
         process_type: Optional[str] = None,
         psr_type: Optional[str] = None,
+        in_domain: Optional[str] = None,
+        out_domain: Optional[str] = None,
         timeout: int = 60
     ) -> str:
         """
         Fetch data from ENTSO-E API with validation and retry.
 
         Args:
-            document_type: Document type code (A85, A86, A65, A75)
+            document_type: Document type code (A85, A86, A65, A75, A11)
             period_start: Start datetime
             period_end: End datetime
             process_type: Optional process type
             psr_type: Optional PSR type for generation
+            in_domain: Optional in_Domain for A11 cross-border flows
+            out_domain: Optional out_Domain for A11 cross-border flows
             timeout: Request timeout in seconds
 
         Returns:
@@ -218,7 +235,8 @@ class EntsoeClient:
         self._validate_date_range(period_start, period_end)
 
         url = self._build_url(
-            document_type, period_start, period_end, process_type, psr_type
+            document_type, period_start, period_end, process_type, psr_type,
+            in_domain, out_domain
         )
 
         try:
@@ -381,6 +399,33 @@ class EntsoeClient:
             period_end,
             process_type=self.PROCESS_TYPE_REALISED,
             psr_type=psr_type
+        )
+
+    def fetch_cross_border_flows(
+        self,
+        period_start: datetime,
+        period_end: datetime,
+        in_domain: str,
+        out_domain: str
+    ) -> str:
+        """
+        Fetch cross-border physical flows (documentType=A11).
+
+        Args:
+            period_start: Start datetime
+            period_end: End datetime
+            in_domain: Importing domain EIC code
+            out_domain: Exporting domain EIC code
+
+        Returns:
+            str: XML content
+        """
+        return self.fetch_data(
+            self.DOC_TYPE_CROSS_BORDER_FLOWS,
+            period_start,
+            period_end,
+            in_domain=in_domain,
+            out_domain=out_domain
         )
 
     @staticmethod

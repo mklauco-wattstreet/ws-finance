@@ -250,3 +250,31 @@ class EntsoeGenerationActual(Base):
     gen_biomass_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     gen_hydro_other_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+
+
+class EntsoeCrossBorderFlows(Base):
+    """ENTSO-E cross-border physical flows in wide format (15-minute intervals).
+
+    Wide-format columns for each neighboring border:
+    - flow_de_mw: Physical flow to/from Germany (positive = import, negative = export)
+    - flow_at_mw: Physical flow to/from Austria
+    - flow_pl_mw: Physical flow to/from Poland
+    - flow_sk_mw: Physical flow to/from Slovakia
+    - flow_total_net_mw: Sum of all border flows
+    """
+    __tablename__ = 'entsoe_cross_border_flows'
+    __table_args__ = (
+        PrimaryKeyConstraint('id', name='entsoe_cross_border_flows_pkey'),
+        UniqueConstraint('delivery_datetime', 'area_id', name='entsoe_cross_border_flows_datetime_area_key'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(Integer, autoincrement=True)
+    delivery_datetime: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    area_id: Mapped[str] = mapped_column(String(20), nullable=False)
+    flow_de_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    flow_at_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    flow_pl_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    flow_sk_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    flow_total_net_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
