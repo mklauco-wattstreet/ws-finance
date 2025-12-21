@@ -43,3 +43,12 @@ Supervised by a Senior Architect. Do not implement complex logic or structural c
 2. **Confirm:** Wait for Architect approval.
 3. **Implement:** Write modular, typed Python code.
 4. **Verify:** Provide `docker compose exec` commands for testing.
+
+## 🔒 SECURITY & ROBUSTNESS
+* **Token Masking:** Never log security tokens or API keys. Mask them as `***` or `[CONFIGURED]`.
+* **Retry Logic:** All external API calls must use exponential backoff (e.g., `tenacity` or `urllib3` retries).
+* **Validation:** Validate all API inputs (ranges, EIC codes) and XML outputs (XSD validation where possible).
+
+## 📊 DATABASE BEST PRACTICES
+* **No Individual Inserts:** Use `execute_values` for all batch operations.
+* **Connection Management:** Use a context manager for database connections to ensure they are closed or returned to the pool.

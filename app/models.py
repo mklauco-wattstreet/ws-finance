@@ -195,3 +195,58 @@ class OteTradeBalance(Base):
     realization_diagrams_buy_mwh: Mapped[Decimal] = mapped_column(Numeric(12, 5), nullable=False)
     realization_diagrams_sell_mwh: Mapped[Decimal] = mapped_column(Numeric(12, 5), nullable=False)
     uploaded_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+
+
+class EntsoeLoad(Base):
+    """ENTSO-E load data (actual and forecast, 15-minute intervals)."""
+    __tablename__ = 'entsoe_load'
+    __table_args__ = (
+        PrimaryKeyConstraint('id', name='entsoe_load_pkey'),
+        UniqueConstraint('trade_date', 'period', name='entsoe_load_trade_date_period_key'),
+        UniqueConstraint('trade_date', 'time_interval', name='entsoe_load_trade_date_time_interval_key'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(Integer, autoincrement=True)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    period: Mapped[int] = mapped_column(Integer, nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    actual_load_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    forecast_load_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+
+
+class EntsoeGenerationActual(Base):
+    """ENTSO-E actual generation data in wide format (15-minute intervals).
+
+    Wide-format columns with aggregated PSR types:
+    - gen_nuclear_mw: B14 (Nuclear)
+    - gen_coal_mw: B02 (Brown coal/Lignite) + B05 (Hard coal)
+    - gen_gas_mw: B04 (Fossil Gas)
+    - gen_solar_mw: B16 (Solar)
+    - gen_wind_mw: B19 (Wind Onshore)
+    - gen_hydro_pumped_mw: B10 (Hydro Pumped Storage)
+    - gen_biomass_mw: B01 (Biomass)
+    - gen_hydro_other_mw: B11 (Run-of-river) + B12 (Water Reservoir)
+    """
+    __tablename__ = 'entsoe_generation_actual'
+    __table_args__ = (
+        PrimaryKeyConstraint('id', name='entsoe_generation_actual_pkey'),
+        UniqueConstraint('trade_date', 'period', name='entsoe_generation_actual_trade_date_period_key'),
+        UniqueConstraint('trade_date', 'time_interval', name='entsoe_generation_actual_trade_date_time_interval_key'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(Integer, autoincrement=True)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    period: Mapped[int] = mapped_column(Integer, nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    gen_nuclear_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    gen_coal_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    gen_gas_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    gen_solar_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    gen_wind_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    gen_hydro_pumped_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    gen_biomass_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    gen_hydro_other_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')

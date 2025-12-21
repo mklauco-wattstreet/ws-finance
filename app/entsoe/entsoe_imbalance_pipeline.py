@@ -24,8 +24,8 @@ from datetime import datetime, timedelta, timezone
 # Add parent to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from entsoe.entsoe_client import EntsoeClient
-from entsoe.parse_imbalance_to_db import ImbalanceDataParser
+from entsoe.client import EntsoeClient
+from entsoe.parsers import ImbalanceParser
 from config import DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT, DB_SCHEMA
 import psycopg2
 from psycopg2 import extras
@@ -251,7 +251,7 @@ def main():
     # Parse data
     logger.info("")
     logger.info("Parsing XML data...")
-    data_parser = ImbalanceDataParser()
+    data_parser = ImbalanceParser()
 
     try:
         data_parser.parse_prices_xml(str(prices_file))

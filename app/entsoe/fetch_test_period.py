@@ -2,7 +2,7 @@
 """Fetch test data for specific period."""
 import sys
 sys.path.insert(0, '/app/scripts')
-from entsoe.entsoe_client import EntsoeClient
+from entsoe.client import EntsoeClient
 from datetime import datetime
 from pathlib import Path
 

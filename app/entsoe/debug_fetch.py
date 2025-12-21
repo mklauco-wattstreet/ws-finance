@@ -3,7 +3,7 @@
 
 import sys
 sys.path.insert(0, '/app/scripts')
-from entsoe.entsoe_client import EntsoeClient
+from entsoe.client import EntsoeClient
 from datetime import datetime, timedelta
 import xml.etree.ElementTree as ET
 

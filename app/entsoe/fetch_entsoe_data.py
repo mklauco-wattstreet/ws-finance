@@ -21,7 +21,7 @@ from pathlib import Path
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from entsoe.entsoe_client import EntsoeClient
+from entsoe.client import EntsoeClient
 
 
 def setup_logging(debug=False):
