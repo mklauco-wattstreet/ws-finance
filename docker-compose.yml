@@ -8,6 +8,8 @@ services:
     volumes:
       # Mount app directory containing Python scripts (read-write for downloads)
       - ./app:/app/scripts
+      # Mount alembic.ini for database migrations
+      - ./alembic.ini:/app/alembic.ini:ro
       # Mount logs directory to access logs from host
       - ./logs:/var/log
       # Mount crontab file so it can be updated without rebuilding

@@ -9,6 +9,8 @@ scipy>=1.10.0
 
 # Database
 psycopg2-binary>=2.9.0
+sqlalchemy>=2.0.0
+alembic>=1.13.0
 
 # HTTP (optional - download scripts use stdlib urllib)
 requests>=2.31.0
