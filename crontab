@@ -34,6 +34,10 @@
 # Fetches actual generation per type (A75) for all PSR types
 */15 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 runners/entsoe_gen_runner.py >> /var/log/cron.log 2>&1
 
+# ENTSO-E - Cross-border flows pipeline every 15 minutes
+# Fetches physical flows (A11) for all CZ border pairs (DE, AT, PL, SK)
+*/15 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 runners/entsoe_flow_runner.py >> /var/log/cron.log 2>&1
+
 # ENTSO-E - XML cleanup daily at 02:00
 # Retention policy: Delete XML files older than 1 day (keep only last 24 hours for verification)
 0 02 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 entsoe/cleanup_old_xml.py >> /var/log/cron.log 2>&1
