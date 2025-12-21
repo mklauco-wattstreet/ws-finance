@@ -36,8 +36,8 @@ class LoadRunner(BaseRunner):
     ]
     CONFLICT_COLUMNS = ["trade_date", "period"]
 
-    def __init__(self, debug: bool = False, dry_run: bool = False):
-        super().__init__(debug, dry_run)
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
         self.client = None
         self.parser = None
 
@@ -133,6 +133,55 @@ class LoadRunner(BaseRunner):
             ))
         return records
 
+    def _process_chunk(self, period_start, period_end, conn=None) -> int:
+        """
+        Process a single time chunk: fetch, parse, and upload.
+
+        Args:
+            period_start: Start datetime (UTC)
+            period_end: End datetime (UTC)
+            conn: Optional database connection (for batch operations)
+
+        Returns:
+            Number of records processed
+        """
+        self.logger.info(
+            f"Processing: {period_start.strftime('%Y-%m-%d %H:%M')} "
+            f"to {period_end.strftime('%Y-%m-%d %H:%M')} UTC"
+        )
+
+        # Fetch data
+        actual_xml, forecast_xml = self._fetch_data(period_start, period_end)
+
+        # Save XML files
+        actual_file, forecast_file = self._save_xml_files(
+            actual_xml, forecast_xml, period_start, period_end
+        )
+
+        # Parse data
+        combined_data = self._parse_data(actual_file, forecast_file)
+
+        if not combined_data:
+            self.logger.warning("No data in this chunk")
+            return 0
+
+        # Prepare records for bulk insert
+        records = self._prepare_records(combined_data)
+
+        # Upload to database
+        if not self.dry_run and conn:
+            self.bulk_upsert(
+                conn,
+                self.TABLE_NAME,
+                self.COLUMNS,
+                records,
+                self.CONFLICT_COLUMNS
+            )
+        elif self.dry_run:
+            self.logger.info(f"DRY RUN - Would upload {len(records)} records")
+
+        return len(records)
+
     def run(self) -> bool:
         """Execute the load data pipeline."""
         self.print_header()
@@ -141,49 +190,40 @@ class LoadRunner(BaseRunner):
         if not self._init_client():
             return False
 
-        # Get time range
-        period_start, period_end = self.get_time_range(hours=3)
-        self.logger.info(
-            f"Period (UTC): {period_start.strftime('%Y-%m-%d %H:%M')} "
-            f"to {period_end.strftime('%Y-%m-%d %H:%M')}"
-        )
+        total_records = 0
 
         try:
-            # Fetch data
-            actual_xml, forecast_xml = self._fetch_data(period_start, period_end)
-
-            # Save XML files
-            actual_file, forecast_file = self._save_xml_files(
-                actual_xml, forecast_xml, period_start, period_end
-            )
-
-            # Parse data
-            combined_data = self._parse_data(actual_file, forecast_file)
-
-            if not combined_data:
-                self.logger.warning("No data to upload")
-                self.print_footer(success=True)
-                return True
-
-            # Prepare records for bulk insert
-            records = self._prepare_records(combined_data)
-
-            # Upload to database
-            if not self.dry_run:
+            if self.is_backfill:
+                # Backfill mode: process multiple chunks
                 self.logger.info("")
-                self.logger.info("Uploading to database...")
                 with self.database_connection() as conn:
-                    self.bulk_upsert(
-                        conn,
-                        self.TABLE_NAME,
-                        self.COLUMNS,
-                        records,
-                        self.CONFLICT_COLUMNS
-                    )
+                    for period_start, period_end in self.get_backfill_chunks():
+                        try:
+                            records = self._process_chunk(period_start, period_end, conn)
+                            total_records += records
+                        except Exception as e:
+                            self.logger.error(f"Chunk failed: {e}")
+                            if self.debug:
+                                import traceback
+                                traceback.print_exc()
+                            # Continue with next chunk
+                            continue
             else:
-                self.logger.info("")
-                self.logger.info(f"DRY RUN - Would upload {len(records)} records")
+                # Normal mode: single time range
+                period_start, period_end = self.get_time_range(hours=3)
+                self.logger.info(
+                    f"Period (UTC): {period_start.strftime('%Y-%m-%d %H:%M')} "
+                    f"to {period_end.strftime('%Y-%m-%d %H:%M')}"
+                )
 
+                if not self.dry_run:
+                    with self.database_connection() as conn:
+                        total_records = self._process_chunk(period_start, period_end, conn)
+                else:
+                    total_records = self._process_chunk(period_start, period_end)
+
+            self.logger.info("")
+            self.logger.info(f"Total records processed: {total_records}")
             self.print_footer(success=True)
             return True
 

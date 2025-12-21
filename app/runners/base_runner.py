@@ -8,6 +8,7 @@ Features:
 - Logging setup
 - Dry-run support
 - XML file saving
+- Backfill support with automatic 7-day chunking
 """
 
 import sys
@@ -15,9 +16,10 @@ import logging
 import argparse
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, date
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional, Tuple, Generator
+import zoneinfo
 
 import psycopg2
 from psycopg2 import extras
@@ -25,6 +27,9 @@ from psycopg2 import extras
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from config import DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT, DB_SCHEMA
+
+# Prague timezone for date conversions
+PRAGUE_TZ = zoneinfo.ZoneInfo("Europe/Prague")
 
 
 class BaseRunner(ABC):
@@ -36,22 +41,37 @@ class BaseRunner(ABC):
     - Logging
     - Time range calculations
     - XML file management
+    - Backfill with automatic 7-day chunking
     """
 
     # Override in subclasses
     RUNNER_NAME = "BaseRunner"
     DATA_DIR = Path(__file__).parent.parent / "entsoe" / "data"
 
-    def __init__(self, debug: bool = False, dry_run: bool = False):
+    # Maximum chunk size for API requests (ENTSO-E limit)
+    MAX_CHUNK_DAYS = 7
+
+    def __init__(
+        self,
+        debug: bool = False,
+        dry_run: bool = False,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None
+    ):
         """
         Initialize runner.
 
         Args:
             debug: Enable debug logging
             dry_run: Fetch and parse but don't upload
+            start_date: Optional start date for backfill (YYYY-MM-DD)
+            end_date: Optional end date for backfill (YYYY-MM-DD)
         """
         self.debug = debug
         self.dry_run = dry_run
+        self.start_date = start_date
+        self.end_date = end_date
+        self.is_backfill = start_date is not None or end_date is not None
         self.logger = self._setup_logging()
 
     def _setup_logging(self) -> logging.Logger:
@@ -187,6 +207,61 @@ class BaseRunner(ABC):
 
         return period_start, period_end
 
+    def get_backfill_chunks(self) -> Generator[Tuple[datetime, datetime], None, None]:
+        """
+        Generate time range chunks for backfill operations.
+
+        Splits the date range into chunks of MAX_CHUNK_DAYS (7 days) to comply
+        with ENTSO-E API limits. Each chunk is a tuple of (start_utc, end_utc).
+
+        Yields:
+            Tuple of (period_start, period_end) as UTC datetime objects
+
+        Raises:
+            ValueError: If backfill dates are not configured
+        """
+        if not self.is_backfill:
+            raise ValueError("Backfill dates not configured")
+
+        # Use today if end_date not specified
+        end = self.end_date or date.today()
+        start = self.start_date or end - timedelta(days=7)
+
+        # Validate
+        if end < start:
+            raise ValueError(f"end_date ({end}) must be >= start_date ({start})")
+
+        self.logger.info(f"Backfill mode: {start} to {end}")
+
+        # Convert dates to UTC datetimes (start of day in Prague -> UTC)
+        current_start = datetime.combine(start, datetime.min.time())
+        current_start = current_start.replace(tzinfo=PRAGUE_TZ).astimezone(timezone.utc)
+
+        final_end = datetime.combine(end + timedelta(days=1), datetime.min.time())
+        final_end = final_end.replace(tzinfo=PRAGUE_TZ).astimezone(timezone.utc)
+
+        chunk_count = 0
+        while current_start < final_end:
+            # Calculate chunk end (max 7 days from start)
+            chunk_end = min(
+                current_start + timedelta(days=self.MAX_CHUNK_DAYS),
+                final_end
+            )
+
+            chunk_count += 1
+            self.logger.info(
+                f"  Chunk {chunk_count}: "
+                f"{current_start.strftime('%Y-%m-%d %H:%M')} UTC -> "
+                f"{chunk_end.strftime('%Y-%m-%d %H:%M')} UTC"
+            )
+
+            yield current_start, chunk_end
+
+            # Move to next chunk
+            current_start = chunk_end
+
+        self.logger.info(f"Total chunks: {chunk_count}")
+
     def get_output_path(self, filename: str, period_start: datetime) -> Path:
         """
         Get output path for XML file.
@@ -263,7 +338,29 @@ class BaseRunner(ABC):
             action='store_true',
             help='Fetch and parse but don\'t upload to database'
         )
+        parser.add_argument(
+            '--start',
+            type=str,
+            metavar='YYYY-MM-DD',
+            help='Start date for backfill (enables backfill mode)'
+        )
+        parser.add_argument(
+            '--end',
+            type=str,
+            metavar='YYYY-MM-DD',
+            help='End date for backfill (defaults to today if --start is provided)'
+        )
         return parser
+
+    @classmethod
+    def parse_date(cls, date_str: Optional[str]) -> Optional[date]:
+        """Parse date string to date object."""
+        if date_str is None:
+            return None
+        try:
+            return datetime.strptime(date_str, '%Y-%m-%d').date()
+        except ValueError:
+            raise ValueError(f"Invalid date format: {date_str}. Use YYYY-MM-DD.")
 
     @classmethod
     def main(cls) -> None:
@@ -271,6 +368,19 @@ class BaseRunner(ABC):
         parser = cls.create_argument_parser()
         args = parser.parse_args()
 
-        runner = cls(debug=args.debug, dry_run=args.dry_run)
+        # Parse dates
+        try:
+            start_date = cls.parse_date(args.start)
+            end_date = cls.parse_date(args.end)
+        except ValueError as e:
+            print(f"Error: {e}")
+            sys.exit(1)
+
+        runner = cls(
+            debug=args.debug,
+            dry_run=args.dry_run,
+            start_date=start_date,
+            end_date=end_date
+        )
         success = runner.run()
         sys.exit(0 if success else 1)

@@ -10,6 +10,7 @@ Supervised by a Senior Architect. Do not implement complex logic or structural c
 * **30-Second Threshold:** If a command is expected to take >30 seconds (migrations, heavy data fetch), do not run it in the chat. Provide the formatted Docker command for manual user execution.
 * **Parallel Processing:** Use native algorithm settings (e.g., LightGBM `n_jobs=-1`) or standard libraries. *Note: Add joblib to requirements.txt if complex parallel feature engineering is required.*
 * [cite_start]**Efficient I/O:** Use bulk inserts (`psycopg2.extras.execute_values`) for all database uploads.
+* always read "docker-compose.yml" to know the name of services
 
 ---
 
