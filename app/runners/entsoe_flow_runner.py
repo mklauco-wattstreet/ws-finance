@@ -37,14 +37,15 @@ class FlowRunner(BaseRunner):
 
     RUNNER_NAME = "ENTSO-E Cross-Border Flows Runner"
 
-    # Table configuration - Wide format
+    # Table configuration - Wide format with trade_date/period for ML alignment
     TABLE_NAME = "entsoe_cross_border_flows"
     COLUMNS = [
+        "trade_date", "period", "time_interval",
         "delivery_datetime", "area_id",
         "flow_de_mw", "flow_at_mw", "flow_pl_mw", "flow_sk_mw",
         "flow_total_net_mw"
     ]
-    CONFLICT_COLUMNS = ["delivery_datetime", "area_id"]
+    CONFLICT_COLUMNS = ["trade_date", "period", "area_id"]
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -196,6 +197,9 @@ class FlowRunner(BaseRunner):
         records = []
         for record in data:
             records.append((
+                record['trade_date'],
+                record['period'],
+                record['time_interval'],
                 record['delivery_datetime'],
                 record['area_id'],
                 record.get('flow_de_mw'),

@@ -728,6 +728,147 @@ class GenerationParser(BaseParser):
         return result
 
 
+class GermanyWindParser(BaseParser):
+    """Parser for German wind generation data (A75) - Wind Only.
+
+    Parses wind generation (B18 Offshore, B19 Onshore) for German TenneT zone.
+    Used as a leading indicator for Czech balancing costs.
+
+    Wide-format columns:
+    - wind_onshore_mw: B19 (Wind Onshore) generation
+    - wind_offshore_mw: B18 (Wind Offshore) generation
+    - wind_total_mw: Sum of onshore + offshore
+
+    Resolution Priority: PT15M > PT60M (if both present, use 15-minute data)
+    """
+
+    # PSR types for wind generation
+    PSR_WIND_ONSHORE = 'B19'
+    PSR_WIND_OFFSHORE = 'B18'
+
+    # PSR type to column mapping
+    PSR_TO_COLUMN = {
+        'B18': 'wind_offshore_mw',
+        'B19': 'wind_onshore_mw',
+    }
+
+    WIDE_COLUMNS = ['wind_onshore_mw', 'wind_offshore_mw', 'wind_total_mw']
+
+    def __init__(self):
+        super().__init__()
+        self._wide_data: Dict[tuple, Dict[str, Any]] = {}
+        import logging
+        self.logger = logging.getLogger(__name__)
+
+    def parse_xml(self, xml_file_path: str) -> List[Dict[str, Any]]:
+        """
+        Parse A75 (Generation per Type) XML file for wind-only data.
+
+        Args:
+            xml_file_path: Path to A75 XML file
+
+        Returns:
+            List of wide-format wind records (one row per timestamp)
+        """
+        tree = ET.parse(xml_file_path)
+        root = tree.getroot()
+
+        for timeseries in root.findall('.//{*}TimeSeries'):
+            # Get PSR type from MktPSRType
+            psr_type_elem = timeseries.find('.//{*}MktPSRType/{*}psrType')
+            psr_type = psr_type_elem.text if psr_type_elem is not None else None
+
+            # Only process wind types
+            if psr_type not in self.PSR_TO_COLUMN:
+                continue
+
+            for period in timeseries.findall('{*}Period'):
+                self._process_wind_period(period, psr_type)
+
+        return self._aggregate_to_wide_format()
+
+    def _process_wind_period(self, period: ET.Element, psr_type: str) -> None:
+        """Process a single Period element for wind generation."""
+        time_interval = period.find('{*}timeInterval')
+        start_elem = time_interval.find('{*}start')
+        period_start = self.parse_timestamp(start_elem.text)
+
+        resolution_elem = period.find('{*}resolution')
+        resolution = resolution_elem.text if resolution_elem is not None else 'PT15M'
+        resolution_minutes = self.get_resolution_minutes(resolution)
+
+        column = self.PSR_TO_COLUMN.get(psr_type)
+        if column is None:
+            return
+
+        for point in period.findall('{*}Point'):
+            position = int(point.find('{*}position').text)
+            quantity_elem = point.find('{*}quantity')
+            quantity = float(quantity_elem.text) if quantity_elem is not None else 0.0
+
+            interval_idx = position - 1
+            point_time_utc = period_start + timedelta(minutes=interval_idx * resolution_minutes)
+            point_time_local = self.convert_to_local_time(point_time_utc)
+            trade_date = point_time_local.date()
+            period_num = self.calculate_period_number(point_time_local)
+            time_interval_str = self.format_time_interval(point_time_local, resolution_minutes)
+
+            key = (trade_date, period_num)
+
+            if key not in self._wide_data:
+                self._wide_data[key] = {
+                    'time_interval': time_interval_str,
+                    'columns': {}
+                }
+
+            # Resolution priority: PT15M (15) > PT60M (60)
+            current = self._wide_data[key]['columns'].get(column)
+            if current is None:
+                self._wide_data[key]['columns'][column] = (quantity, resolution_minutes)
+            else:
+                existing_value, existing_res = current
+                if resolution_minutes < existing_res:
+                    # Finer resolution, replace
+                    self._wide_data[key]['columns'][column] = (quantity, resolution_minutes)
+                elif resolution_minutes == existing_res:
+                    # Same resolution, use latest (should be same value)
+                    self._wide_data[key]['columns'][column] = (quantity, resolution_minutes)
+
+    def _aggregate_to_wide_format(self) -> List[Dict[str, Any]]:
+        """Convert intermediate data to final wide-format records."""
+        result = []
+
+        for (trade_date, period_num), data in sorted(self._wide_data.items()):
+            record = {
+                'trade_date': trade_date,
+                'period': period_num,
+                'time_interval': data['time_interval'],
+            }
+
+            # Get individual wind values
+            onshore_data = data['columns'].get('wind_onshore_mw')
+            offshore_data = data['columns'].get('wind_offshore_mw')
+
+            record['wind_onshore_mw'] = onshore_data[0] if onshore_data else None
+            record['wind_offshore_mw'] = offshore_data[0] if offshore_data else None
+
+            # Calculate total (only if we have at least one value)
+            if record['wind_onshore_mw'] is not None or record['wind_offshore_mw'] is not None:
+                onshore = record['wind_onshore_mw'] or 0.0
+                offshore = record['wind_offshore_mw'] or 0.0
+                record['wind_total_mw'] = onshore + offshore
+            else:
+                record['wind_total_mw'] = None
+
+            result.append(record)
+
+        return result
+
+    def clear(self) -> None:
+        """Clear intermediate data for reuse."""
+        self._wide_data.clear()
+
+
 class CrossBorderFlowsParser(BaseParser):
     """Parser for ENTSO-E Cross-Border Physical Flows (A11) - Wide Format.
 
@@ -878,6 +1019,7 @@ class CrossBorderFlowsParser(BaseParser):
 
         Returns:
             List of wide-format flow records (one row per timestamp)
+            Each record includes trade_date, period, time_interval for ML alignment.
         """
         if area_id is None:
             area_id = self.CZ_BZN
@@ -887,7 +1029,16 @@ class CrossBorderFlowsParser(BaseParser):
         for delivery_datetime in sorted(self._wide_data.keys()):
             data = self._wide_data[delivery_datetime]
 
+            # Calculate trade_date, period, time_interval from delivery_datetime
+            # delivery_datetime is already in Prague local time (naive)
+            trade_date = delivery_datetime.date()
+            period_num = self.calculate_period_number(delivery_datetime)
+            time_interval_str = self.format_time_interval(delivery_datetime, 15)
+
             record = {
+                'trade_date': trade_date,
+                'period': period_num,
+                'time_interval': time_interval_str,
                 'delivery_datetime': delivery_datetime,
                 'area_id': area_id,
             }

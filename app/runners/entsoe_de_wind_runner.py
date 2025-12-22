@@ -1,22 +1,20 @@
 #!/usr/bin/env python3
 """
-ENTSO-E Balancing Energy Runner (A84).
+ENTSO-E German Wind Generation Runner.
 
-Fetches activated balancing energy (aFRR/mFRR) data,
-parses the XML into wide-format records, and uploads to PostgreSQL
-database using bulk upserts.
+Fetches wind generation data (A75) from German TenneT zone (10YDE-EON------1),
+parses the XML into wide-format records, and uploads to PostgreSQL database.
 
-This script runs every 15 minutes via cron.
+German wind generation serves as a leading indicator for Czech balancing costs
+due to cross-border flow impacts when German wind fluctuates.
 
-Wide-format columns:
-- afrr_up_mw: Automatic Frequency Restoration Reserve (upward activation)
-- afrr_down_mw: Automatic Frequency Restoration Reserve (downward activation)
-- mfrr_up_mw: Manual Frequency Restoration Reserve (upward activation)
-- mfrr_down_mw: Manual Frequency Restoration Reserve (downward activation)
+Data source: ENTSO-E A75 (Generation per Type)
+Domain: 10YDE-EON------1 (Germany TenneT)
+PSR types: B18 (Wind Offshore), B19 (Wind Onshore)
 
 Usage:
-    python3 entsoe_balancing_runner.py [--debug] [--dry-run]
-    python3 entsoe_balancing_runner.py --start 2024-12-01 --end 2024-12-15
+    python3 entsoe_de_wind_runner.py [--debug] [--dry-run]
+    python3 entsoe_de_wind_runner.py --start 2024-12-01 --end 2024-12-22
 """
 
 import sys
@@ -28,19 +26,23 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from runners.base_runner import BaseRunner
 from entsoe.client import EntsoeClient
-from entsoe.parsers import BalancingEnergyParser
+from entsoe.parsers import GermanyWindParser
+from entsoe.constants import DE_TENNET
 
 
-class BalancingEnergyRunner(BaseRunner):
-    """Runner for ENTSO-E Activated Balancing Energy Prices (A84) - Wide Format."""
+class GermanyWindRunner(BaseRunner):
+    """Runner for German TenneT Wind Generation data (A75)."""
 
-    RUNNER_NAME = "ENTSO-E Balancing Energy Runner"
+    RUNNER_NAME = "ENTSO-E Germany Wind Runner"
 
-    # Table configuration - Wide format (prices in EUR/MWh)
-    TABLE_NAME = "entsoe_balancing_energy"
+    # German TenneT zone
+    DOMAIN = DE_TENNET  # 10YDE-EON------1
+
+    # Table configuration
+    TABLE_NAME = "entsoe_germany_wind"
     COLUMNS = [
         "trade_date", "period", "time_interval",
-        "afrr_up_price_eur", "afrr_down_price_eur", "mfrr_up_price_eur", "mfrr_down_price_eur"
+        "wind_onshore_mw", "wind_offshore_mw", "wind_total_mw"
     ]
     CONFLICT_COLUMNS = ["trade_date", "period"]
 
@@ -62,7 +64,7 @@ class BalancingEnergyRunner(BaseRunner):
 
     def _fetch_data(self, period_start, period_end) -> str:
         """
-        Fetch activated balancing energy XML.
+        Fetch wind generation XML from German TenneT zone.
 
         Args:
             period_start: Start datetime
@@ -72,8 +74,10 @@ class BalancingEnergyRunner(BaseRunner):
             XML content string
         """
         self.logger.info("")
-        self.logger.info("Fetching Activated Balancing Energy (A84)...")
-        xml_content = self.client.fetch_activated_balancing_energy(period_start, period_end)
+        self.logger.info(f"Fetching Wind Generation (A75) for domain {self.DOMAIN}...")
+        xml_content = self.client.fetch_generation_for_domain(
+            period_start, period_end, in_domain=self.DOMAIN
+        )
         self.logger.info(f"✓ Received {len(xml_content)} bytes")
 
         return xml_content
@@ -86,7 +90,7 @@ class BalancingEnergyRunner(BaseRunner):
         end_str = period_end.strftime('%Y%m%d%H%M')
 
         output_file = self.get_output_path(
-            f'entsoe_balancing_{start_str}_{end_str}.xml',
+            f'entsoe_de_wind_{start_str}_{end_str}.xml',
             period_start
         )
 
@@ -96,23 +100,22 @@ class BalancingEnergyRunner(BaseRunner):
         return output_file
 
     def _parse_data(self, xml_file: Path) -> List[dict]:
-        """Parse XML file into wide-format records."""
+        """Parse XML file into wide-format wind records."""
         self.logger.info("")
-        self.logger.info("Parsing XML data (wide format)...")
+        self.logger.info("Parsing XML data (wind only)...")
 
-        self.parser = BalancingEnergyParser()
+        self.parser = GermanyWindParser()
         data = self.parser.parse_xml(str(xml_file))
 
-        self.logger.info(f"✓ Parsed {len(data)} wide-format records")
+        self.logger.info(f"✓ Parsed {len(data)} wind records")
 
         # Log sample values for first record
         if data and self.debug:
             sample = data[0]
             self.logger.debug(f"  Sample record for {sample['trade_date']} period {sample['period']}:")
-            for col in BalancingEnergyParser.WIDE_COLUMNS:
-                value = sample.get(col)
-                value_str = f"{value:.2f} EUR/MWh" if value is not None else "N/A"
-                self.logger.debug(f"    {col}: {value_str}")
+            self.logger.debug(f"    wind_onshore_mw: {sample.get('wind_onshore_mw', 'N/A')}")
+            self.logger.debug(f"    wind_offshore_mw: {sample.get('wind_offshore_mw', 'N/A')}")
+            self.logger.debug(f"    wind_total_mw: {sample.get('wind_total_mw', 'N/A')}")
 
         return data
 
@@ -132,10 +135,9 @@ class BalancingEnergyRunner(BaseRunner):
                 record['trade_date'],
                 record['period'],
                 record['time_interval'],
-                record.get('afrr_up_price_eur'),
-                record.get('afrr_down_price_eur'),
-                record.get('mfrr_up_price_eur'),
-                record.get('mfrr_down_price_eur')
+                record.get('wind_onshore_mw'),
+                record.get('wind_offshore_mw'),
+                record.get('wind_total_mw')
             ))
         return records
 
@@ -166,7 +168,7 @@ class BalancingEnergyRunner(BaseRunner):
         data = self._parse_data(xml_file)
 
         if not data:
-            self.logger.warning("No data in this chunk")
+            self.logger.warning("No wind data in this chunk")
             return 0
 
         # Prepare records for bulk insert
@@ -187,7 +189,7 @@ class BalancingEnergyRunner(BaseRunner):
         return len(records)
 
     def run(self) -> bool:
-        """Execute the balancing energy data pipeline."""
+        """Execute the German wind data pipeline."""
         self.print_header()
 
         # Initialize client
@@ -241,4 +243,4 @@ class BalancingEnergyRunner(BaseRunner):
 
 
 if __name__ == '__main__':
-    BalancingEnergyRunner.main()
+    GermanyWindRunner.main()

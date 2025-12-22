@@ -261,15 +261,21 @@ class EntsoeCrossBorderFlows(Base):
     - flow_pl_mw: Physical flow to/from Poland
     - flow_sk_mw: Physical flow to/from Slovakia
     - flow_total_net_mw: Sum of all border flows
+
+    Note: trade_date/period columns added in migration 010 for ML feature alignment.
     """
     __tablename__ = 'entsoe_cross_border_flows'
     __table_args__ = (
         PrimaryKeyConstraint('id', name='entsoe_cross_border_flows_pkey'),
         UniqueConstraint('delivery_datetime', 'area_id', name='entsoe_cross_border_flows_datetime_area_key'),
+        UniqueConstraint('trade_date', 'period', 'area_id', name='entsoe_cross_border_flows_trade_date_period_area_key'),
         {'schema': DB_SCHEMA}
     )
 
     id: Mapped[int] = mapped_column(Integer, autoincrement=True)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    period: Mapped[int] = mapped_column(Integer, nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
     delivery_datetime: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     area_id: Mapped[str] = mapped_column(String(20), nullable=False)
     flow_de_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
@@ -277,6 +283,34 @@ class EntsoeCrossBorderFlows(Base):
     flow_pl_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     flow_sk_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     flow_total_net_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+
+
+class EntsoeGermanyWind(Base):
+    """ENTSO-E Germany TenneT wind generation data (15-minute intervals).
+
+    German wind generation serves as a leading indicator for Czech balancing costs.
+    Source: ENTSO-E A75 for domain 10YDE-EON------1 (TenneT).
+
+    Columns:
+    - wind_onshore_mw: B19 (Wind Onshore) generation
+    - wind_offshore_mw: B18 (Wind Offshore) generation
+    - wind_total_mw: Sum of onshore and offshore
+    """
+    __tablename__ = 'entsoe_germany_wind'
+    __table_args__ = (
+        PrimaryKeyConstraint('id', name='entsoe_germany_wind_pkey'),
+        UniqueConstraint('trade_date', 'period', name='entsoe_germany_wind_trade_date_period_key'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(Integer, autoincrement=True)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    period: Mapped[int] = mapped_column(Integer, nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    wind_onshore_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    wind_offshore_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    wind_total_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
 
 

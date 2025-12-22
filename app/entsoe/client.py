@@ -425,6 +425,61 @@ class EntsoeClient:
             psr_type=psr_type
         )
 
+    def fetch_generation_for_domain(
+        self,
+        period_start: datetime,
+        period_end: datetime,
+        in_domain: str,
+        psr_type: Optional[str] = None
+    ) -> str:
+        """
+        Fetch actual generation per type (documentType=A75) for a specific domain.
+
+        Use this to fetch generation data from foreign control areas (e.g., Germany).
+
+        Args:
+            period_start: Start datetime
+            period_end: End datetime
+            in_domain: The domain EIC code to fetch data for (e.g., 10YDE-EON------1)
+            psr_type: Optional specific PSR type (B01-B20)
+
+        Returns:
+            str: XML content
+        """
+        # Validate date range
+        self._validate_date_range(period_start, period_end)
+
+        # Build URL manually to use custom in_domain
+        params = {
+            "securityToken": self.security_token,
+            "documentType": self.DOC_TYPE_GENERATION_PER_TYPE,
+            "in_Domain": in_domain,
+            "processType": self.PROCESS_TYPE_REALISED,
+            "periodStart": self._format_timestamp(period_start),
+            "periodEnd": self._format_timestamp(period_end)
+        }
+
+        if psr_type:
+            params["psrType"] = psr_type
+
+        query_string = "&".join([f"{key}={value}" for key, value in params.items()])
+        url = f"{self.base_url}?{query_string}"
+
+        try:
+            response = self.session.get(url, timeout=60)
+            response.raise_for_status()
+
+            content_type = response.headers.get('Content-Type', '')
+            if 'zip' in content_type or self._is_zip_content(response.content):
+                return self._unzip_content(response.content)
+            else:
+                return response.text
+
+        except requests.RequestException as e:
+            raise requests.RequestException(
+                f"Failed to fetch generation data for domain {in_domain}: {e}"
+            )
+
     def fetch_cross_border_flows(
         self,
         period_start: datetime,
