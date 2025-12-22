@@ -1041,27 +1041,29 @@ class GenerationForecastParser(BaseParser):
 
 class BalancingEnergyParser(BaseParser):
     """
-    Parser for ENTSO-E A84 (Activated Balancing Energy) data.
+    Parser for ENTSO-E A84 (Activated Balancing Energy Prices) data.
 
-    Parses activated reserves into wide format:
-    - afrr_up_mw: A95 (aFRR) upward activation
-    - afrr_down_mw: A95 (aFRR) downward activation
-    - mfrr_up_mw: A96 (mFRR) upward activation
-    - mfrr_down_mw: A96 (mFRR) downward activation
+    Parses activation prices into wide format (EUR/MWh):
+    - afrr_up_price_eur: aFRR upward activation price
+    - afrr_down_price_eur: aFRR downward activation price
+    - mfrr_up_price_eur: mFRR upward activation price
+    - mfrr_down_price_eur: mFRR downward activation price
 
     BusinessType mapping:
     - A95: Automatic Frequency Restoration Reserve (aFRR)
     - A96: Manual Frequency Restoration Reserve (mFRR)
 
-    FlowDirection (or positive/negative quantity):
-    - Positive: Upward activation
-    - Negative: Downward activation
+    FlowDirection:
+    - A01: Upward activation
+    - A02: Downward activation
     """
 
     BUSINESS_TYPE_AFRR = 'A95'
     BUSINESS_TYPE_MFRR = 'A96'
+    DIRECTION_UP = 'A01'
+    DIRECTION_DOWN = 'A02'
 
-    WIDE_COLUMNS = ['afrr_up_mw', 'afrr_down_mw', 'mfrr_up_mw', 'mfrr_down_mw']
+    WIDE_COLUMNS = ['afrr_up_price_eur', 'afrr_down_price_eur', 'mfrr_up_price_eur', 'mfrr_down_price_eur']
 
     def __init__(self):
         super().__init__()
@@ -1077,7 +1079,7 @@ class BalancingEnergyParser(BaseParser):
             xml_file_path: Path to A84 XML file
 
         Returns:
-            List of wide-format balancing records (one row per timestamp)
+            List of wide-format balancing price records (one row per timestamp)
         """
         tree = ET.parse(xml_file_path)
         root = tree.getroot()
@@ -1090,7 +1092,7 @@ class BalancingEnergyParser(BaseParser):
             if business_type not in (self.BUSINESS_TYPE_AFRR, self.BUSINESS_TYPE_MFRR):
                 continue
 
-            # Get flow direction if specified
+            # Get flow direction (A01 = up, A02 = down)
             flow_direction_elem = timeseries.find('.//{*}flowDirection.direction')
             flow_direction = flow_direction_elem.text if flow_direction_elem is not None else None
 
@@ -1113,8 +1115,12 @@ class BalancingEnergyParser(BaseParser):
 
         for point in period.findall('{*}Point'):
             position = int(point.find('{*}position').text)
-            quantity_elem = point.find('{*}quantity')
-            quantity = float(quantity_elem.text) if quantity_elem is not None else 0.0
+
+            # Extract activation price (EUR/MWh)
+            price_elem = point.find('{*}activation_Price.amount')
+            if price_elem is None:
+                continue
+            price = float(price_elem.text)
 
             interval_idx = position - 1
             point_time_utc = period_start + timedelta(minutes=interval_idx * resolution_minutes)
@@ -1128,21 +1134,20 @@ class BalancingEnergyParser(BaseParser):
             if key not in self._wide_data:
                 self._wide_data[key] = {
                     'time_interval': time_interval_str,
-                    'columns': {col: 0.0 for col in self.WIDE_COLUMNS}
+                    'columns': {col: None for col in self.WIDE_COLUMNS}
                 }
 
             # Determine column based on business type and direction
-            # Positive quantity = upward, negative = downward
             if business_type == self.BUSINESS_TYPE_AFRR:
-                if quantity >= 0:
-                    self._wide_data[key]['columns']['afrr_up_mw'] += abs(quantity)
-                else:
-                    self._wide_data[key]['columns']['afrr_down_mw'] += abs(quantity)
+                if flow_direction == self.DIRECTION_UP:
+                    self._wide_data[key]['columns']['afrr_up_price_eur'] = price
+                elif flow_direction == self.DIRECTION_DOWN:
+                    self._wide_data[key]['columns']['afrr_down_price_eur'] = price
             elif business_type == self.BUSINESS_TYPE_MFRR:
-                if quantity >= 0:
-                    self._wide_data[key]['columns']['mfrr_up_mw'] += abs(quantity)
-                else:
-                    self._wide_data[key]['columns']['mfrr_down_mw'] += abs(quantity)
+                if flow_direction == self.DIRECTION_UP:
+                    self._wide_data[key]['columns']['mfrr_up_price_eur'] = price
+                elif flow_direction == self.DIRECTION_DOWN:
+                    self._wide_data[key]['columns']['mfrr_down_price_eur'] = price
 
     def _aggregate_to_wide_format(self) -> List[Dict[str, Any]]:
         """Convert intermediate data to final wide-format records."""
@@ -1156,8 +1161,7 @@ class BalancingEnergyParser(BaseParser):
             }
 
             for col in self.WIDE_COLUMNS:
-                value = data['columns'].get(col, 0.0)
-                record[col] = value if value != 0.0 else None
+                record[col] = data['columns'].get(col)
 
             result.append(record)
 

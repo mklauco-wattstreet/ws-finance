@@ -307,13 +307,13 @@ class EntsoeGenerationForecast(Base):
 
 
 class EntsoeBalancingEnergy(Base):
-    """ENTSO-E activated balancing energy (A84) - TSO intervention.
+    """ENTSO-E activated balancing energy prices (A84) - TSO intervention.
 
-    Captures activated reserves for system balance:
-    - afrr_up_mw: Automatic Frequency Restoration Reserve (upward)
-    - afrr_down_mw: Automatic Frequency Restoration Reserve (downward)
-    - mfrr_up_mw: Manual Frequency Restoration Reserve (upward)
-    - mfrr_down_mw: Manual Frequency Restoration Reserve (downward)
+    Captures activation prices for balancing reserves (EUR/MWh):
+    - afrr_up_price_eur: aFRR upward activation price
+    - afrr_down_price_eur: aFRR downward activation price
+    - mfrr_up_price_eur: mFRR upward activation price
+    - mfrr_down_price_eur: mFRR downward activation price
 
     BusinessTypes: A95 (aFRR), A96 (mFRR)
     """
@@ -329,10 +329,10 @@ class EntsoeBalancingEnergy(Base):
     trade_date: Mapped[date] = mapped_column(Date, nullable=False)
     period: Mapped[int] = mapped_column(Integer, nullable=False)
     time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
-    afrr_up_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
-    afrr_down_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
-    mfrr_up_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
-    mfrr_down_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    afrr_up_price_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    afrr_down_price_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    mfrr_up_price_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    mfrr_down_price_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
 
 

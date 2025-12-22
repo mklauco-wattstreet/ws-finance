@@ -32,15 +32,15 @@ from entsoe.parsers import BalancingEnergyParser
 
 
 class BalancingEnergyRunner(BaseRunner):
-    """Runner for ENTSO-E Activated Balancing Energy data (A84) - Wide Format."""
+    """Runner for ENTSO-E Activated Balancing Energy Prices (A84) - Wide Format."""
 
     RUNNER_NAME = "ENTSO-E Balancing Energy Runner"
 
-    # Table configuration - Wide format
+    # Table configuration - Wide format (prices in EUR/MWh)
     TABLE_NAME = "entsoe_balancing_energy"
     COLUMNS = [
         "trade_date", "period", "time_interval",
-        "afrr_up_mw", "afrr_down_mw", "mfrr_up_mw", "mfrr_down_mw"
+        "afrr_up_price_eur", "afrr_down_price_eur", "mfrr_up_price_eur", "mfrr_down_price_eur"
     ]
     CONFLICT_COLUMNS = ["trade_date", "period"]
 
@@ -132,10 +132,10 @@ class BalancingEnergyRunner(BaseRunner):
                 record['trade_date'],
                 record['period'],
                 record['time_interval'],
-                record.get('afrr_up_mw'),
-                record.get('afrr_down_mw'),
-                record.get('mfrr_up_mw'),
-                record.get('mfrr_down_mw')
+                record.get('afrr_up_price_eur'),
+                record.get('afrr_down_price_eur'),
+                record.get('mfrr_up_price_eur'),
+                record.get('mfrr_down_price_eur')
             ))
         return records
 
