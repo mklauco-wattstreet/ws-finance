@@ -38,6 +38,22 @@
 # Fetches physical flows (A11) for all CZ border pairs (DE, AT, PL, SK)
 */15 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 runners/entsoe_flow_runner.py >> /var/log/cron.log 2>&1
 
+# ENTSO-E - Generation forecast pipeline every 15 minutes
+# Fetches day-ahead wind/solar forecasts (A69) for renewable forecast error calculation
+*/15 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 runners/entsoe_gen_forecast_runner.py >> /var/log/cron.log 2>&1
+
+# ENTSO-E - Balancing energy pipeline every 15 minutes
+# Fetches activated aFRR/mFRR reserves (A84) for TSO intervention tracking
+*/15 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 runners/entsoe_balancing_runner.py >> /var/log/cron.log 2>&1
+
+# ENTSO-E - Scheduled generation pipeline every 15 minutes
+# Fetches day-ahead scheduled generation (A71) for schedule deviation calculation
+*/15 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 runners/entsoe_gen_scheduled_runner.py >> /var/log/cron.log 2>&1
+
+# ENTSO-E - Scheduled cross-border flows pipeline every 15 minutes
+# Fetches day-ahead scheduled exchanges (A09) for all CZ border pairs
+*/15 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 runners/entsoe_sched_flow_runner.py >> /var/log/cron.log 2>&1
+
 # ENTSO-E - XML cleanup daily at 02:00
 # Retention policy: Delete XML files older than 1 day (keep only last 24 hours for verification)
 0 02 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 entsoe/cleanup_old_xml.py >> /var/log/cron.log 2>&1

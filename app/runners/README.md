@@ -4,104 +4,144 @@ Manual commands for running ENTSO-E data pipelines.
 
 ## Runners
 
-| Runner | Table | Data |
-|--------|-------|------|
-| `entsoe_imbalance_runner.py` | `entsoe_imbalance_prices` | Imbalance prices & volumes |
-| `entsoe_load_runner.py` | `entsoe_load` | Actual load & forecast |
-| `entsoe_gen_runner.py` | `entsoe_generation_actual` | Generation by fuel type (wide format) |
-| `entsoe_flow_runner.py` | `entsoe_cross_border_flows` | Cross-border physical flows (wide format) |
+| Runner | Table | Data | Doc Type |
+|--------|-------|------|----------|
+| `entsoe_imbalance_runner.py` | `entsoe_imbalance_prices` | Imbalance prices & volumes | A85, A86 |
+| `entsoe_load_runner.py` | `entsoe_load` | Actual load & DA forecast | A65 |
+| `entsoe_gen_runner.py` | `entsoe_generation_actual` | Generation by fuel type | A75 |
+| `entsoe_flow_runner.py` | `entsoe_cross_border_flows` | Physical cross-border flows | A11 |
+| `entsoe_gen_forecast_runner.py` | `entsoe_generation_forecast` | Wind/Solar DA forecasts | A69 |
+| `entsoe_balancing_runner.py` | `entsoe_balancing_energy` | Activated aFRR/mFRR reserves | A84 |
+| `entsoe_gen_scheduled_runner.py` | `entsoe_generation_scheduled` | Scheduled generation (DA) | A71 |
+| `entsoe_sched_flow_runner.py` | `entsoe_scheduled_cross_border_flows` | Scheduled cross-border exchanges | A09 |
 
 ## Command-Line Arguments
-
-All runners support the following arguments:
 
 | Argument | Description |
 |----------|-------------|
 | `--debug` | Enable verbose debug logging |
 | `--dry-run` | Fetch and parse data but skip database upload |
 | `--start YYYY-MM-DD` | Start date for backfill (enables backfill mode) |
-| `--end YYYY-MM-DD` | End date for backfill (defaults to today if `--start` is provided) |
+| `--end YYYY-MM-DD` | End date for backfill (defaults to today) |
 
-## Normal Mode (Cron)
+---
 
-When run without `--start`/`--end`, runners fetch the last 3 hours of data. This is the default behavior used by cron jobs.
+## Production Deployment Guide
 
-```bash
-# Generation (last 3 hours)
-docker compose exec entsoe-ote-data-uploader python3 /app/scripts/runners/entsoe_gen_runner.py
-
-# Load (last 3 hours)
-docker compose exec entsoe-ote-data-uploader python3 /app/scripts/runners/entsoe_load_runner.py
-
-# Cross-border flows (last 3 hours)
-docker compose exec entsoe-ote-data-uploader python3 /app/scripts/runners/entsoe_flow_runner.py
-
-# Imbalance (last 3 hours)
-docker compose exec entsoe-ote-data-uploader python3 /app/scripts/runners/entsoe_imbalance_runner.py
-```
-
-## Backfill Mode
-
-Use `--start` and optionally `--end` to backfill historical data. The runner automatically chunks long date ranges into 7-day blocks to comply with ENTSO-E API limits.
-
-### Backfill Examples
+### Step 1: Run Alembic Migrations
 
 ```bash
-# Backfill from Dec 1, 2024 to today
-docker compose exec entsoe-ote-data-uploader python3 /app/scripts/runners/entsoe_gen_runner.py --start 2024-12-01
-
-# Backfill specific date range
-docker compose exec entsoe-ote-data-uploader python3 /app/scripts/runners/entsoe_gen_runner.py --start 2024-12-01 --end 2024-12-15
-
-# Dry run to preview without uploading
-docker compose exec entsoe-ote-data-uploader python3 /app/scripts/runners/entsoe_gen_runner.py --start 2024-12-01 --end 2024-12-07 --dry-run
-```
-
-### Full Backfill Commands (Dec 1, 2024 to Present)
-
-```bash
-# Generation data
-docker compose exec entsoe-ote-data-uploader python3 /app/scripts/runners/entsoe_gen_runner.py --start 2024-12-01
-
-# Load data
-docker compose exec entsoe-ote-data-uploader python3 /app/scripts/runners/entsoe_load_runner.py --start 2024-12-01
-
-# Cross-border flows
-docker compose exec entsoe-ote-data-uploader python3 /app/scripts/runners/entsoe_flow_runner.py --start 2024-12-01
-
-# Imbalance data
-docker compose exec entsoe-ote-data-uploader python3 /app/scripts/runners/entsoe_imbalance_runner.py --start 2024-12-01
-```
-
-## Backfill Behavior
-
-- **Auto-chunking**: Date ranges are split into 7-day blocks (ENTSO-E API limit)
-- **Fault tolerance**: If one chunk fails, the runner logs the error and continues with the next chunk
-- **Single connection**: Backfill mode uses one database connection for all chunks (efficient)
-- **Idempotent**: Uses `ON CONFLICT DO UPDATE` so re-running is safe
-
-## Dry Run (No Database Upload)
-
-```bash
-docker compose exec entsoe-ote-data-uploader python3 /app/scripts/runners/entsoe_gen_runner.py --dry-run
-```
-
-## Debug Mode (Verbose Logging)
-
-```bash
-docker compose exec entsoe-ote-data-uploader python3 /app/scripts/runners/entsoe_gen_runner.py --debug
-```
-
-## Alembic Migrations
-
-```bash
-# Check current version
-docker compose exec entsoe-ote-data-uploader bash -c "export \$(cat /etc/environment_for_cron | xargs) && cd /app && python3 -m alembic current"
-
-# Upgrade to latest
 docker compose exec entsoe-ote-data-uploader bash -c "export \$(cat /etc/environment_for_cron | xargs) && cd /app && python3 -m alembic upgrade head"
 ```
 
+### Step 2: Verify Tables Exist
+
+```bash
+docker compose exec entsoe-ote-data-uploader bash -c "export \$(cat /etc/environment_for_cron | xargs) && cd /app && python3 -m alembic current"
+```
+
+### Step 3: Test One Runner (Dry Run)
+
+```bash
+docker compose exec entsoe-ote-data-uploader python3 /app/scripts/runners/entsoe_gen_runner.py --dry-run --debug
+```
+
+### Step 4: Backfill Historical Data
+
+Run all 8 runners to backfill from Dec 1, 2024:
+
+```bash
+# 1. Imbalance prices & volumes
+docker compose exec entsoe-ote-data-uploader python3 /app/scripts/runners/entsoe_imbalance_runner.py --start 2024-12-01
+
+# 2. Load data
+docker compose exec entsoe-ote-data-uploader python3 /app/scripts/runners/entsoe_load_runner.py --start 2024-12-01
+
+# 3. Generation actual
+docker compose exec entsoe-ote-data-uploader python3 /app/scripts/runners/entsoe_gen_runner.py --start 2024-12-01
+
+# 4. Physical cross-border flows
+docker compose exec entsoe-ote-data-uploader python3 /app/scripts/runners/entsoe_flow_runner.py --start 2024-12-01
+
+# 5. Generation forecast (wind/solar)
+docker compose exec entsoe-ote-data-uploader python3 /app/scripts/runners/entsoe_gen_forecast_runner.py --start 2024-12-01
+
+# 6. Balancing energy (aFRR/mFRR)
+docker compose exec entsoe-ote-data-uploader python3 /app/scripts/runners/entsoe_balancing_runner.py --start 2024-12-01
+
+# 7. Scheduled generation
+docker compose exec entsoe-ote-data-uploader python3 /app/scripts/runners/entsoe_gen_scheduled_runner.py --start 2024-12-01
+
+# 8. Scheduled cross-border flows
+docker compose exec entsoe-ote-data-uploader python3 /app/scripts/runners/entsoe_sched_flow_runner.py --start 2024-12-01
+```
+
+### Step 5: Restart Container (Reload Crontab)
+
+```bash
+docker compose restart entsoe-ote-data-uploader
+```
+
+### Step 6: Verify Cron is Running
+
+```bash
+docker compose exec entsoe-ote-data-uploader cat /var/log/cron.log | tail -50
+```
+
+---
+
+## Normal Mode (Cron)
+
+Runners fetch the last 3 hours of data when run without arguments:
+
+```bash
+# Imbalance
+docker compose exec entsoe-ote-data-uploader python3 /app/scripts/runners/entsoe_imbalance_runner.py
+
+# Load
+docker compose exec entsoe-ote-data-uploader python3 /app/scripts/runners/entsoe_load_runner.py
+
+# Generation actual
+docker compose exec entsoe-ote-data-uploader python3 /app/scripts/runners/entsoe_gen_runner.py
+
+# Physical flows
+docker compose exec entsoe-ote-data-uploader python3 /app/scripts/runners/entsoe_flow_runner.py
+
+# Generation forecast
+docker compose exec entsoe-ote-data-uploader python3 /app/scripts/runners/entsoe_gen_forecast_runner.py
+
+# Balancing energy
+docker compose exec entsoe-ote-data-uploader python3 /app/scripts/runners/entsoe_balancing_runner.py
+
+# Scheduled generation
+docker compose exec entsoe-ote-data-uploader python3 /app/scripts/runners/entsoe_gen_scheduled_runner.py
+
+# Scheduled flows
+docker compose exec entsoe-ote-data-uploader python3 /app/scripts/runners/entsoe_sched_flow_runner.py
+```
+
+---
+
+## Backfill Mode
+
+Use `--start` and `--end` to backfill historical data:
+
+```bash
+# Backfill specific range
+docker compose exec entsoe-ote-data-uploader python3 /app/scripts/runners/entsoe_gen_runner.py --start 2024-12-01 --end 2024-12-15
+
+# Dry run (no DB upload)
+docker compose exec entsoe-ote-data-uploader python3 /app/scripts/runners/entsoe_gen_runner.py --start 2024-12-01 --dry-run
+```
+
+### Backfill Behavior
+
+- **Auto-chunking**: Splits into 7-day blocks (ENTSO-E API limit)
+- **Fault tolerance**: Continues to next chunk if one fails
+- **Idempotent**: Safe to re-run (`ON CONFLICT DO UPDATE`)
+
+---
+
 ## Cron Schedule
 
-All runners execute every 15 minutes via cron (configured in `/crontab`).
+All runners execute every 15 minutes (configured in `/crontab`).

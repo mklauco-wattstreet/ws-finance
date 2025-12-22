@@ -916,6 +916,498 @@ class CrossBorderFlowsParser(BaseParser):
         self._wide_data.clear()
 
 
+class GenerationForecastParser(BaseParser):
+    """
+    Parser for ENTSO-E A69 (Wind/Solar Generation Forecast) data.
+
+    Parses day-ahead forecasts for renewable generation into wide format:
+    - forecast_solar_mw: B16 (Solar) forecast
+    - forecast_wind_mw: B19 (Wind Onshore) forecast
+    - forecast_wind_offshore_mw: B18 (Wind Offshore) forecast
+
+    Resolution Priority: PT15M > PT60M (if both present, use 15-minute data)
+    """
+
+    # PSR type to column mapping for forecasts
+    PSR_TO_COLUMN = {
+        'B16': 'forecast_solar_mw',
+        'B18': 'forecast_wind_offshore_mw',
+        'B19': 'forecast_wind_mw',
+    }
+
+    WIDE_COLUMNS = ['forecast_solar_mw', 'forecast_wind_mw', 'forecast_wind_offshore_mw']
+
+    def __init__(self):
+        super().__init__()
+        self._wide_data: Dict[tuple, Dict[str, Any]] = {}
+        import logging
+        self.logger = logging.getLogger(__name__)
+
+    def parse_xml(self, xml_file_path: str) -> List[Dict[str, Any]]:
+        """
+        Parse A69 (Generation Forecast) XML file into wide-format records.
+
+        Args:
+            xml_file_path: Path to A69 XML file
+
+        Returns:
+            List of wide-format forecast records (one row per timestamp)
+        """
+        tree = ET.parse(xml_file_path)
+        root = tree.getroot()
+
+        for timeseries in root.findall('.//{*}TimeSeries'):
+            # Get PSR type from MktPSRType
+            psr_type_elem = timeseries.find('.//{*}MktPSRType/{*}psrType')
+            psr_type = psr_type_elem.text if psr_type_elem is not None else None
+
+            if psr_type is None or psr_type not in self.PSR_TO_COLUMN:
+                continue
+
+            for period in timeseries.findall('{*}Period'):
+                self._process_forecast_period(period, psr_type)
+
+        return self._aggregate_to_wide_format()
+
+    def _process_forecast_period(self, period: ET.Element, psr_type: str) -> None:
+        """Process a single Period element from A69 XML."""
+        time_interval = period.find('{*}timeInterval')
+        start_elem = time_interval.find('{*}start')
+        period_start = self.parse_timestamp(start_elem.text)
+
+        resolution_elem = period.find('{*}resolution')
+        resolution = resolution_elem.text if resolution_elem is not None else 'PT15M'
+        resolution_minutes = self.get_resolution_minutes(resolution)
+
+        column = self.PSR_TO_COLUMN.get(psr_type)
+        if column is None:
+            return
+
+        for point in period.findall('{*}Point'):
+            position = int(point.find('{*}position').text)
+            quantity_elem = point.find('{*}quantity')
+            quantity = float(quantity_elem.text) if quantity_elem is not None else 0.0
+
+            interval_idx = position - 1
+            point_time_utc = period_start + timedelta(minutes=interval_idx * resolution_minutes)
+            point_time_local = self.convert_to_local_time(point_time_utc)
+            trade_date = point_time_local.date()
+            period_num = self.calculate_period_number(point_time_local)
+            time_interval_str = self.format_time_interval(point_time_local, resolution_minutes)
+
+            key = (trade_date, period_num)
+
+            if key not in self._wide_data:
+                self._wide_data[key] = {
+                    'time_interval': time_interval_str,
+                    'columns': {}
+                }
+
+            # Resolution priority: lower = better (15 < 60)
+            current = self._wide_data[key]['columns'].get(column)
+            if current is None:
+                self._wide_data[key]['columns'][column] = (quantity, resolution_minutes)
+            else:
+                existing_value, existing_res = current
+                if resolution_minutes < existing_res:
+                    self._wide_data[key]['columns'][column] = (quantity, resolution_minutes)
+
+    def _aggregate_to_wide_format(self) -> List[Dict[str, Any]]:
+        """Convert intermediate data to final wide-format records."""
+        result = []
+
+        for (trade_date, period_num), data in sorted(self._wide_data.items()):
+            record = {
+                'trade_date': trade_date,
+                'period': period_num,
+                'time_interval': data['time_interval'],
+            }
+
+            for col in self.WIDE_COLUMNS:
+                col_data = data['columns'].get(col)
+                if col_data:
+                    record[col] = col_data[0]
+                else:
+                    record[col] = None
+
+            result.append(record)
+
+        return result
+
+    def clear(self) -> None:
+        """Clear intermediate data for reuse."""
+        self._wide_data.clear()
+
+
+class BalancingEnergyParser(BaseParser):
+    """
+    Parser for ENTSO-E A84 (Activated Balancing Energy) data.
+
+    Parses activated reserves into wide format:
+    - afrr_up_mw: A95 (aFRR) upward activation
+    - afrr_down_mw: A95 (aFRR) downward activation
+    - mfrr_up_mw: A96 (mFRR) upward activation
+    - mfrr_down_mw: A96 (mFRR) downward activation
+
+    BusinessType mapping:
+    - A95: Automatic Frequency Restoration Reserve (aFRR)
+    - A96: Manual Frequency Restoration Reserve (mFRR)
+
+    FlowDirection (or positive/negative quantity):
+    - Positive: Upward activation
+    - Negative: Downward activation
+    """
+
+    BUSINESS_TYPE_AFRR = 'A95'
+    BUSINESS_TYPE_MFRR = 'A96'
+
+    WIDE_COLUMNS = ['afrr_up_mw', 'afrr_down_mw', 'mfrr_up_mw', 'mfrr_down_mw']
+
+    def __init__(self):
+        super().__init__()
+        self._wide_data: Dict[tuple, Dict[str, Any]] = {}
+        import logging
+        self.logger = logging.getLogger(__name__)
+
+    def parse_xml(self, xml_file_path: str) -> List[Dict[str, Any]]:
+        """
+        Parse A84 (Activated Balancing Energy) XML file into wide-format records.
+
+        Args:
+            xml_file_path: Path to A84 XML file
+
+        Returns:
+            List of wide-format balancing records (one row per timestamp)
+        """
+        tree = ET.parse(xml_file_path)
+        root = tree.getroot()
+
+        for timeseries in root.findall('.//{*}TimeSeries'):
+            # Get business type (A95 = aFRR, A96 = mFRR)
+            business_type_elem = timeseries.find('.//{*}businessType')
+            business_type = business_type_elem.text if business_type_elem is not None else None
+
+            if business_type not in (self.BUSINESS_TYPE_AFRR, self.BUSINESS_TYPE_MFRR):
+                continue
+
+            # Get flow direction if specified
+            flow_direction_elem = timeseries.find('.//{*}flowDirection.direction')
+            flow_direction = flow_direction_elem.text if flow_direction_elem is not None else None
+
+            for period in timeseries.findall('{*}Period'):
+                self._process_balancing_period(period, business_type, flow_direction)
+
+        return self._aggregate_to_wide_format()
+
+    def _process_balancing_period(
+        self, period: ET.Element, business_type: str, flow_direction: Optional[str]
+    ) -> None:
+        """Process a single Period element from A84 XML."""
+        time_interval = period.find('{*}timeInterval')
+        start_elem = time_interval.find('{*}start')
+        period_start = self.parse_timestamp(start_elem.text)
+
+        resolution_elem = period.find('{*}resolution')
+        resolution = resolution_elem.text if resolution_elem is not None else 'PT15M'
+        resolution_minutes = self.get_resolution_minutes(resolution)
+
+        for point in period.findall('{*}Point'):
+            position = int(point.find('{*}position').text)
+            quantity_elem = point.find('{*}quantity')
+            quantity = float(quantity_elem.text) if quantity_elem is not None else 0.0
+
+            interval_idx = position - 1
+            point_time_utc = period_start + timedelta(minutes=interval_idx * resolution_minutes)
+            point_time_local = self.convert_to_local_time(point_time_utc)
+            trade_date = point_time_local.date()
+            period_num = self.calculate_period_number(point_time_local)
+            time_interval_str = self.format_time_interval(point_time_local, resolution_minutes)
+
+            key = (trade_date, period_num)
+
+            if key not in self._wide_data:
+                self._wide_data[key] = {
+                    'time_interval': time_interval_str,
+                    'columns': {col: 0.0 for col in self.WIDE_COLUMNS}
+                }
+
+            # Determine column based on business type and direction
+            # Positive quantity = upward, negative = downward
+            if business_type == self.BUSINESS_TYPE_AFRR:
+                if quantity >= 0:
+                    self._wide_data[key]['columns']['afrr_up_mw'] += abs(quantity)
+                else:
+                    self._wide_data[key]['columns']['afrr_down_mw'] += abs(quantity)
+            elif business_type == self.BUSINESS_TYPE_MFRR:
+                if quantity >= 0:
+                    self._wide_data[key]['columns']['mfrr_up_mw'] += abs(quantity)
+                else:
+                    self._wide_data[key]['columns']['mfrr_down_mw'] += abs(quantity)
+
+    def _aggregate_to_wide_format(self) -> List[Dict[str, Any]]:
+        """Convert intermediate data to final wide-format records."""
+        result = []
+
+        for (trade_date, period_num), data in sorted(self._wide_data.items()):
+            record = {
+                'trade_date': trade_date,
+                'period': period_num,
+                'time_interval': data['time_interval'],
+            }
+
+            for col in self.WIDE_COLUMNS:
+                value = data['columns'].get(col, 0.0)
+                record[col] = value if value != 0.0 else None
+
+            result.append(record)
+
+        return result
+
+    def clear(self) -> None:
+        """Clear intermediate data for reuse."""
+        self._wide_data.clear()
+
+
+class ScheduledGenerationParser(BaseParser):
+    """
+    Parser for ENTSO-E A71 (Scheduled Generation) data.
+
+    Parses day-ahead scheduled generation forecasts.
+    Output: scheduled_total_mw (aggregated from all PSR types)
+    """
+
+    WIDE_COLUMNS = ['scheduled_total_mw']
+
+    def __init__(self):
+        super().__init__()
+        self._wide_data: Dict[tuple, Dict[str, Any]] = {}
+        import logging
+        self.logger = logging.getLogger(__name__)
+
+    def parse_xml(self, xml_file_path: str) -> List[Dict[str, Any]]:
+        """
+        Parse A71 (Scheduled Generation) XML file into wide-format records.
+
+        Args:
+            xml_file_path: Path to A71 XML file
+
+        Returns:
+            List of records with scheduled_total_mw per timestamp
+        """
+        tree = ET.parse(xml_file_path)
+        root = tree.getroot()
+
+        for timeseries in root.findall('.//{*}TimeSeries'):
+            for period in timeseries.findall('{*}Period'):
+                self._process_scheduled_period(period)
+
+        return self._aggregate_to_wide_format()
+
+    def _process_scheduled_period(self, period: ET.Element) -> None:
+        """Process a single Period element from A71 XML."""
+        time_interval = period.find('{*}timeInterval')
+        start_elem = time_interval.find('{*}start')
+        period_start = self.parse_timestamp(start_elem.text)
+
+        resolution_elem = period.find('{*}resolution')
+        resolution = resolution_elem.text if resolution_elem is not None else 'PT15M'
+        resolution_minutes = self.get_resolution_minutes(resolution)
+
+        for point in period.findall('{*}Point'):
+            position = int(point.find('{*}position').text)
+            quantity_elem = point.find('{*}quantity')
+            quantity = float(quantity_elem.text) if quantity_elem is not None else 0.0
+
+            interval_idx = position - 1
+            point_time_utc = period_start + timedelta(minutes=interval_idx * resolution_minutes)
+            point_time_local = self.convert_to_local_time(point_time_utc)
+            trade_date = point_time_local.date()
+            period_num = self.calculate_period_number(point_time_local)
+            time_interval_str = self.format_time_interval(point_time_local, resolution_minutes)
+
+            key = (trade_date, period_num)
+
+            if key not in self._wide_data:
+                self._wide_data[key] = {
+                    'time_interval': time_interval_str,
+                    'scheduled_total_mw': 0.0
+                }
+
+            # Accumulate scheduled generation (may come from multiple time series)
+            self._wide_data[key]['scheduled_total_mw'] += quantity
+
+    def _aggregate_to_wide_format(self) -> List[Dict[str, Any]]:
+        """Convert intermediate data to final wide-format records."""
+        result = []
+
+        for (trade_date, period_num), data in sorted(self._wide_data.items()):
+            value = data['scheduled_total_mw']
+            record = {
+                'trade_date': trade_date,
+                'period': period_num,
+                'time_interval': data['time_interval'],
+                'scheduled_total_mw': value if value != 0.0 else None,
+            }
+            result.append(record)
+
+        return result
+
+    def clear(self) -> None:
+        """Clear intermediate data for reuse."""
+        self._wide_data.clear()
+
+
+class ScheduledExchangesParser(BaseParser):
+    """
+    Parser for ENTSO-E A09 (Scheduled Commercial Exchanges) data.
+
+    Parses day-ahead scheduled cross-border flows for CZ borders.
+    Wide format columns:
+    - scheduled_de_mw: Scheduled exchange with Germany (positive = import)
+    - scheduled_at_mw: Scheduled exchange with Austria
+    - scheduled_pl_mw: Scheduled exchange with Poland
+    - scheduled_sk_mw: Scheduled exchange with Slovakia
+    - scheduled_total_net_mw: Sum of all scheduled exchanges
+    """
+
+    # EIC codes for CZ neighbors
+    EIC_CZ = '10YCZ-CEPS-----N'
+    EIC_DE = '10Y1001A1001A83F'
+    EIC_AT = '10YAT-APG------L'
+    EIC_PL = '10YPL-AREA-----S'
+    EIC_SK = '10YSK-SEPS-----K'
+
+    # Map out_domain -> column name (from CZ perspective: out=CZ means export)
+    DOMAIN_TO_COLUMN = {
+        EIC_DE: 'scheduled_de_mw',
+        EIC_AT: 'scheduled_at_mw',
+        EIC_PL: 'scheduled_pl_mw',
+        EIC_SK: 'scheduled_sk_mw',
+    }
+
+    WIDE_COLUMNS = [
+        'scheduled_de_mw', 'scheduled_at_mw',
+        'scheduled_pl_mw', 'scheduled_sk_mw',
+        'scheduled_total_net_mw'
+    ]
+
+    def __init__(self):
+        super().__init__()
+        self._wide_data: Dict[tuple, Dict[str, Any]] = {}
+        import logging
+        self.logger = logging.getLogger(__name__)
+
+    def parse_xml(self, xml_file_path: str, in_domain: str, out_domain: str) -> List[Dict[str, Any]]:
+        """
+        Parse A09 (Scheduled Exchanges) XML file for a specific border.
+
+        Args:
+            xml_file_path: Path to A09 XML file
+            in_domain: In domain EIC (importing area)
+            out_domain: Out domain EIC (exporting area)
+
+        Returns:
+            List of records (used for intermediate aggregation)
+        """
+        tree = ET.parse(xml_file_path)
+        root = tree.getroot()
+
+        # Determine column and direction
+        # If CZ is in_domain, it's an import (positive)
+        # If CZ is out_domain, it's an export (negative)
+        if in_domain == self.EIC_CZ:
+            # CZ is importing, counterparty is out_domain
+            column = self.DOMAIN_TO_COLUMN.get(out_domain)
+            direction = 1  # positive for import
+        elif out_domain == self.EIC_CZ:
+            # CZ is exporting, counterparty is in_domain
+            column = self.DOMAIN_TO_COLUMN.get(in_domain)
+            direction = -1  # negative for export
+        else:
+            self.logger.warning(f"Neither in_domain nor out_domain is CZ")
+            return []
+
+        if column is None:
+            self.logger.warning(f"Unknown counterparty domain")
+            return []
+
+        for timeseries in root.findall('.//{*}TimeSeries'):
+            for period in timeseries.findall('{*}Period'):
+                self._process_exchange_period(period, column, direction)
+
+        return []  # Don't return until all borders processed
+
+    def _process_exchange_period(
+        self, period: ET.Element, column: str, direction: int
+    ) -> None:
+        """Process a single Period element from A09 XML."""
+        time_interval = period.find('{*}timeInterval')
+        start_elem = time_interval.find('{*}start')
+        period_start = self.parse_timestamp(start_elem.text)
+
+        resolution_elem = period.find('{*}resolution')
+        resolution = resolution_elem.text if resolution_elem is not None else 'PT60M'
+        resolution_minutes = self.get_resolution_minutes(resolution)
+
+        for point in period.findall('{*}Point'):
+            position = int(point.find('{*}position').text)
+            quantity_elem = point.find('{*}quantity')
+            quantity = float(quantity_elem.text) if quantity_elem is not None else 0.0
+
+            interval_idx = position - 1
+            point_time_utc = period_start + timedelta(minutes=interval_idx * resolution_minutes)
+            point_time_local = self.convert_to_local_time(point_time_utc)
+            trade_date = point_time_local.date()
+            period_num = self.calculate_period_number(point_time_local)
+            time_interval_str = self.format_time_interval(point_time_local, resolution_minutes)
+
+            key = (trade_date, period_num)
+
+            if key not in self._wide_data:
+                self._wide_data[key] = {
+                    'time_interval': time_interval_str,
+                    'columns': {col: None for col in self.WIDE_COLUMNS}
+                }
+
+            # Set value with direction (import = positive, export = negative)
+            current = self._wide_data[key]['columns'].get(column) or 0.0
+            self._wide_data[key]['columns'][column] = current + (quantity * direction)
+
+    def get_wide_format_records(self) -> List[Dict[str, Any]]:
+        """
+        Get final wide-format records after all borders have been parsed.
+
+        Call this after parsing all 4 border XML files.
+        """
+        result = []
+
+        for (trade_date, period_num), data in sorted(self._wide_data.items()):
+            record = {
+                'trade_date': trade_date,
+                'period': period_num,
+                'time_interval': data['time_interval'],
+            }
+
+            # Copy individual border values
+            total = 0.0
+            for col in ['scheduled_de_mw', 'scheduled_at_mw', 'scheduled_pl_mw', 'scheduled_sk_mw']:
+                value = data['columns'].get(col)
+                record[col] = value
+                if value is not None:
+                    total += value
+
+            # Calculate total net
+            record['scheduled_total_net_mw'] = total if total != 0.0 else None
+
+            result.append(record)
+
+        return result
+
+    def clear(self) -> None:
+        """Clear intermediate data for reuse."""
+        self._wide_data.clear()
+
+
 # Backward compatibility alias
 ImbalanceDataParser = ImbalanceParser
 

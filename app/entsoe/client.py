@@ -40,10 +40,15 @@ class EntsoeClient:
     DOC_TYPE_LOAD_FORECAST = "A65"  # 6.1.B Day-Ahead Total Load Forecast
     DOC_TYPE_GENERATION_PER_TYPE = "A75"  # 14.1.C/D Actual Generation per Type
     DOC_TYPE_CROSS_BORDER_FLOWS = "A11"  # 12.1.F Physical Flows
+    DOC_TYPE_GENERATION_FORECAST = "A69"  # 14.1.A Wind/Solar Generation Forecast
+    DOC_TYPE_ACTIVATED_BALANCING = "A84"  # 17.1.E Activated Balancing Energy
+    DOC_TYPE_SCHEDULED_GENERATION = "A71"  # 14.1.B Scheduled Generation
+    DOC_TYPE_SCHEDULED_EXCHANGES = "A09"  # 12.1.D Scheduled Commercial Exchanges
 
     # Process types for A65 differentiation
     PROCESS_TYPE_REALISED = "A16"  # Actual load
     PROCESS_TYPE_DAY_AHEAD = "A01"  # Day-ahead forecast
+    PROCESS_TYPE_INTRADAY_TOTAL = "A18"  # Intraday total
 
     # Maximum date range allowed by API
     MAX_DATE_RANGE_DAYS = 7
@@ -190,6 +195,25 @@ class EntsoeClient:
 
         # For A11 (cross-border flows), use in_Domain and out_Domain
         if document_type == self.DOC_TYPE_CROSS_BORDER_FLOWS:
+            params.pop("controlArea_Domain")
+            if in_domain:
+                params["in_Domain"] = in_domain
+            if out_domain:
+                params["out_Domain"] = out_domain
+
+        # For A69 (generation forecast), use in_Domain
+        if document_type == self.DOC_TYPE_GENERATION_FORECAST:
+            params["in_Domain"] = params.pop("controlArea_Domain")
+
+        # For A84 (activated balancing), use controlArea_Domain (default)
+        # No change needed
+
+        # For A71 (scheduled generation), use in_Domain
+        if document_type == self.DOC_TYPE_SCHEDULED_GENERATION:
+            params["in_Domain"] = params.pop("controlArea_Domain")
+
+        # For A09 (scheduled exchanges), use in_Domain and out_Domain
+        if document_type == self.DOC_TYPE_SCHEDULED_EXCHANGES:
             params.pop("controlArea_Domain")
             if in_domain:
                 params["in_Domain"] = in_domain
@@ -424,6 +448,113 @@ class EntsoeClient:
             self.DOC_TYPE_CROSS_BORDER_FLOWS,
             period_start,
             period_end,
+            in_domain=in_domain,
+            out_domain=out_domain
+        )
+
+    def fetch_generation_forecast(
+        self,
+        period_start: datetime,
+        period_end: datetime,
+        psr_type: Optional[str] = None
+    ) -> str:
+        """
+        Fetch day-ahead generation forecast (documentType=A69).
+
+        For renewable forecasts (wind/solar). Use psr_type to filter:
+        - B16: Solar
+        - B18: Wind Offshore
+        - B19: Wind Onshore
+
+        Args:
+            period_start: Start datetime
+            period_end: End datetime
+            psr_type: Optional specific PSR type (B16, B18, B19)
+
+        Returns:
+            str: XML content
+        """
+        return self.fetch_data(
+            self.DOC_TYPE_GENERATION_FORECAST,
+            period_start,
+            period_end,
+            process_type=self.PROCESS_TYPE_DAY_AHEAD,
+            psr_type=psr_type
+        )
+
+    def fetch_activated_balancing_energy(
+        self,
+        period_start: datetime,
+        period_end: datetime
+    ) -> str:
+        """
+        Fetch activated balancing energy (documentType=A84).
+
+        Returns aFRR (A95) and mFRR (A96) activation volumes.
+
+        Args:
+            period_start: Start datetime
+            period_end: End datetime
+
+        Returns:
+            str: XML content
+        """
+        return self.fetch_data(
+            self.DOC_TYPE_ACTIVATED_BALANCING,
+            period_start,
+            period_end
+        )
+
+    def fetch_scheduled_generation(
+        self,
+        period_start: datetime,
+        period_end: datetime
+    ) -> str:
+        """
+        Fetch scheduled generation (documentType=A71).
+
+        Day-ahead scheduled total generation.
+
+        Args:
+            period_start: Start datetime
+            period_end: End datetime
+
+        Returns:
+            str: XML content
+        """
+        return self.fetch_data(
+            self.DOC_TYPE_SCHEDULED_GENERATION,
+            period_start,
+            period_end,
+            process_type=self.PROCESS_TYPE_DAY_AHEAD
+        )
+
+    def fetch_scheduled_exchanges(
+        self,
+        period_start: datetime,
+        period_end: datetime,
+        in_domain: str,
+        out_domain: str
+    ) -> str:
+        """
+        Fetch scheduled commercial exchanges (documentType=A09).
+
+        Day-ahead scheduled cross-border exchanges.
+
+        Args:
+            period_start: Start datetime
+            period_end: End datetime
+            in_domain: Importing domain EIC code
+            out_domain: Exporting domain EIC code
+
+        Returns:
+            str: XML content
+        """
+        return self.fetch_data(
+            self.DOC_TYPE_SCHEDULED_EXCHANGES,
+            period_start,
+            period_end,
+            process_type=self.PROCESS_TYPE_DAY_AHEAD,
             in_domain=in_domain,
             out_domain=out_domain
         )

@@ -278,3 +278,113 @@ class EntsoeCrossBorderFlows(Base):
     flow_sk_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     flow_total_net_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+
+
+class EntsoeGenerationForecast(Base):
+    """ENTSO-E day-ahead generation forecasts (A69) - renewable sources.
+
+    Captures day-ahead forecasts for calculating forecast errors:
+    - forecast_solar_mw: B16 (Solar) day-ahead forecast
+    - forecast_wind_mw: B19 (Wind Onshore) day-ahead forecast
+    - forecast_wind_offshore_mw: B18 (Wind Offshore) day-ahead forecast
+    """
+    __tablename__ = 'entsoe_generation_forecast'
+    __table_args__ = (
+        PrimaryKeyConstraint('id', name='entsoe_generation_forecast_pkey'),
+        UniqueConstraint('trade_date', 'period', name='entsoe_generation_forecast_trade_date_period_key'),
+        UniqueConstraint('trade_date', 'time_interval', name='entsoe_generation_forecast_trade_date_time_interval_key'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(Integer, autoincrement=True)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    period: Mapped[int] = mapped_column(Integer, nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    forecast_solar_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    forecast_wind_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    forecast_wind_offshore_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+
+
+class EntsoeBalancingEnergy(Base):
+    """ENTSO-E activated balancing energy (A84) - TSO intervention.
+
+    Captures activated reserves for system balance:
+    - afrr_up_mw: Automatic Frequency Restoration Reserve (upward)
+    - afrr_down_mw: Automatic Frequency Restoration Reserve (downward)
+    - mfrr_up_mw: Manual Frequency Restoration Reserve (upward)
+    - mfrr_down_mw: Manual Frequency Restoration Reserve (downward)
+
+    BusinessTypes: A95 (aFRR), A96 (mFRR)
+    """
+    __tablename__ = 'entsoe_balancing_energy'
+    __table_args__ = (
+        PrimaryKeyConstraint('id', name='entsoe_balancing_energy_pkey'),
+        UniqueConstraint('trade_date', 'period', name='entsoe_balancing_energy_trade_date_period_key'),
+        UniqueConstraint('trade_date', 'time_interval', name='entsoe_balancing_energy_trade_date_time_interval_key'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(Integer, autoincrement=True)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    period: Mapped[int] = mapped_column(Integer, nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    afrr_up_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    afrr_down_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    mfrr_up_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    mfrr_down_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+
+
+class EntsoeGenerationScheduled(Base):
+    """ENTSO-E scheduled generation (A71) - day-ahead scheduled.
+
+    Captures scheduled generation for comparing with actual:
+    - scheduled_total_mw: Total scheduled generation
+    """
+    __tablename__ = 'entsoe_generation_scheduled'
+    __table_args__ = (
+        PrimaryKeyConstraint('id', name='entsoe_generation_scheduled_pkey'),
+        UniqueConstraint('trade_date', 'period', name='entsoe_generation_scheduled_trade_date_period_key'),
+        UniqueConstraint('trade_date', 'time_interval', name='entsoe_generation_scheduled_trade_date_time_interval_key'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(Integer, autoincrement=True)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    period: Mapped[int] = mapped_column(Integer, nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    scheduled_total_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+
+
+class EntsoeScheduledCrossBorderFlows(Base):
+    """ENTSO-E scheduled cross-border exchanges (A09) - day-ahead scheduled.
+
+    Captures scheduled commercial exchanges for CZ borders:
+    - scheduled_de_mw: Scheduled exchange with Germany (positive = import)
+    - scheduled_at_mw: Scheduled exchange with Austria
+    - scheduled_pl_mw: Scheduled exchange with Poland
+    - scheduled_sk_mw: Scheduled exchange with Slovakia
+    - scheduled_total_net_mw: Sum of all scheduled exchanges
+
+    Compare with entsoe_cross_border_flows (physical A11) to calculate schedule deviation.
+    """
+    __tablename__ = 'entsoe_scheduled_cross_border_flows'
+    __table_args__ = (
+        PrimaryKeyConstraint('id', name='entsoe_sched_xborder_flows_pkey'),
+        UniqueConstraint('trade_date', 'period', name='entsoe_sched_xborder_flows_date_period_key'),
+        UniqueConstraint('trade_date', 'time_interval', name='entsoe_sched_xborder_flows_date_interval_key'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(Integer, autoincrement=True)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    period: Mapped[int] = mapped_column(Integer, nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    scheduled_de_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    scheduled_at_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    scheduled_pl_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    scheduled_sk_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    scheduled_total_net_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
