@@ -1270,19 +1270,15 @@ class ScheduledExchangesParser(BaseParser):
     - scheduled_total_net_mw: Sum of all scheduled exchanges
     """
 
-    # EIC codes for CZ neighbors
+    # EIC codes (must match constants.py)
     EIC_CZ = '10YCZ-CEPS-----N'
-    EIC_DE = '10Y1001A1001A83F'
-    EIC_AT = '10YAT-APG------L'
-    EIC_PL = '10YPL-AREA-----S'
-    EIC_SK = '10YSK-SEPS-----K'
 
-    # Map out_domain -> column name (from CZ perspective: out=CZ means export)
+    # Map domain EIC -> column name
     DOMAIN_TO_COLUMN = {
-        EIC_DE: 'scheduled_de_mw',
-        EIC_AT: 'scheduled_at_mw',
-        EIC_PL: 'scheduled_pl_mw',
-        EIC_SK: 'scheduled_sk_mw',
+        '10YDE-EON------1': 'scheduled_de_mw',    # DE
+        '10YAT-APG------L': 'scheduled_at_mw',    # AT
+        '10YPL-AREA-----S': 'scheduled_pl_mw',    # PL
+        '10YSK-SEPS-----K': 'scheduled_sk_mw',    # SK
     }
 
     WIDE_COLUMNS = [
@@ -1328,7 +1324,8 @@ class ScheduledExchangesParser(BaseParser):
             return []
 
         if column is None:
-            self.logger.warning(f"Unknown counterparty domain")
+            counterparty = out_domain if in_domain == self.EIC_CZ else in_domain
+            self.logger.warning(f"Unknown counterparty domain: {counterparty}")
             return []
 
         for timeseries in root.findall('.//{*}TimeSeries'):
