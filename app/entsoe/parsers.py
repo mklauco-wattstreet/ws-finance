@@ -556,19 +556,21 @@ class GenerationParser(BaseParser):
     """Parser for ENTSO-E Generation per Type data (A75) - Wide Format.
 
     Aggregates PSR types into wide-format columns per timestamp.
+    Supports multi-area parsing with area_id for partitioned storage.
 
     PSR Type to Column Mapping:
     - B14 → gen_nuclear_mw
     - B02 + B05 → gen_coal_mw (Brown coal/Lignite + Hard coal)
     - B04 → gen_gas_mw
     - B16 → gen_solar_mw
-    - B19 → gen_wind_mw
+    - B19 → gen_wind_mw (Wind Onshore)
+    - B18 → gen_wind_offshore_mw (Wind Offshore)
     - B10 → gen_hydro_pumped_mw
     - B01 → gen_biomass_mw
     - B11 + B12 → gen_hydro_other_mw (Run-of-river + Reservoir)
 
     Resolution Priority: PT15M > PT60M (if both present, use 15-minute data)
-    Missing Data: Defaults to 0.0
+    Missing Data: Defaults to None (NULL in database)
     """
 
     PSR_TYPES = {
@@ -599,20 +601,30 @@ class GenerationParser(BaseParser):
         'B04': 'gen_gas_mw',
         'B16': 'gen_solar_mw',
         'B19': 'gen_wind_mw',
+        'B18': 'gen_wind_offshore_mw',  # Added for offshore wind
         'B10': 'gen_hydro_pumped_mw',
         'B01': 'gen_biomass_mw',
         'B11': 'gen_hydro_other_mw',
         'B12': 'gen_hydro_other_mw',
     }
 
-    # All wide-format columns
+    # All wide-format columns (including offshore wind)
     WIDE_COLUMNS = [
         'gen_nuclear_mw', 'gen_coal_mw', 'gen_gas_mw', 'gen_solar_mw',
-        'gen_wind_mw', 'gen_hydro_pumped_mw', 'gen_biomass_mw', 'gen_hydro_other_mw'
+        'gen_wind_mw', 'gen_wind_offshore_mw', 'gen_hydro_pumped_mw',
+        'gen_biomass_mw', 'gen_hydro_other_mw'
     ]
 
-    def __init__(self):
+    def __init__(self, area_id: Optional[int] = None):
+        """
+        Initialize parser with optional area_id.
+
+        Args:
+            area_id: Integer area ID for partitioned storage. If provided,
+                    will be included in all output records.
+        """
         super().__init__()
+        self.area_id = area_id
         # Intermediate storage: key=(trade_date, period), value={column: (value, resolution)}
         self._wide_data: Dict[tuple, Dict[str, tuple]] = {}
         import logging
@@ -718,14 +730,22 @@ class GenerationParser(BaseParser):
                 'time_interval': data['time_interval'],
             }
 
-            # Add all wide columns, defaulting to 0.0 for missing
+            # Include area_id if configured
+            if self.area_id is not None:
+                record['area_id'] = self.area_id
+
+            # Add all wide columns, defaulting to None for missing (NULL in DB)
             for col in self.WIDE_COLUMNS:
                 col_data = data['columns'].get(col)
-                record[col] = col_data[0] if col_data else 0.0
+                record[col] = col_data[0] if col_data else None
 
             result.append(record)
 
         return result
+
+    def clear(self) -> None:
+        """Clear intermediate data for reuse."""
+        self._wide_data.clear()
 
 
 class GermanyWindParser(BaseParser):

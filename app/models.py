@@ -22,6 +22,33 @@ class Base(DeclarativeBase):
     pass
 
 
+class EntsoeAreas(Base):
+    """ENTSO-E delivery area lookup table.
+
+    Central source of truth for delivery area metadata (EIC codes).
+    Used by partitioned tables to reference areas.
+
+    Pre-populated areas:
+    - id=1: CZ (Czech Republic) - 10YCZ-CEPS-----N
+    - id=2: DE (Germany TenneT) - 10YDE-EON------1
+    - id=3: AT (Austria) - 10YAT-APG------L
+    - id=4: PL (Poland) - 10YPL-AREA-----S
+    - id=5: SK (Slovakia) - 10YSK-SEPS-----K
+    """
+    __tablename__ = 'entsoe_areas'
+    __table_args__ = (
+        PrimaryKeyConstraint('id', name='entsoe_areas_pkey'),
+        UniqueConstraint('code', name='entsoe_areas_code_key'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(Integer, autoincrement=True)
+    code: Mapped[str] = mapped_column(String(20), nullable=False)
+    country_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    country_code: Mapped[str] = mapped_column(String(5), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default='true')
+
+
 class EntsoeImbalancePrices(Base):
     """ENTSO-E imbalance prices and volumes data (15-minute intervals)."""
     __tablename__ = 'entsoe_imbalance_prices'
@@ -219,33 +246,40 @@ class EntsoeLoad(Base):
 class EntsoeGenerationActual(Base):
     """ENTSO-E actual generation data in wide format (15-minute intervals).
 
+    Partitioned by area_id for multi-area storage with partition pruning.
+    Partitions: CZ (1), DE (2), AT (3), PL (4), SK (5).
+
     Wide-format columns with aggregated PSR types:
     - gen_nuclear_mw: B14 (Nuclear)
     - gen_coal_mw: B02 (Brown coal/Lignite) + B05 (Hard coal)
     - gen_gas_mw: B04 (Fossil Gas)
     - gen_solar_mw: B16 (Solar)
     - gen_wind_mw: B19 (Wind Onshore)
+    - gen_wind_offshore_mw: B18 (Wind Offshore) - primarily for DE
     - gen_hydro_pumped_mw: B10 (Hydro Pumped Storage)
     - gen_biomass_mw: B01 (Biomass)
     - gen_hydro_other_mw: B11 (Run-of-river) + B12 (Water Reservoir)
+
+    Note: This is a partitioned table. The composite PK includes area_id.
     """
     __tablename__ = 'entsoe_generation_actual'
     __table_args__ = (
-        PrimaryKeyConstraint('id', name='entsoe_generation_actual_pkey'),
-        UniqueConstraint('trade_date', 'period', name='entsoe_generation_actual_trade_date_period_key'),
-        UniqueConstraint('trade_date', 'time_interval', name='entsoe_generation_actual_trade_date_time_interval_key'),
+        # Partitioned table: composite PK includes partition key (area_id)
+        PrimaryKeyConstraint('trade_date', 'period', 'area_id'),
         {'schema': DB_SCHEMA}
     )
 
     id: Mapped[int] = mapped_column(Integer, autoincrement=True)
     trade_date: Mapped[date] = mapped_column(Date, nullable=False)
     period: Mapped[int] = mapped_column(Integer, nullable=False)
+    area_id: Mapped[int] = mapped_column(Integer, nullable=False)
     time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
     gen_nuclear_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     gen_coal_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     gen_gas_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     gen_solar_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     gen_wind_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    gen_wind_offshore_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     gen_hydro_pumped_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     gen_biomass_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     gen_hydro_other_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
@@ -283,34 +317,6 @@ class EntsoeCrossBorderFlows(Base):
     flow_pl_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     flow_sk_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     flow_total_net_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
-    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
-
-
-class EntsoeGermanyWind(Base):
-    """ENTSO-E Germany TenneT wind generation data (15-minute intervals).
-
-    German wind generation serves as a leading indicator for Czech balancing costs.
-    Source: ENTSO-E A75 for domain 10YDE-EON------1 (TenneT).
-
-    Columns:
-    - wind_onshore_mw: B19 (Wind Onshore) generation
-    - wind_offshore_mw: B18 (Wind Offshore) generation
-    - wind_total_mw: Sum of onshore and offshore
-    """
-    __tablename__ = 'entsoe_germany_wind'
-    __table_args__ = (
-        PrimaryKeyConstraint('id', name='entsoe_germany_wind_pkey'),
-        UniqueConstraint('trade_date', 'period', name='entsoe_germany_wind_trade_date_period_key'),
-        {'schema': DB_SCHEMA}
-    )
-
-    id: Mapped[int] = mapped_column(Integer, autoincrement=True)
-    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
-    period: Mapped[int] = mapped_column(Integer, nullable=False)
-    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
-    wind_onshore_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
-    wind_offshore_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
-    wind_total_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
 
 
