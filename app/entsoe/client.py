@@ -614,6 +614,330 @@ class EntsoeClient:
             out_domain=out_domain
         )
 
+    def fetch_actual_load_for_domain(
+        self,
+        period_start: datetime,
+        period_end: datetime,
+        out_bidding_zone: str
+    ) -> str:
+        """
+        Fetch actual total load for a specific bidding zone.
+
+        Args:
+            period_start: Start datetime
+            period_end: End datetime
+            out_bidding_zone: The bidding zone EIC code
+
+        Returns:
+            str: XML content
+        """
+        self._validate_date_range(period_start, period_end)
+
+        params = {
+            "securityToken": self.security_token,
+            "documentType": self.DOC_TYPE_ACTUAL_LOAD,
+            "outBiddingZone_Domain": out_bidding_zone,
+            "processType": self.PROCESS_TYPE_REALISED,
+            "periodStart": self._format_timestamp(period_start),
+            "periodEnd": self._format_timestamp(period_end)
+        }
+
+        query_string = "&".join([f"{key}={value}" for key, value in params.items()])
+        url = f"{self.base_url}?{query_string}"
+
+        try:
+            response = self.session.get(url, timeout=60)
+            response.raise_for_status()
+
+            content_type = response.headers.get('Content-Type', '')
+            if 'zip' in content_type or self._is_zip_content(response.content):
+                return self._unzip_content(response.content)
+            else:
+                return response.text
+
+        except requests.RequestException as e:
+            raise requests.RequestException(
+                f"Failed to fetch actual load for domain {out_bidding_zone}: {e}"
+            )
+
+    def fetch_load_forecast_for_domain(
+        self,
+        period_start: datetime,
+        period_end: datetime,
+        out_bidding_zone: str
+    ) -> str:
+        """
+        Fetch day-ahead load forecast for a specific bidding zone.
+
+        Args:
+            period_start: Start datetime
+            period_end: End datetime
+            out_bidding_zone: The bidding zone EIC code
+
+        Returns:
+            str: XML content
+        """
+        self._validate_date_range(period_start, period_end)
+
+        params = {
+            "securityToken": self.security_token,
+            "documentType": self.DOC_TYPE_LOAD_FORECAST,
+            "outBiddingZone_Domain": out_bidding_zone,
+            "processType": self.PROCESS_TYPE_DAY_AHEAD,
+            "periodStart": self._format_timestamp(period_start),
+            "periodEnd": self._format_timestamp(period_end)
+        }
+
+        query_string = "&".join([f"{key}={value}" for key, value in params.items()])
+        url = f"{self.base_url}?{query_string}"
+
+        try:
+            response = self.session.get(url, timeout=60)
+            response.raise_for_status()
+
+            content_type = response.headers.get('Content-Type', '')
+            if 'zip' in content_type or self._is_zip_content(response.content):
+                return self._unzip_content(response.content)
+            else:
+                return response.text
+
+        except requests.RequestException as e:
+            raise requests.RequestException(
+                f"Failed to fetch load forecast for domain {out_bidding_zone}: {e}"
+            )
+
+    def fetch_generation_forecast_for_domain(
+        self,
+        period_start: datetime,
+        period_end: datetime,
+        in_domain: str,
+        psr_type: Optional[str] = None
+    ) -> str:
+        """
+        Fetch day-ahead generation forecast for a specific domain.
+
+        Args:
+            period_start: Start datetime
+            period_end: End datetime
+            in_domain: The domain EIC code
+            psr_type: Optional PSR type (B16, B18, B19)
+
+        Returns:
+            str: XML content
+        """
+        self._validate_date_range(period_start, period_end)
+
+        params = {
+            "securityToken": self.security_token,
+            "documentType": self.DOC_TYPE_GENERATION_FORECAST,
+            "in_Domain": in_domain,
+            "processType": self.PROCESS_TYPE_DAY_AHEAD,
+            "periodStart": self._format_timestamp(period_start),
+            "periodEnd": self._format_timestamp(period_end)
+        }
+
+        if psr_type:
+            params["psrType"] = psr_type
+
+        query_string = "&".join([f"{key}={value}" for key, value in params.items()])
+        url = f"{self.base_url}?{query_string}"
+
+        try:
+            response = self.session.get(url, timeout=60)
+            response.raise_for_status()
+
+            content_type = response.headers.get('Content-Type', '')
+            if 'zip' in content_type or self._is_zip_content(response.content):
+                return self._unzip_content(response.content)
+            else:
+                return response.text
+
+        except requests.RequestException as e:
+            raise requests.RequestException(
+                f"Failed to fetch generation forecast for domain {in_domain}: {e}"
+            )
+
+    def fetch_activated_balancing_energy_for_domain(
+        self,
+        period_start: datetime,
+        period_end: datetime,
+        control_area: str
+    ) -> str:
+        """
+        Fetch activated balancing energy for a specific control area.
+
+        Args:
+            period_start: Start datetime
+            period_end: End datetime
+            control_area: The control area EIC code
+
+        Returns:
+            str: XML content
+        """
+        self._validate_date_range(period_start, period_end)
+
+        params = {
+            "securityToken": self.security_token,
+            "documentType": self.DOC_TYPE_ACTIVATED_BALANCING,
+            "controlArea_Domain": control_area,
+            "periodStart": self._format_timestamp(period_start),
+            "periodEnd": self._format_timestamp(period_end)
+        }
+
+        query_string = "&".join([f"{key}={value}" for key, value in params.items()])
+        url = f"{self.base_url}?{query_string}"
+
+        try:
+            response = self.session.get(url, timeout=60)
+            response.raise_for_status()
+
+            content_type = response.headers.get('Content-Type', '')
+            if 'zip' in content_type or self._is_zip_content(response.content):
+                return self._unzip_content(response.content)
+            else:
+                return response.text
+
+        except requests.RequestException as e:
+            raise requests.RequestException(
+                f"Failed to fetch balancing energy for domain {control_area}: {e}"
+            )
+
+    def fetch_scheduled_generation_for_domain(
+        self,
+        period_start: datetime,
+        period_end: datetime,
+        in_domain: str
+    ) -> str:
+        """
+        Fetch scheduled generation for a specific domain.
+
+        Args:
+            period_start: Start datetime
+            period_end: End datetime
+            in_domain: The domain EIC code
+
+        Returns:
+            str: XML content
+        """
+        self._validate_date_range(period_start, period_end)
+
+        params = {
+            "securityToken": self.security_token,
+            "documentType": self.DOC_TYPE_SCHEDULED_GENERATION,
+            "in_Domain": in_domain,
+            "processType": self.PROCESS_TYPE_DAY_AHEAD,
+            "periodStart": self._format_timestamp(period_start),
+            "periodEnd": self._format_timestamp(period_end)
+        }
+
+        query_string = "&".join([f"{key}={value}" for key, value in params.items()])
+        url = f"{self.base_url}?{query_string}"
+
+        try:
+            response = self.session.get(url, timeout=60)
+            response.raise_for_status()
+
+            content_type = response.headers.get('Content-Type', '')
+            if 'zip' in content_type or self._is_zip_content(response.content):
+                return self._unzip_content(response.content)
+            else:
+                return response.text
+
+        except requests.RequestException as e:
+            raise requests.RequestException(
+                f"Failed to fetch scheduled generation for domain {in_domain}: {e}"
+            )
+
+    def fetch_imbalance_prices_for_domain(
+        self,
+        period_start: datetime,
+        period_end: datetime,
+        control_area: str
+    ) -> str:
+        """
+        Fetch imbalance prices (A85) for a specific control area.
+
+        Args:
+            period_start: Start datetime
+            period_end: End datetime
+            control_area: The control area EIC code
+
+        Returns:
+            str: XML content
+        """
+        self._validate_date_range(period_start, period_end)
+
+        params = {
+            "securityToken": self.security_token,
+            "documentType": self.DOC_TYPE_IMBALANCE_PRICES,
+            "controlArea_Domain": control_area,
+            "periodStart": self._format_timestamp(period_start),
+            "periodEnd": self._format_timestamp(period_end)
+        }
+
+        query_string = "&".join([f"{key}={value}" for key, value in params.items()])
+        url = f"{self.base_url}?{query_string}"
+
+        try:
+            response = self.session.get(url, timeout=60)
+            response.raise_for_status()
+
+            content_type = response.headers.get('Content-Type', '')
+            if 'zip' in content_type or self._is_zip_content(response.content):
+                return self._unzip_content(response.content)
+            else:
+                return response.text
+
+        except requests.RequestException as e:
+            raise requests.RequestException(
+                f"Failed to fetch imbalance prices for domain {control_area}: {e}"
+            )
+
+    def fetch_imbalance_volumes_for_domain(
+        self,
+        period_start: datetime,
+        period_end: datetime,
+        control_area: str
+    ) -> str:
+        """
+        Fetch imbalance volumes (A86) for a specific control area.
+
+        Args:
+            period_start: Start datetime
+            period_end: End datetime
+            control_area: The control area EIC code
+
+        Returns:
+            str: XML content
+        """
+        self._validate_date_range(period_start, period_end)
+
+        params = {
+            "securityToken": self.security_token,
+            "documentType": self.DOC_TYPE_IMBALANCE_VOLUMES,
+            "controlArea_Domain": control_area,
+            "periodStart": self._format_timestamp(period_start),
+            "periodEnd": self._format_timestamp(period_end)
+        }
+
+        query_string = "&".join([f"{key}={value}" for key, value in params.items()])
+        url = f"{self.base_url}?{query_string}"
+
+        try:
+            response = self.session.get(url, timeout=60)
+            response.raise_for_status()
+
+            content_type = response.headers.get('Content-Type', '')
+            if 'zip' in content_type or self._is_zip_content(response.content):
+                return self._unzip_content(response.content)
+            else:
+                return response.text
+
+        except requests.RequestException as e:
+            raise requests.RequestException(
+                f"Failed to fetch imbalance volumes for domain {control_area}: {e}"
+            )
+
     @staticmethod
     def get_preceding_hour_range(
         reference_time: Optional[datetime] = None,

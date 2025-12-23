@@ -157,10 +157,21 @@ class ImbalanceParser(BaseParser):
     Processes:
     - A85: Imbalance Prices with financial components (scarcity, incentive, neutrality)
     - A86: Imbalance Volumes with flow direction
+
+    Supports multi-area parsing with area_id and country_code for partitioned storage.
     """
 
-    def __init__(self):
+    def __init__(self, area_id: Optional[int] = None, country_code: Optional[str] = None):
+        """
+        Initialize parser with optional area_id and country_code.
+
+        Args:
+            area_id: Integer area ID for partitioned storage.
+            country_code: Country code (e.g., 'CZ', 'DE') for partition routing.
+        """
         super().__init__()
+        self.area_id = area_id
+        self.country_code = country_code
         self.prices_data: Dict[tuple, Dict] = {}
         self.volumes_data: Dict[tuple, Dict] = {}
         self.combined_data: List[Dict] = []
@@ -390,6 +401,12 @@ class ImbalanceParser(BaseParser):
                     'neg_imb_financial_neutrality_czk_mwh': 0.0,
                 }
 
+            # Include area_id and country_code if configured
+            if self.area_id is not None:
+                record['area_id'] = self.area_id
+            if self.country_code is not None:
+                record['country_code'] = self.country_code
+
             if key in self.volumes_data:
                 record.update(self.volumes_data[key])
             else:
@@ -406,10 +423,20 @@ class LoadParser(BaseParser):
     """Parser for ENTSO-E Load data (A65).
 
     Processes both actual load and day-ahead forecast.
+    Supports multi-area parsing with area_id and country_code for partitioned storage.
     """
 
-    def __init__(self):
+    def __init__(self, area_id: Optional[int] = None, country_code: Optional[str] = None):
+        """
+        Initialize parser with optional area_id and country_code.
+
+        Args:
+            area_id: Integer area ID for partitioned storage.
+            country_code: Country code (e.g., 'CZ', 'DE') for partition routing.
+        """
         super().__init__()
+        self.area_id = area_id
+        self.country_code = country_code
         self.actual_data: Dict[tuple, Dict] = {}
         self.forecast_data: Dict[tuple, Dict] = {}
         self.combined_data: List[Dict] = []
@@ -539,6 +566,12 @@ class LoadParser(BaseParser):
                 'actual_load_mw': None,
                 'forecast_load_mw': None
             }
+
+            # Include area_id and country_code if configured
+            if self.area_id is not None:
+                record['area_id'] = self.area_id
+            if self.country_code is not None:
+                record['country_code'] = self.country_code
 
             if key in self.actual_data:
                 record['actual_load_mw'] = self.actual_data[key].get('load_mw')
@@ -900,6 +933,7 @@ class CrossBorderFlowsParser(BaseParser):
     """Parser for ENTSO-E Cross-Border Physical Flows (A11) - Wide Format.
 
     Aggregates flows from all CZ borders into wide-format columns per timestamp.
+    Supports multi-area parsing with area_id and country_code for partitioned storage.
 
     Border Columns:
     - flow_de_mw: Physical flow to/from Germany
@@ -929,8 +963,17 @@ class CrossBorderFlowsParser(BaseParser):
     # All wide-format border columns
     FLOW_COLUMNS = ['flow_de_mw', 'flow_at_mw', 'flow_pl_mw', 'flow_sk_mw']
 
-    def __init__(self):
+    def __init__(self, area_id: Optional[int] = None, country_code: Optional[str] = None):
+        """
+        Initialize parser with optional area_id and country_code.
+
+        Args:
+            area_id: Integer area ID for partitioned storage.
+            country_code: Country code (e.g., 'CZ', 'DE') for partition routing.
+        """
         super().__init__()
+        self.area_id = area_id
+        self.country_code = country_code
         # Intermediate storage: key=delivery_datetime, value={column: (value, resolution)}
         self._wide_data: Dict[datetime, Dict[str, tuple]] = {}
         import logging
@@ -1037,19 +1080,20 @@ class CrossBorderFlowsParser(BaseParser):
                     # Note: For A11, we expect one direction per XML, so no aggregation needed
                     self._wide_data[delivery_datetime]['columns'][column] = (flow_value, resolution_minutes)
 
-    def get_wide_format_data(self, area_id: str = None) -> List[Dict[str, Any]]:
+    def get_wide_format_data(self, area_id: int = None) -> List[Dict[str, Any]]:
         """
         Convert intermediate data to final wide-format records.
 
         Args:
-            area_id: Area ID to use (defaults to CZ_BZN)
+            area_id: Integer area ID to use (defaults to self.area_id or 1 for CZ)
 
         Returns:
             List of wide-format flow records (one row per timestamp)
             Each record includes trade_date, period, time_interval for ML alignment.
         """
+        # Use provided area_id, then self.area_id, then default to 1 (CZ)
         if area_id is None:
-            area_id = self.CZ_BZN
+            area_id = self.area_id if self.area_id is not None else 1
 
         result = []
 
@@ -1069,6 +1113,10 @@ class CrossBorderFlowsParser(BaseParser):
                 'delivery_datetime': delivery_datetime,
                 'area_id': area_id,
             }
+
+            # Include country_code if configured
+            if self.country_code is not None:
+                record['country_code'] = self.country_code
 
             # Add all flow columns, defaulting to None for missing
             total = 0.0
@@ -1103,6 +1151,7 @@ class GenerationForecastParser(BaseParser):
     - forecast_wind_mw: B19 (Wind Onshore) forecast
     - forecast_wind_offshore_mw: B18 (Wind Offshore) forecast
 
+    Supports multi-area parsing with area_id and country_code for partitioned storage.
     Resolution Priority: PT15M > PT60M (if both present, use 15-minute data)
     """
 
@@ -1115,8 +1164,17 @@ class GenerationForecastParser(BaseParser):
 
     WIDE_COLUMNS = ['forecast_solar_mw', 'forecast_wind_mw', 'forecast_wind_offshore_mw']
 
-    def __init__(self):
+    def __init__(self, area_id: Optional[int] = None, country_code: Optional[str] = None):
+        """
+        Initialize parser with optional area_id and country_code.
+
+        Args:
+            area_id: Integer area ID for partitioned storage.
+            country_code: Country code (e.g., 'CZ', 'DE') for partition routing.
+        """
         super().__init__()
+        self.area_id = area_id
+        self.country_code = country_code
         self._wide_data: Dict[tuple, Dict[str, Any]] = {}
         import logging
         self.logger = logging.getLogger(__name__)
@@ -1201,6 +1259,12 @@ class GenerationForecastParser(BaseParser):
                 'time_interval': data['time_interval'],
             }
 
+            # Include area_id and country_code if configured
+            if self.area_id is not None:
+                record['area_id'] = self.area_id
+            if self.country_code is not None:
+                record['country_code'] = self.country_code
+
             for col in self.WIDE_COLUMNS:
                 col_data = data['columns'].get(col)
                 if col_data:
@@ -1227,6 +1291,8 @@ class BalancingEnergyParser(BaseParser):
     - mfrr_up_price_eur: mFRR upward activation price
     - mfrr_down_price_eur: mFRR downward activation price
 
+    Supports multi-area parsing with area_id and country_code for partitioned storage.
+
     BusinessType mapping:
     - A95: Automatic Frequency Restoration Reserve (aFRR)
     - A96: Manual Frequency Restoration Reserve (mFRR)
@@ -1243,8 +1309,17 @@ class BalancingEnergyParser(BaseParser):
 
     WIDE_COLUMNS = ['afrr_up_price_eur', 'afrr_down_price_eur', 'mfrr_up_price_eur', 'mfrr_down_price_eur']
 
-    def __init__(self):
+    def __init__(self, area_id: Optional[int] = None, country_code: Optional[str] = None):
+        """
+        Initialize parser with optional area_id and country_code.
+
+        Args:
+            area_id: Integer area ID for partitioned storage.
+            country_code: Country code (e.g., 'CZ', 'DE') for partition routing.
+        """
         super().__init__()
+        self.area_id = area_id
+        self.country_code = country_code
         self._wide_data: Dict[tuple, Dict[str, Any]] = {}
         import logging
         self.logger = logging.getLogger(__name__)
@@ -1338,6 +1413,12 @@ class BalancingEnergyParser(BaseParser):
                 'time_interval': data['time_interval'],
             }
 
+            # Include area_id and country_code if configured
+            if self.area_id is not None:
+                record['area_id'] = self.area_id
+            if self.country_code is not None:
+                record['country_code'] = self.country_code
+
             for col in self.WIDE_COLUMNS:
                 record[col] = data['columns'].get(col)
 
@@ -1355,13 +1436,23 @@ class ScheduledGenerationParser(BaseParser):
     Parser for ENTSO-E A71 (Scheduled Generation) data.
 
     Parses day-ahead scheduled generation forecasts.
+    Supports multi-area parsing with area_id and country_code for partitioned storage.
     Output: scheduled_total_mw (aggregated from all PSR types)
     """
 
     WIDE_COLUMNS = ['scheduled_total_mw']
 
-    def __init__(self):
+    def __init__(self, area_id: Optional[int] = None, country_code: Optional[str] = None):
+        """
+        Initialize parser with optional area_id and country_code.
+
+        Args:
+            area_id: Integer area ID for partitioned storage.
+            country_code: Country code (e.g., 'CZ', 'DE') for partition routing.
+        """
         super().__init__()
+        self.area_id = area_id
+        self.country_code = country_code
         self._wide_data: Dict[tuple, Dict[str, Any]] = {}
         import logging
         self.logger = logging.getLogger(__name__)
@@ -1430,6 +1521,13 @@ class ScheduledGenerationParser(BaseParser):
                 'time_interval': data['time_interval'],
                 'scheduled_total_mw': value if value != 0.0 else None,
             }
+
+            # Include area_id and country_code if configured
+            if self.area_id is not None:
+                record['area_id'] = self.area_id
+            if self.country_code is not None:
+                record['country_code'] = self.country_code
+
             result.append(record)
 
         return result
@@ -1444,6 +1542,8 @@ class ScheduledExchangesParser(BaseParser):
     Parser for ENTSO-E A09 (Scheduled Commercial Exchanges) data.
 
     Parses day-ahead scheduled cross-border flows for CZ borders.
+    Supports multi-area parsing with area_id and country_code for partitioned storage.
+
     Wide format columns:
     - scheduled_de_mw: Scheduled exchange with Germany (positive = import)
     - scheduled_at_mw: Scheduled exchange with Austria
@@ -1469,8 +1569,17 @@ class ScheduledExchangesParser(BaseParser):
         'scheduled_total_net_mw'
     ]
 
-    def __init__(self):
+    def __init__(self, area_id: Optional[int] = None, country_code: Optional[str] = None):
+        """
+        Initialize parser with optional area_id and country_code.
+
+        Args:
+            area_id: Integer area ID for partitioned storage.
+            country_code: Country code (e.g., 'CZ', 'DE') for partition routing.
+        """
         super().__init__()
+        self.area_id = area_id
+        self.country_code = country_code
         self._wide_data: Dict[tuple, Dict[str, Any]] = {}
         import logging
         self.logger = logging.getLogger(__name__)
@@ -1566,6 +1675,12 @@ class ScheduledExchangesParser(BaseParser):
                 'period': period_num,
                 'time_interval': data['time_interval'],
             }
+
+            # Include area_id and country_code if configured
+            if self.area_id is not None:
+                record['area_id'] = self.area_id
+            if self.country_code is not None:
+                record['country_code'] = self.country_code
 
             # Copy individual border values
             total = 0.0
