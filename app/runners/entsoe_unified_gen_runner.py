@@ -47,15 +47,15 @@ class UnifiedGenerationRunner(BaseRunner):
 
     RUNNER_NAME = "ENTSO-E Unified Generation Runner"
 
-    # Table configuration - partitioned by area_id
+    # Table configuration - partitioned by country_code
     TABLE_NAME = "entsoe_generation_actual"
     COLUMNS = [
-        "trade_date", "period", "area_id", "time_interval",
+        "trade_date", "period", "area_id", "country_code", "time_interval",
         "gen_nuclear_mw", "gen_coal_mw", "gen_gas_mw", "gen_solar_mw",
         "gen_wind_mw", "gen_wind_offshore_mw", "gen_hydro_pumped_mw",
         "gen_biomass_mw", "gen_hydro_other_mw"
     ]
-    CONFLICT_COLUMNS = ["trade_date", "period", "area_id"]
+    CONFLICT_COLUMNS = ["trade_date", "period", "area_id", "country_code"]
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -106,9 +106,9 @@ class UnifiedGenerationRunner(BaseRunner):
 
         return output_file
 
-    def _parse_data(self, xml_file: Path, area_id: int) -> List[dict]:
-        """Parse XML file into wide-format records with area_id."""
-        parser = GenerationParser(area_id=area_id)
+    def _parse_data(self, xml_file: Path, area_id: int, country_code: str) -> List[dict]:
+        """Parse XML file into wide-format records with area_id and country_code."""
+        parser = GenerationParser(area_id=area_id, country_code=country_code)
         data = parser.parse_xml(str(xml_file))
         return data
 
@@ -117,7 +117,7 @@ class UnifiedGenerationRunner(BaseRunner):
         Convert parsed data to tuples for bulk insert.
 
         Args:
-            data: List of parsed wide-format record dicts with area_id
+            data: List of parsed wide-format record dicts with area_id and country_code
 
         Returns:
             List of tuples ready for execute_values
@@ -128,6 +128,7 @@ class UnifiedGenerationRunner(BaseRunner):
                 record['trade_date'],
                 record['period'],
                 record['area_id'],
+                record['country_code'],
                 record['time_interval'],
                 record.get('gen_nuclear_mw'),
                 record.get('gen_coal_mw'),
@@ -143,7 +144,7 @@ class UnifiedGenerationRunner(BaseRunner):
 
     def _process_area(
         self, period_start, period_end,
-        area_id: int, area_code: str, country_code: str,
+        area_id: int, area_code: str, display_label: str, country_code: str,
         conn=None
     ) -> int:
         """
@@ -154,13 +155,14 @@ class UnifiedGenerationRunner(BaseRunner):
             period_end: End datetime (UTC)
             area_id: Integer area ID for partitioning
             area_code: EIC code (e.g., '10YCZ-CEPS-----N')
-            country_code: Country code (e.g., 'CZ')
+            display_label: Display label (e.g., 'CZ', 'DE-TenneT')
+            country_code: Country code for partition routing (e.g., 'CZ', 'DE')
             conn: Optional database connection
 
         Returns:
             Number of records processed
         """
-        self.logger.info(f"  Fetching {country_code} (area_id={area_id})...")
+        self.logger.info(f"  Fetching {display_label} (area_id={area_id}, country={country_code})...")
 
         try:
             # Fetch data
@@ -168,10 +170,10 @@ class UnifiedGenerationRunner(BaseRunner):
             self.logger.debug(f"    Received {len(xml_content)} bytes")
 
             # Save XML file
-            xml_file = self._save_xml_file(xml_content, period_start, period_end, country_code)
+            xml_file = self._save_xml_file(xml_content, period_start, period_end, display_label)
 
-            # Parse data with area_id
-            data = self._parse_data(xml_file, area_id)
+            # Parse data with area_id and country_code
+            data = self._parse_data(xml_file, area_id, country_code)
 
             if not data:
                 self.logger.warning(f"    No data for {country_code}")
@@ -223,10 +225,10 @@ class UnifiedGenerationRunner(BaseRunner):
         total_records = 0
 
         # Process each active area sequentially (to avoid API rate limits)
-        for area_id, area_code, country_code in ACTIVE_GENERATION_AREAS:
+        for area_id, area_code, display_label, country_code in ACTIVE_GENERATION_AREAS:
             records = self._process_area(
                 period_start, period_end,
-                area_id, area_code, country_code,
+                area_id, area_code, display_label, country_code,
                 conn
             )
             total_records += records
@@ -248,7 +250,7 @@ class UnifiedGenerationRunner(BaseRunner):
                 # Backfill mode: process multiple chunks
                 self.logger.info("")
                 self.logger.info(f"Processing {len(ACTIVE_GENERATION_AREAS)} areas: "
-                               f"{', '.join(cc for _, _, cc in ACTIVE_GENERATION_AREAS)}")
+                               f"{', '.join(label for _, _, label, _ in ACTIVE_GENERATION_AREAS)}")
                 with self.database_connection() as conn:
                     for period_start, period_end in self.get_backfill_chunks():
                         try:
@@ -269,7 +271,7 @@ class UnifiedGenerationRunner(BaseRunner):
                     f"to {period_end.strftime('%Y-%m-%d %H:%M')}"
                 )
                 self.logger.info(f"Processing {len(ACTIVE_GENERATION_AREAS)} areas: "
-                               f"{', '.join(cc for _, _, cc in ACTIVE_GENERATION_AREAS)}")
+                               f"{', '.join(label for _, _, label, _ in ACTIVE_GENERATION_AREAS)}")
                 self.logger.info("")
 
                 if not self.dry_run:

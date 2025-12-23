@@ -46,15 +46,17 @@ AREA_CODES = {v: k for k, v in AREA_IDS.items()}
 
 # Active areas for unified generation fetching
 # All areas with is_active=TRUE in entsoe_areas table
+# Tuple format: (area_id, eic_code, display_label, country_code)
+# country_code is used for partition routing (e.g., 'DE' for all German TSOs)
 ACTIVE_GENERATION_AREAS = [
-    (1, CZ_BZN, "CZ"),
-    (2, DE_TENNET, "DE-TenneT"),
-    (3, AT_BZN, "AT"),
-    (4, PL_BZN, "PL"),
-    (5, SK_BZN, "SK"),
-    (6, DE_50HERTZ, "DE-50Hertz"),
-    (7, DE_AMPRION, "DE-Amprion"),
-    (8, DE_TRANSNETBW, "DE-TransnetBW"),
+    (1, CZ_BZN, "CZ", "CZ"),
+    (2, DE_TENNET, "DE-TenneT", "DE"),
+    (3, AT_BZN, "AT", "AT"),
+    (4, PL_BZN, "PL", "PL"),
+    (5, SK_BZN, "SK", "SK"),
+    (6, DE_50HERTZ, "DE-50Hertz", "DE"),
+    (7, DE_AMPRION, "DE-Amprion", "DE"),
+    (8, DE_TRANSNETBW, "DE-TransnetBW", "DE"),
 ]
 
 # German TSO areas for aggregation queries

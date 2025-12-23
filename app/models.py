@@ -246,8 +246,11 @@ class EntsoeLoad(Base):
 class EntsoeGenerationActual(Base):
     """ENTSO-E actual generation data in wide format (15-minute intervals).
 
-    Partitioned by area_id for multi-area storage with partition pruning.
-    Partitions: CZ (1), DE (2), AT (3), PL (4), SK (5).
+    Partitioned by country_code for multi-area storage with partition pruning.
+    Partitions: CZ, DE, AT, PL, SK (by country_code string).
+
+    This structure allows new TSOs/bidding zones to be added without modifying
+    partition DDL - new TSOs automatically route to their country partition.
 
     Wide-format columns with aggregated PSR types:
     - gen_nuclear_mw: B14 (Nuclear)
@@ -260,12 +263,12 @@ class EntsoeGenerationActual(Base):
     - gen_biomass_mw: B01 (Biomass)
     - gen_hydro_other_mw: B11 (Run-of-river) + B12 (Water Reservoir)
 
-    Note: This is a partitioned table. The composite PK includes area_id.
+    Note: This is a partitioned table. The composite PK includes country_code.
     """
     __tablename__ = 'entsoe_generation_actual'
     __table_args__ = (
-        # Partitioned table: composite PK includes partition key (area_id)
-        PrimaryKeyConstraint('trade_date', 'period', 'area_id'),
+        # Partitioned table: composite PK includes partition key (country_code)
+        PrimaryKeyConstraint('trade_date', 'period', 'area_id', 'country_code'),
         {'schema': DB_SCHEMA}
     )
 
@@ -273,6 +276,7 @@ class EntsoeGenerationActual(Base):
     trade_date: Mapped[date] = mapped_column(Date, nullable=False)
     period: Mapped[int] = mapped_column(Integer, nullable=False)
     area_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    country_code: Mapped[str] = mapped_column(String(5), nullable=False)
     time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
     gen_nuclear_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     gen_coal_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))

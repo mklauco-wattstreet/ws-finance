@@ -615,16 +615,19 @@ class GenerationParser(BaseParser):
         'gen_biomass_mw', 'gen_hydro_other_mw'
     ]
 
-    def __init__(self, area_id: Optional[int] = None):
+    def __init__(self, area_id: Optional[int] = None, country_code: Optional[str] = None):
         """
-        Initialize parser with optional area_id.
+        Initialize parser with optional area_id and country_code.
 
         Args:
             area_id: Integer area ID for partitioned storage. If provided,
                     will be included in all output records.
+            country_code: Country code (e.g., 'CZ', 'DE') for partition routing.
+                         If provided, will be included in all output records.
         """
         super().__init__()
         self.area_id = area_id
+        self.country_code = country_code
         # Intermediate storage: key=(trade_date, period), value={column: (value, resolution)}
         self._wide_data: Dict[tuple, Dict[str, tuple]] = {}
         import logging
@@ -733,6 +736,10 @@ class GenerationParser(BaseParser):
             # Include area_id if configured
             if self.area_id is not None:
                 record['area_id'] = self.area_id
+
+            # Include country_code if configured (for partition routing)
+            if self.country_code is not None:
+                record['country_code'] = self.country_code
 
             # Add all wide columns, defaulting to None for missing (NULL in DB)
             for col in self.WIDE_COLUMNS:

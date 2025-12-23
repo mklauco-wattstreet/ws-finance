@@ -11,7 +11,8 @@ Supervised by a Senior Architect. Do not implement complex logic or structural c
 * **Parallel Processing:** Use native algorithm settings (e.g., LightGBM `n_jobs=-1`) or standard libraries. *Note: Add joblib to requirements.txt if complex parallel feature engineering is required.*
 * [cite_start]**Efficient I/O:** Use bulk inserts (`psycopg2.extras.execute_values`) for all database uploads.
 * always read "docker-compose.yml" to know the name of services
-
+* to load bidding zones are codes, look for `entsoe_areas` table
+* if table partitioning is required, always partition based on country code, like `entsoe_generation_actual -> ntsoe_generation_actual_de`
 ---
 
 ## 🐳 DOCKER & ENVIRONMENT
@@ -19,6 +20,7 @@ Supervised by a Senior Architect. Do not implement complex logic or structural c
 * **No `down -v`:** Never suggest `docker compose down -v` to avoid wiping `./ote_files` or DB volumes.
 * [cite_start]**Cron Environment:** Access env vars via `export $(cat /etc/environment_for_cron | xargs)`[cite: 3].
 * [cite_start]**Timezone:** All operations must respect `TZ=Europe/Prague`.
+* always provide single line commands to avoid indentation issues
 
 ---
 
@@ -26,7 +28,8 @@ Supervised by a Senior Architect. Do not implement complex logic or structural c
 * **Alembic Only:** All schema changes must be performed via Alembic migrations. 
 * [cite_start]**Legacy Warning:** Do not use or copy the `create_tables_if_not_exist` logic found in `app/entsoe/entsoe_pipeline.py` for any new modules.
 * [cite_start]**Persistence:** Use the mounted volumes (`./ote_files`, `./downloads`) for persistent file storage.
-
+* **No Individual Inserts:** Use `execute_values` for all batch operations.
+* **Connection Management:** Use a context manager for database connections to ensure they are closed or returned to the pool.
 ---
 
 ## 🛠 MODULARITY & ARCHITECTURE (REFLECTED)
@@ -50,6 +53,3 @@ Supervised by a Senior Architect. Do not implement complex logic or structural c
 * **Retry Logic:** All external API calls must use exponential backoff (e.g., `tenacity` or `urllib3` retries).
 * **Validation:** Validate all API inputs (ranges, EIC codes) and XML outputs (XSD validation where possible).
 
-## 📊 DATABASE BEST PRACTICES
-* **No Individual Inserts:** Use `execute_values` for all batch operations.
-* **Connection Management:** Use a context manager for database connections to ensure they are closed or returned to the pool.
