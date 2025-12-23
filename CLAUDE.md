@@ -21,6 +21,7 @@ Supervised by a Senior Architect. Do not implement complex logic or structural c
 * [cite_start]**Cron Environment:** Access env vars via `export $(cat /etc/environment_for_cron | xargs)`[cite: 3].
 * [cite_start]**Timezone:** All operations must respect `TZ=Europe/Prague`.
 * always provide single line commands to avoid indentation issues
+* if we need to completely rebuild in production environment: `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build entsoe-ote-data-uploader`
 
 ---
 

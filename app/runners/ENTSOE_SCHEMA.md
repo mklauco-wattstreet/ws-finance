@@ -2,7 +2,7 @@
 
 Documentation of all `entsoe_*` tables in the `finance` schema.
 
-**Last Updated:** 2025-12-23 (Migration 018: Partition by country_code)
+**Last Updated:** 2025-12-23 (Migrations 019-025: Unified partitioning by country_code)
 
 ---
 
@@ -12,13 +12,18 @@ Documentation of all `entsoe_*` tables in the `finance` schema.
 |-------|-------------|----------|------------|-------------|
 | `entsoe_areas` | Area/TSO lookup table | - | - | No |
 | `entsoe_generation_actual` | Actual generation by fuel type | A75 | 15-min | Yes (by country) |
-| `entsoe_generation_forecast` | Day-ahead wind/solar forecasts | A69 | 15-min | No |
-| `entsoe_generation_scheduled` | Day-ahead scheduled generation | A71 | 15-min | No |
-| `entsoe_load` | Actual load & DA forecast | A65 | 15-min | No |
-| `entsoe_cross_border_flows` | Physical cross-border flows | A11 | 15-min | No |
-| `entsoe_scheduled_cross_border_flows` | Scheduled cross-border exchanges | A09 | 15-min | No |
-| `entsoe_balancing_energy` | Activated aFRR/mFRR prices | A84 | 15-min | No |
-| `entsoe_imbalance_prices` | Imbalance prices & volumes | A85/A86 | 15-min | No |
+| `entsoe_generation_forecast` | Day-ahead wind/solar forecasts | A69 | 15-min | Yes (by country) |
+| `entsoe_generation_scheduled` | Day-ahead scheduled generation | A71 | 15-min | Yes (by country) |
+| `entsoe_load` | Actual load & DA forecast | A65 | 15-min | Yes (by country) |
+| `entsoe_cross_border_flows` | Physical cross-border flows | A11 | 15-min | Yes (by country) |
+| `entsoe_scheduled_cross_border_flows` | Scheduled cross-border exchanges | A09 | 15-min | Yes (by country) |
+| `entsoe_balancing_energy` | Activated aFRR/mFRR prices | A84 | 15-min | Yes (by country) |
+| `entsoe_imbalance_prices` | Imbalance prices & volumes | A85/A86 | 15-min | Yes (by country) |
+
+**Common Structure:** All partitioned tables share:
+- **Primary Key:** `(trade_date, period, area_id, country_code)`
+- **Partitioning:** `PARTITION BY LIST (country_code)`
+- **Partitions:** `_cz`, `_de`, `_at`, `_pl`, `_sk`
 
 ---
 
@@ -28,7 +33,7 @@ Documentation of all `entsoe_*` tables in the `finance` schema.
 
 | Column | Type | Description |
 |--------|------|-------------|
-| `id` | SERIAL PK | Area ID (used for partitioning) |
+| `id` | SERIAL PK | Area ID (used in data tables) |
 | `code` | VARCHAR(20) UNIQUE | EIC code (e.g., '10YCZ-CEPS-----N') |
 | `country_name` | VARCHAR(100) | Full name (e.g., 'Czech Republic') |
 | `country_code` | VARCHAR(5) | ISO code (e.g., 'CZ') |
@@ -53,23 +58,19 @@ Documentation of all `entsoe_*` tables in the `finance` schema.
 
 **Purpose:** Actual generation per production type (wide format).
 
-**Partitioning:** LIST by `country_code`, partitioned by country:
-- `entsoe_generation_actual_cz` → country_code IN ('CZ')
-- `entsoe_generation_actual_de` → country_code IN ('DE')
-- `entsoe_generation_actual_at` → country_code IN ('AT')
-- `entsoe_generation_actual_pl` → country_code IN ('PL')
-- `entsoe_generation_actual_sk` → country_code IN ('SK')
-
-This structure allows new TSOs/bidding zones to be added without modifying partition DDL.
-New TSOs automatically route to their country partition based on `country_code`.
+**Partitioning:** LIST by `country_code`:
+- `entsoe_generation_actual_cz` → country_code = 'CZ'
+- `entsoe_generation_actual_de` → country_code = 'DE'
+- `entsoe_generation_actual_at` → country_code = 'AT'
+- `entsoe_generation_actual_pl` → country_code = 'PL'
+- `entsoe_generation_actual_sk` → country_code = 'SK'
 
 | Column | Type | Description |
 |--------|------|-------------|
-| `id` | SERIAL | Auto-increment ID |
 | `trade_date` | DATE | Delivery date (Europe/Prague) |
 | `period` | INTEGER | 15-min period (1-96) |
 | `area_id` | INTEGER | FK to entsoe_areas.id |
-| `country_code` | VARCHAR(5) | Country code for partition routing (e.g., 'DE') |
+| `country_code` | VARCHAR(5) | Country code for partition routing |
 | `time_interval` | VARCHAR(11) | Time slot (e.g., '08:00-08:15') |
 | `gen_nuclear_mw` | NUMERIC(12,3) | B14: Nuclear |
 | `gen_coal_mw` | NUMERIC(12,3) | B02+B05: Brown coal + Hard coal |
@@ -106,18 +107,21 @@ New TSOs automatically route to their country partition based on `country_code`.
 
 **Purpose:** Day-ahead generation forecasts for renewable sources (A69).
 
+**Partitioning:** LIST by `country_code` (partitions: `_cz`, `_de`, `_at`, `_pl`, `_sk`)
+
 | Column | Type | Description |
 |--------|------|-------------|
-| `id` | SERIAL PK | Auto-increment ID |
 | `trade_date` | DATE | Delivery date |
 | `period` | INTEGER | 15-min period (1-96) |
+| `area_id` | INTEGER | FK to entsoe_areas.id |
+| `country_code` | VARCHAR(5) | Country code for partition routing |
 | `time_interval` | VARCHAR(11) | Time slot |
 | `forecast_solar_mw` | NUMERIC(12,3) | B16: Solar forecast |
 | `forecast_wind_mw` | NUMERIC(12,3) | B19: Wind Onshore forecast |
 | `forecast_wind_offshore_mw` | NUMERIC(12,3) | B18: Wind Offshore forecast |
 | `created_at` | TIMESTAMP | Record creation time |
 
-**Unique Constraints:** `(trade_date, period)`, `(trade_date, time_interval)`
+**Primary Key:** `(trade_date, period, area_id, country_code)`
 
 ---
 
@@ -125,16 +129,19 @@ New TSOs automatically route to their country partition based on `country_code`.
 
 **Purpose:** Day-ahead scheduled total generation (A71).
 
+**Partitioning:** LIST by `country_code` (partitions: `_cz`, `_de`, `_at`, `_pl`, `_sk`)
+
 | Column | Type | Description |
 |--------|------|-------------|
-| `id` | SERIAL PK | Auto-increment ID |
 | `trade_date` | DATE | Delivery date |
 | `period` | INTEGER | 15-min period (1-96) |
+| `area_id` | INTEGER | FK to entsoe_areas.id |
+| `country_code` | VARCHAR(5) | Country code for partition routing |
 | `time_interval` | VARCHAR(11) | Time slot |
 | `scheduled_total_mw` | NUMERIC(12,3) | Total scheduled generation |
 | `created_at` | TIMESTAMP | Record creation time |
 
-**Unique Constraints:** `(trade_date, period)`, `(trade_date, time_interval)`
+**Primary Key:** `(trade_date, period, area_id, country_code)`
 
 ---
 
@@ -142,32 +149,37 @@ New TSOs automatically route to their country partition based on `country_code`.
 
 **Purpose:** Actual total load and day-ahead forecast (A65).
 
+**Partitioning:** LIST by `country_code` (partitions: `_cz`, `_de`, `_at`, `_pl`, `_sk`)
+
 | Column | Type | Description |
 |--------|------|-------------|
-| `id` | SERIAL PK | Auto-increment ID |
 | `trade_date` | DATE | Delivery date |
 | `period` | INTEGER | 15-min period (1-96) |
+| `area_id` | INTEGER | FK to entsoe_areas.id |
+| `country_code` | VARCHAR(5) | Country code for partition routing |
 | `time_interval` | VARCHAR(11) | Time slot |
 | `actual_load_mw` | NUMERIC(12,3) | Actual total load |
 | `forecast_load_mw` | NUMERIC(12,3) | Day-ahead forecast load |
 | `created_at` | TIMESTAMP | Record creation time |
 
-**Unique Constraints:** `(trade_date, period)`, `(trade_date, time_interval)`
+**Primary Key:** `(trade_date, period, area_id, country_code)`
 
 ---
 
 ## entsoe_cross_border_flows
 
-**Purpose:** Physical cross-border flows for CZ borders (A11).
+**Purpose:** Physical cross-border flows (A11). Currently CZ borders only.
+
+**Partitioning:** LIST by `country_code` (partitions: `_cz`, `_de`, `_at`, `_pl`, `_sk`)
 
 | Column | Type | Description |
 |--------|------|-------------|
-| `id` | SERIAL PK | Auto-increment ID |
 | `trade_date` | DATE | Delivery date |
 | `period` | INTEGER | 15-min period (1-96) |
+| `area_id` | INTEGER | FK to entsoe_areas.id |
+| `country_code` | VARCHAR(5) | Country code for partition routing |
 | `time_interval` | VARCHAR(11) | Time slot |
 | `delivery_datetime` | TIMESTAMP | Full delivery timestamp |
-| `area_id` | VARCHAR(20) | EIC code of reference area |
 | `flow_de_mw` | NUMERIC(12,3) | Flow to/from Germany (+import/-export) |
 | `flow_at_mw` | NUMERIC(12,3) | Flow to/from Austria |
 | `flow_pl_mw` | NUMERIC(12,3) | Flow to/from Poland |
@@ -175,19 +187,22 @@ New TSOs automatically route to their country partition based on `country_code`.
 | `flow_total_net_mw` | NUMERIC(12,3) | Sum of all border flows |
 | `created_at` | TIMESTAMP | Record creation time |
 
-**Unique Constraints:** `(delivery_datetime, area_id)`, `(trade_date, period, area_id)`
+**Primary Key:** `(trade_date, period, area_id, country_code)`
 
 ---
 
 ## entsoe_scheduled_cross_border_flows
 
-**Purpose:** Day-ahead scheduled commercial exchanges for CZ borders (A09).
+**Purpose:** Day-ahead scheduled commercial exchanges (A09). Currently CZ borders only.
+
+**Partitioning:** LIST by `country_code` (partitions: `_cz`, `_de`, `_at`, `_pl`, `_sk`)
 
 | Column | Type | Description |
 |--------|------|-------------|
-| `id` | SERIAL PK | Auto-increment ID |
 | `trade_date` | DATE | Delivery date |
 | `period` | INTEGER | 15-min period (1-96) |
+| `area_id` | INTEGER | FK to entsoe_areas.id |
+| `country_code` | VARCHAR(5) | Country code for partition routing |
 | `time_interval` | VARCHAR(11) | Time slot |
 | `scheduled_de_mw` | NUMERIC(12,3) | Scheduled exchange with Germany |
 | `scheduled_at_mw` | NUMERIC(12,3) | Scheduled exchange with Austria |
@@ -196,7 +211,7 @@ New TSOs automatically route to their country partition based on `country_code`.
 | `scheduled_total_net_mw` | NUMERIC(12,3) | Sum of all scheduled exchanges |
 | `created_at` | TIMESTAMP | Record creation time |
 
-**Unique Constraints:** `(trade_date, period)`, `(trade_date, time_interval)`
+**Primary Key:** `(trade_date, period, area_id, country_code)`
 
 ---
 
@@ -204,11 +219,14 @@ New TSOs automatically route to their country partition based on `country_code`.
 
 **Purpose:** Activated balancing energy prices (A84) - aFRR/mFRR.
 
+**Partitioning:** LIST by `country_code` (partitions: `_cz`, `_de`, `_at`, `_pl`, `_sk`)
+
 | Column | Type | Description |
 |--------|------|-------------|
-| `id` | SERIAL PK | Auto-increment ID |
 | `trade_date` | DATE | Delivery date |
 | `period` | INTEGER | 15-min period (1-96) |
+| `area_id` | INTEGER | FK to entsoe_areas.id |
+| `country_code` | VARCHAR(5) | Country code for partition routing |
 | `time_interval` | VARCHAR(11) | Time slot |
 | `afrr_up_price_eur` | NUMERIC(12,3) | aFRR upward activation price (EUR/MWh) |
 | `afrr_down_price_eur` | NUMERIC(12,3) | aFRR downward activation price |
@@ -216,7 +234,7 @@ New TSOs automatically route to their country partition based on `country_code`.
 | `mfrr_down_price_eur` | NUMERIC(12,3) | mFRR downward activation price |
 | `created_at` | TIMESTAMP | Record creation time |
 
-**Unique Constraints:** `(trade_date, period)`, `(trade_date, time_interval)`
+**Primary Key:** `(trade_date, period, area_id, country_code)`
 
 **Business Types:** A95 (aFRR), A96 (mFRR)
 
@@ -226,13 +244,18 @@ New TSOs automatically route to their country partition based on `country_code`.
 
 **Purpose:** Imbalance prices and volumes (A85/A86).
 
+**Partitioning:** LIST by `country_code` (partitions: `_cz`, `_de`, `_at`, `_pl`, `_sk`)
+
+**Note:** Column names say `czk_mwh` but non-CZ areas store EUR values directly.
+
 | Column | Type | Description |
 |--------|------|-------------|
-| `id` | SERIAL PK | Auto-increment ID |
 | `trade_date` | DATE | Delivery date |
 | `period` | INTEGER | 15-min period (1-96) |
+| `area_id` | INTEGER | FK to entsoe_areas.id |
+| `country_code` | VARCHAR(5) | Country code for partition routing |
 | `time_interval` | VARCHAR(11) | Time slot |
-| `pos_imb_price_czk_mwh` | NUMERIC(15,3) | Positive imbalance price |
+| `pos_imb_price_czk_mwh` | NUMERIC(15,3) | Positive imbalance price (CZK for CZ, EUR for others) |
 | `pos_imb_scarcity_czk_mwh` | NUMERIC(15,3) | Positive imbalance scarcity |
 | `pos_imb_incentive_czk_mwh` | NUMERIC(15,3) | Positive imbalance incentive |
 | `pos_imb_financial_neutrality_czk_mwh` | NUMERIC(15,3) | Positive financial neutrality |
@@ -244,10 +267,9 @@ New TSOs automatically route to their country partition based on `country_code`.
 | `difference_mwh` | NUMERIC(12,5) | Difference volume |
 | `situation` | VARCHAR | Market situation |
 | `status` | VARCHAR | Data status |
-| `delivery_datetime` | TIMESTAMP WITH TZ | Full delivery timestamp |
 | `created_at` | TIMESTAMP | Record creation time |
 
-**Unique Constraints:** `(trade_date, period)`, `(trade_date, time_interval)`
+**Primary Key:** `(trade_date, period, area_id, country_code)`
 
 ---
 
@@ -263,7 +285,7 @@ New TSOs automatically route to their country partition based on `country_code`.
 | 20 | 04:45 | 44 | 10:45 | 68 | 16:45 | 92 | 22:45 |
 | 24 | 05:45 | 48 | 11:45 | 72 | 17:45 | 96 | 23:45 |
 
-**Formula:** `Period = (Hour × 4) + (Minute ÷ 15) + 1`
+**Formula:** `Period = (Hour * 4) + (Minute / 15) + 1`
 
 ---
 
@@ -306,8 +328,11 @@ SELECT g.trade_date, g.period,
        f.forecast_wind_mw - g.gen_wind_mw as wind_error_mw
 FROM finance.entsoe_generation_actual g
 JOIN finance.entsoe_generation_forecast f
-  ON g.trade_date = f.trade_date AND g.period = f.period
-WHERE g.country_code = 'CZ' AND g.area_id = 1  -- CZ only
+  ON g.trade_date = f.trade_date
+  AND g.period = f.period
+  AND g.area_id = f.area_id
+  AND g.country_code = f.country_code
+WHERE g.country_code = 'CZ'
 ORDER BY g.trade_date, g.period;
 ```
 
@@ -321,36 +346,70 @@ GROUP BY country_code, area_id
 ORDER BY country_code, area_id;
 ```
 
+### Cross-Country Load Comparison
+
+```sql
+SELECT l.trade_date, l.period, l.country_code,
+       l.actual_load_mw,
+       l.forecast_load_mw,
+       l.actual_load_mw - l.forecast_load_mw as load_forecast_error
+FROM finance.entsoe_load l
+WHERE l.trade_date = '2025-12-15'
+ORDER BY l.country_code, l.period;
+```
+
+### Imbalance Prices with Currency Conversion
+
+```sql
+SELECT trade_date, period, country_code,
+       CASE
+           WHEN country_code = 'CZ' THEN ROUND(pos_imb_price_czk_mwh / 24.5, 2)
+           ELSE ROUND(pos_imb_price_czk_mwh, 2)
+       END AS imb_price_eur_mwh
+FROM finance.entsoe_imbalance_prices
+WHERE trade_date = '2025-12-15'
+ORDER BY country_code, period;
+```
+
 ---
 
 ## Indexes
 
+All partitioned tables have:
+- **Primary Key Index:** `(trade_date, period, area_id, country_code)` on each partition
+
+Additional indexes:
 | Table | Index | Columns |
 |-------|-------|---------|
 | `entsoe_generation_actual` | `ix_entsoe_generation_actual_trade_date` | `trade_date` |
-| `entsoe_cross_border_flows` | (unique constraint) | `delivery_datetime, area_id` |
-| `entsoe_cross_border_flows` | (unique constraint) | `trade_date, period, area_id` |
 
 ---
 
 ## Data Runners
 
+All runners use unified multi-area architecture with partitioned storage.
+
 | Runner | Table | Schedule | Description |
 |--------|-------|----------|-------------|
-| `entsoe_unified_gen_runner.py` | `entsoe_generation_actual` | Every 15 min | Fetches A75 data for all 8 areas (CZ, DE×4, AT, PL, SK) |
-| `entsoe_flow_runner.py` | `entsoe_cross_border_flows` | Every 15 min | Fetches A11 physical flows for CZ borders |
-| `entsoe_balancing_runner.py` | `entsoe_balancing_energy` | Every 15 min | Fetches A84 aFRR/mFRR prices |
+| `entsoe_unified_gen_runner.py` | `entsoe_generation_actual` | Every 15 min | A75 actual generation for all 8 areas |
+| `entsoe_unified_forecast_runner.py` | `entsoe_generation_forecast` | Every 15 min | A69 wind/solar forecasts for all areas |
+| `entsoe_unified_scheduled_runner.py` | `entsoe_generation_scheduled` | Every 15 min | A71 scheduled generation for all areas |
+| `entsoe_unified_load_runner.py` | `entsoe_load` | Every 15 min | A65 load actual/forecast for all areas |
+| `entsoe_unified_flow_runner.py` | `entsoe_cross_border_flows` | Every 15 min | A11 physical flows (CZ borders) |
+| `entsoe_unified_sched_flow_runner.py` | `entsoe_scheduled_cross_border_flows` | Every 15 min | A09 scheduled exchanges (CZ borders) |
+| `entsoe_unified_balancing_runner.py` | `entsoe_balancing_energy` | Every 15 min | A84 aFRR/mFRR prices for all areas |
+| `entsoe_unified_imbalance_runner.py` | `entsoe_imbalance_prices` | Every 15 min | A85/A86 imbalance prices for all areas |
 
 **Runner Usage:**
 ```bash
 # Normal run (last 3 hours)
-python3 /app/scripts/runners/entsoe_unified_gen_runner.py
+docker compose exec entsoe-ote-data-uploader bash -c "export \$(cat /etc/environment_for_cron | xargs) && cd /app && python3 -m runners.entsoe_unified_gen_runner"
 
 # Dry run (no database writes)
-python3 /app/scripts/runners/entsoe_unified_gen_runner.py --dry-run
+docker compose exec entsoe-ote-data-uploader bash -c "export \$(cat /etc/environment_for_cron | xargs) && cd /app && python3 -m runners.entsoe_unified_gen_runner --dry-run"
 
 # Backfill historical data
-python3 /app/scripts/runners/entsoe_unified_gen_runner.py --start 2025-01-01 --end 2025-12-01
+docker compose exec entsoe-ote-data-uploader bash -c "export \$(cat /etc/environment_for_cron | xargs) && cd /app && python3 -m runners.entsoe_unified_gen_runner --start 2025-01-01 --end 2025-12-01"
 ```
 
 ---
@@ -366,3 +425,10 @@ python3 /app/scripts/runners/entsoe_unified_gen_runner.py --start 2025-01-01 --e
 | 016 | 2025-12-22 | Add German TSO areas (50Hertz, Amprion, TransnetBW) |
 | 017 | 2025-12-22 | Consolidate German partitions into single `_de` partition |
 | 018 | 2025-12-23 | Restructure partitioning by `country_code` instead of `area_id` |
+| 019 | 2025-12-23 | Partition `entsoe_load` by country_code |
+| 020 | 2025-12-23 | Partition `entsoe_generation_forecast` by country_code |
+| 021 | 2025-12-23 | Partition `entsoe_generation_scheduled` by country_code |
+| 022 | 2025-12-23 | Partition `entsoe_balancing_energy` by country_code |
+| 023 | 2025-12-23 | Partition `entsoe_imbalance_prices` by country_code |
+| 024 | 2025-12-23 | Partition `entsoe_cross_border_flows` by country_code |
+| 025 | 2025-12-23 | Partition `entsoe_scheduled_cross_border_flows` by country_code |
