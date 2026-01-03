@@ -345,7 +345,7 @@ def read_day_ahead_file(file_path, trade_date):
 
 def upload_to_database(records, conn, trade_date):
     """
-    Upload records to the database using bulk insert.
+    Upload records to the database using bulk upsert (INSERT ... ON CONFLICT DO UPDATE).
 
     Args:
         records: List of dictionaries containing the data (96 rows expected)
@@ -353,14 +353,15 @@ def upload_to_database(records, conn, trade_date):
         trade_date: Trade date for logging
 
     Returns:
-        int: Number of records inserted
+        int: Number of records upserted
     """
     if not records:
         return 0
 
     cursor = conn.cursor()
 
-    insert_query = """
+    # Use UPSERT to handle duplicates gracefully
+    upsert_query = """
         INSERT INTO ote_prices_day_ahead (
             trade_date, period, time_interval,
             price_15min_eur_mwh, volume_mwh,
@@ -369,9 +370,22 @@ def upload_to_database(records, conn, trade_date):
             saldo_dm_mwh, export_mwh, import_mwh,
             price_60min_ref_eur_mwh, is_15min
         ) VALUES %s
+        ON CONFLICT (trade_date, period) DO UPDATE SET
+            time_interval = EXCLUDED.time_interval,
+            price_15min_eur_mwh = EXCLUDED.price_15min_eur_mwh,
+            volume_mwh = EXCLUDED.volume_mwh,
+            purchase_15min_products_mwh = EXCLUDED.purchase_15min_products_mwh,
+            purchase_60min_products_mwh = EXCLUDED.purchase_60min_products_mwh,
+            sale_15min_products_mwh = EXCLUDED.sale_15min_products_mwh,
+            sale_60min_products_mwh = EXCLUDED.sale_60min_products_mwh,
+            saldo_dm_mwh = EXCLUDED.saldo_dm_mwh,
+            export_mwh = EXCLUDED.export_mwh,
+            import_mwh = EXCLUDED.import_mwh,
+            price_60min_ref_eur_mwh = EXCLUDED.price_60min_ref_eur_mwh,
+            is_15min = EXCLUDED.is_15min
     """
 
-    # Prepare data as tuples for bulk insert
+    # Prepare data as tuples for bulk upsert
     values = []
     for record in records:
         values.append((
@@ -392,17 +406,13 @@ def upload_to_database(records, conn, trade_date):
         ))
 
     try:
-        # Use execute_values for efficient bulk insert
-        extras.execute_values(cursor, insert_query, values)
+        # Use execute_values for efficient bulk upsert
+        extras.execute_values(cursor, upsert_query, values)
         conn.commit()
-        inserted = len(values)
+        upserted = len(values)
         cursor.close()
-        return inserted
+        return upserted
 
-    except psycopg2.IntegrityError as e:
-        conn.rollback()
-        cursor.close()
-        raise Exception(f"Conflict detected - data for {trade_date} already exists in database: {e}")
     except Exception as e:
         conn.rollback()
         cursor.close()
@@ -493,14 +503,14 @@ def process_directory(directory_path, logger, debug_mode=False):
                     print_debug_info(records, trade_date, excel_file)
                     files_processed += 1
                 else:
-                    # Upload to database using bulk insert
-                    logger.info(f"  Uploading {len(records)} records to database (bulk insert)...")
-                    inserted = upload_to_database(records, conn, trade_date)
+                    # Upload to database using bulk upsert
+                    logger.info(f"  Uploading {len(records)} records to database (bulk upsert)...")
+                    upserted = upload_to_database(records, conn, trade_date)
 
-                    total_inserted += inserted
+                    total_inserted += upserted
                     files_processed += 1
 
-                    logger.info(f"  ✓ Complete - Inserted: {inserted} records")
+                    logger.info(f"  ✓ Complete - Upserted: {upserted} records")
 
             except Exception as e:
                 logger.error(f"  ✗ Error processing file: {e}")
@@ -514,9 +524,9 @@ def process_directory(directory_path, logger, debug_mode=False):
         logger.info(f"Files processed successfully: {files_processed}")
         logger.info(f"Files failed: {files_failed}")
         if not debug_mode:
-            logger.info(f"Total records inserted: {total_inserted}")
+            logger.info(f"Total records upserted: {total_inserted}")
         else:
-            logger.info(f"DEBUG MODE - No records inserted to database")
+            logger.info(f"DEBUG MODE - No records upserted to database")
         logger.info(f"{'═' * 60}\n")
 
         return True

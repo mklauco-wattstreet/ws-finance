@@ -245,7 +245,7 @@ def auto_determine_date_range(base_dir, file_pattern, date_pattern, logger, mini
     Automatically determine the date range for downloads.
 
     Finds the last downloaded file and determines what dates to download.
-    If no files exist, downloads from minimum_date to yesterday.
+    If no files exist, downloads from minimum_date to tomorrow.
 
     Args:
         base_dir: Base directory to search
@@ -257,8 +257,8 @@ def auto_determine_date_range(base_dir, file_pattern, date_pattern, logger, mini
     Returns:
         tuple: (start_date, end_date) as datetime objects
     """
-    # Yesterday is the default end date (files are usually published next day)
-    yesterday = datetime.now() - timedelta(days=1)
+    # Tomorrow is the default end date for day-ahead prices (published one day in advance)
+    tomorrow = datetime.now() + timedelta(days=1)
 
     # Find last downloaded file
     last_date = find_last_downloaded_file(base_dir, file_pattern, date_pattern, logger)
@@ -267,22 +267,22 @@ def auto_determine_date_range(base_dir, file_pattern, date_pattern, logger, mini
         # Start from the day after the last download
         start_date = last_date + timedelta(days=1)
 
-        # If last download was yesterday or today, nothing to download
-        if start_date > yesterday:
+        # If last download was tomorrow or later, nothing to download
+        if start_date > tomorrow:
             logger.info(f"Already up to date. Last download: {last_date.strftime('%Y-%m-%d')}")
             return None, None
 
-        end_date = yesterday
+        end_date = tomorrow
         logger.info(f"Auto-determined date range: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
         logger.info(f"Gap detected: {(end_date - start_date).days + 1} days to download")
 
     else:
-        # No files exist - download from minimum date to yesterday
+        # No files exist - download from minimum date to tomorrow
         if minimum_date is None:
             raise ValueError("minimum_date must be specified when no files exist")
 
         start_date = minimum_date
-        end_date = yesterday
+        end_date = tomorrow
         days_count = (end_date - start_date).days + 1
         logger.info(f"No existing files found. Downloading from minimum date: {start_date.strftime('%Y-%m-%d')}")
         logger.info(f"Date range: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')} ({days_count} days)")
