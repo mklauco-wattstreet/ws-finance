@@ -132,7 +132,9 @@ def main():
             file_pattern="IM_15MIN_*.xlsx",
             date_pattern=date_pattern,
             logger=logger,
-            minimum_date=datetime(2025, 11, 1)
+            minimum_date=datetime(2025, 11, 1),
+            end_date_offset=0,  # Intraday: fetch TODAY's data (updated continuously)
+            redownload_latest=True  # Re-download today's file to get latest updates
         )
 
         if start_date is None or end_date is None:

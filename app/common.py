@@ -240,12 +240,12 @@ def find_last_downloaded_file(base_dir, file_pattern, date_pattern, logger):
     return latest_date
 
 
-def auto_determine_date_range(base_dir, file_pattern, date_pattern, logger, minimum_date=None):
+def auto_determine_date_range(base_dir, file_pattern, date_pattern, logger, minimum_date=None, end_date_offset=1, redownload_latest=False):
     """
     Automatically determine the date range for downloads.
 
     Finds the last downloaded file and determines what dates to download.
-    If no files exist, downloads from minimum_date to tomorrow.
+    If no files exist, downloads from minimum_date to (today + end_date_offset).
 
     Args:
         base_dir: Base directory to search
@@ -253,36 +253,45 @@ def auto_determine_date_range(base_dir, file_pattern, date_pattern, logger, mini
         date_pattern: Regex pattern to extract date
         logger: Logger instance
         minimum_date: Minimum date to start from if no files exist (datetime object)
+        end_date_offset: Days to add to today for end date (default=1 for day-ahead/tomorrow, 0 for intraday/today)
+        redownload_latest: If True, re-download the last file (useful for intraday data that updates continuously)
 
     Returns:
         tuple: (start_date, end_date) as datetime objects
     """
-    # Tomorrow is the default end date for day-ahead prices (published one day in advance)
-    tomorrow = datetime.now() + timedelta(days=1)
+    # Calculate end date based on offset:
+    # - Day-ahead prices: end_date_offset=1 (tomorrow, published one day in advance)
+    # - Intraday prices: end_date_offset=0 (today, updated continuously)
+    target_end_date = datetime.now() + timedelta(days=end_date_offset)
 
     # Find last downloaded file
     last_date = find_last_downloaded_file(base_dir, file_pattern, date_pattern, logger)
 
     if last_date:
-        # Start from the day after the last download
-        start_date = last_date + timedelta(days=1)
+        # For intraday data that updates continuously, re-download the last file if it's still relevant
+        if redownload_latest and last_date <= target_end_date:
+            start_date = last_date
+            logger.info(f"Re-downloading from last file date (data updates continuously): {last_date.strftime('%Y-%m-%d')}")
+        else:
+            # Start from the day after the last download
+            start_date = last_date + timedelta(days=1)
 
-        # If last download was tomorrow or later, nothing to download
-        if start_date > tomorrow:
+        # If last download was at or beyond target end date, nothing to download
+        if start_date > target_end_date:
             logger.info(f"Already up to date. Last download: {last_date.strftime('%Y-%m-%d')}")
             return None, None
 
-        end_date = tomorrow
+        end_date = target_end_date
         logger.info(f"Auto-determined date range: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
         logger.info(f"Gap detected: {(end_date - start_date).days + 1} days to download")
 
     else:
-        # No files exist - download from minimum date to tomorrow
+        # No files exist - download from minimum date to target end date
         if minimum_date is None:
             raise ValueError("minimum_date must be specified when no files exist")
 
         start_date = minimum_date
-        end_date = tomorrow
+        end_date = target_end_date
         days_count = (end_date - start_date).days + 1
         logger.info(f"No existing files found. Downloading from minimum date: {start_date.strftime('%Y-%m-%d')}")
         logger.info(f"Date range: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')} ({days_count} days)")

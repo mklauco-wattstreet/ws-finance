@@ -133,7 +133,8 @@ def read_intraday_file(file_path, trade_date):
 
 def upload_to_database(records, conn, trade_date):
     """
-    Upload records to the database using bulk insert.
+    Upload records to the database using bulk upsert (INSERT ... ON CONFLICT DO UPDATE).
+    This allows re-uploading today's data as it gets updated throughout the day.
 
     Args:
         records: List of dictionaries containing the data (96 rows expected)
@@ -141,14 +142,15 @@ def upload_to_database(records, conn, trade_date):
         trade_date: Trade date for logging
 
     Returns:
-        int: Number of records inserted
+        int: Number of records upserted
     """
     if not records:
         return 0
 
     cursor = conn.cursor()
 
-    insert_query = """
+    # Use UPSERT to handle updates to intraday data (which changes throughout the day)
+    upsert_query = """
         INSERT INTO ote_prices_intraday_market (
             trade_date, period, time_interval,
             traded_volume_mwh, traded_volume_purchased_mwh,
@@ -156,9 +158,18 @@ def upload_to_database(records, conn, trade_date):
             min_price_eur_mwh, max_price_eur_mwh,
             last_price_eur_mwh
         ) VALUES %s
+        ON CONFLICT (trade_date, period) DO UPDATE SET
+            time_interval = EXCLUDED.time_interval,
+            traded_volume_mwh = EXCLUDED.traded_volume_mwh,
+            traded_volume_purchased_mwh = EXCLUDED.traded_volume_purchased_mwh,
+            traded_volume_sold_mwh = EXCLUDED.traded_volume_sold_mwh,
+            weighted_avg_price_eur_mwh = EXCLUDED.weighted_avg_price_eur_mwh,
+            min_price_eur_mwh = EXCLUDED.min_price_eur_mwh,
+            max_price_eur_mwh = EXCLUDED.max_price_eur_mwh,
+            last_price_eur_mwh = EXCLUDED.last_price_eur_mwh
     """
 
-    # Prepare data as tuples for bulk insert
+    # Prepare data as tuples for bulk upsert
     values = []
     for record in records:
         values.append((
@@ -175,17 +186,13 @@ def upload_to_database(records, conn, trade_date):
         ))
 
     try:
-        # Use execute_values for efficient bulk insert
-        extras.execute_values(cursor, insert_query, values)
+        # Use execute_values for efficient bulk upsert
+        extras.execute_values(cursor, upsert_query, values)
         conn.commit()
-        inserted = len(values)
+        upserted = len(values)
         cursor.close()
-        return inserted
+        return upserted
 
-    except psycopg2.IntegrityError as e:
-        conn.rollback()
-        cursor.close()
-        raise Exception(f"Conflict detected - data for {trade_date} already exists in database: {e}")
     except Exception as e:
         conn.rollback()
         cursor.close()
@@ -269,14 +276,14 @@ def process_directory(directory_path):
 
                 print(f"  Expected rows: 96, Found: {len(records)}")
 
-                # Upload to database using bulk insert
-                print(f"  Uploading {len(records)} records to database (bulk insert)...")
-                inserted = upload_to_database(records, conn, trade_date)
+                # Upload to database using bulk upsert
+                print(f"  Uploading {len(records)} records to database (bulk upsert)...")
+                upserted = upload_to_database(records, conn, trade_date)
 
-                total_inserted += inserted
+                total_inserted += upserted
                 files_processed += 1
 
-                print(f"  ✓ Complete - Inserted: {inserted} records")
+                print(f"  ✓ Complete - Upserted: {upserted} records")
 
             except Exception as e:
                 print(f"  ✗ Error processing file: {e}")
@@ -289,7 +296,7 @@ def process_directory(directory_path):
         print(f"{'═' * 60}")
         print(f"Files processed successfully: {files_processed}")
         print(f"Files failed: {files_failed}")
-        print(f"Total records inserted: {total_inserted}")
+        print(f"Total records upserted: {total_inserted}")
         print(f"{'═' * 60}\n")
 
         return True
