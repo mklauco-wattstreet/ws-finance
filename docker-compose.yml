@@ -5,6 +5,11 @@ services:
       dockerfile: Dockerfile
     container_name: entsoe-ote-data-uploader
     restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
     volumes:
       # Mount app directory containing Python scripts (read-write for downloads)
       - ./app:/app/scripts
