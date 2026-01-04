@@ -26,6 +26,7 @@ Usage:
 import sys
 from pathlib import Path
 from typing import List, Tuple
+from datetime import datetime, timezone, timedelta
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -219,10 +220,21 @@ class UnifiedForecastRunner(BaseRunner):
                                 traceback.print_exc()
                             continue
             else:
-                period_start, period_end = self.get_time_range(hours=3)
+                # Fetch day-ahead forecasts: from now until end of tomorrow
+                # This ensures we get both today's remaining forecasts and all of tomorrow's
+                now_utc = datetime.now(timezone.utc)
+
+                # Round down to nearest 15 minutes for period_start
+                minutes = (now_utc.minute // 15) * 15
+                period_start = now_utc.replace(minute=minutes, second=0, microsecond=0)
+
+                # End at midnight tomorrow (start of day after tomorrow)
+                tomorrow_end = (now_utc + timedelta(days=1)).replace(hour=23, minute=59, second=59, microsecond=0)
+                period_end = tomorrow_end
+
                 self.logger.info(
                     f"Period (UTC): {period_start.strftime('%Y-%m-%d %H:%M')} "
-                    f"to {period_end.strftime('%Y-%m-%d %H:%M')}"
+                    f"to {period_end.strftime('%Y-%m-%d %H:%M')} (today + tomorrow)"
                 )
                 self.logger.info(f"Processing {len(ACTIVE_GENERATION_AREAS)} areas: "
                                f"{', '.join(label for _, _, label, _ in ACTIVE_GENERATION_AREAS)}")
