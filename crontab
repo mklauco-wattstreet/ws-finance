@@ -14,7 +14,7 @@
 0 */2 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 download_imbalance_prices.py >> /var/log/cron.log 2>&1
 
 # OTE-CR - Download intraday prices every 15 minutes
-0 */15 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 download_intraday_prices.py >> /var/log/cron.log 2>&1
+*/15 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 download_intraday_prices.py >> /var/log/cron.log 2>&1
 
 # OTE-CR - Download OTE daily settlement reports at 09:00
 0 09 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 ote_production.py >> /var/log/cron.log 2>&1
