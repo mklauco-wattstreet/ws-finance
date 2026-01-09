@@ -32,6 +32,9 @@ Thumbs.db
 
 # data
 app/2025/
+app/2026/
+app/2027/
+app/2028/
 
 # browser
 browser-profile/
@@ -41,3 +44,7 @@ _helpers
 ote_files/
 downloads/
 app/entsoe/data/
+
+# CEPS
+app/ceps/_2025/
+app/ceps/_2026/

@@ -1,0 +1,326 @@
+
+// obtain plugin
+var cc = initCookieConsent();
+
+// run plugin with your configuration
+cc.run({
+    current_lang: 'cs',
+    autoclear_cookies: true,                   // default: false
+    theme_css: '/libraries/cookies/cookieconsent.min.css',  // 🚨 replace with a valid path
+    page_scripts: true,                        // default: false
+
+    // delay: 0,                               // default: 0
+     auto_language: 'document',                     // default: null; could also be 'browser' or 'document'
+     autorun: true,                          // default: true
+    // force_consent: false,                   // default: false
+    // hide_from_bots: false,                  // default: false
+    // remove_cookie_tables: false             // default: false
+    // cookie_name: 'cc_cookie',               // default: 'cc_cookie'
+    // cookie_expiration: 182,                 // default: 182 (days)
+    // cookie_necessary_only_expiration: 182   // default: disabled
+    // cookie_domain: location.hostname,       // default: current domain
+    // cookie_path: '/',                       // default: root
+    // cookie_same_site: 'Lax',                // default: 'Lax'
+    // use_rfc_cookie: false,                  // default: false
+    // revision: 0,                            // default: 0
+
+    onFirstAction: function(user_preferences, cookie){
+        // callback triggered only once
+    },
+
+    onAccept: function (cookie) {
+        // ...
+    },
+
+    onChange: function (cookie, changed_preferences) {
+        // ...
+    },
+
+    gui_options: {
+        consent_modal: {
+            layout: 'cloud',               // box/cloud/bar
+            position: 'bottom center',     // bottom/middle/top + left/right/center
+            transition: 'slide',           // zoom/slide
+            swap_buttons: false            // enable to invert buttons
+        },
+        settings_modal: {
+            layout: 'box',                 // box/bar
+            // position: 'left',           // left/right
+            transition: 'slide'            // zoom/slide
+        }
+    },
+
+    languages: {
+        'cs': {
+            consent_modal: {
+                title: 'Cookies',
+                description: 'Tento web používá k poskytování služeb a analýze návštěvnosti soubory cookie. Používáním našich webových stránek souhlasíte se všemi soubory cookies v souladu s našimi zásadami používání souborů cookies. <button type="button" data-cc="c-settings" class="cc-link">Více informací</button>',
+                primary_btn: {
+                    text: 'Příjmout vše',
+                    role: 'accept_all'              // 'accept_selected' or 'accept_all'
+                },
+                secondary_btn: {
+                    text: 'Odmítnout vše',
+                    role: 'accept_necessary'        // 'settings' or 'accept_necessary'
+                }
+            },
+            settings_modal: {
+                title: 'Nastavení cookies',
+                save_settings_btn: 'Uložit nastavení',
+                accept_all_btn: 'Přijmout vše',
+                reject_all_btn: 'Zamítnout vše',
+                close_btn_label: 'Zavřít',
+                cookie_table_headers: [
+                    {col1: 'Název'},
+                    {col2: 'Doména'},
+                    {col3: 'Poskytovatel'},
+                    {col4: 'Expirace'},
+                    {col5: 'Popis'}
+                ],
+                blocks: [
+                    {
+                        title: 'Využívání cookies 📢',
+                        description: 'Soubory cookies používáme ke zlepšení prohlížení webu, analytice a poskytování dalších funkcí. Používáním našich webových stránek souhlasíte se všemi soubory cookies v souladu s našimi zásadami používání souborů cookies. <a href="'+cc_policy_link+'" class="cc-link">Ochrana osobních údajů</a>.'
+                    }, {
+                        title: 'Nezbytné cookies',
+                        description: 'Nezbytné cookies jsou naprosto nutné pro správné fungování webových stránek. Tyto soubory cookie zajišťují anonymně základní funkce a bezpečnostní funkce webu. Cookies se uchovávají po dobu 182 dnů.',
+                        toggle: {
+                            value: 'necessary',
+                            enabled: true,
+                            readonly: true          // cookie categories with readonly=true are all treated as "necessary cookies"
+                        },
+                        cookie_table: [
+                            {
+                                col1: 'cc_cookie',
+                                col2: 'www.ceps.cz',
+                                col3: 'ČEPS',
+                                col4: 'sezení',
+                                col5: 'Tento soubor se používá k uložení stavu, zda uživatel souhlasí s používáním cookies.'
+                            },
+                            {
+                                col1: 'nette-samesite',
+                                col2: 'www.ceps.cz',
+                                col3: 'ČEPS',
+                                col4: 'sezení',
+                                col5: 'Tento soubor se používá jako jedna z obran proti CSRF'
+                            },
+                            {
+                                col1: 'PHPSESSID',
+                                col2: 'www.ceps.cz',
+                                col3: 'ČEPS',
+                                col4: 'sezení',
+                                col5: 'Cookie generované aplikacemi založenými na jazyce PHP. Toto je obecný identifikátor používaný k udržování proměnných relace uživatele. Obvykle se jedná o náhodně generované číslo, jak může být použito pro konkrétní web, ale dobrým příkladem je udržování přihlášeného stavu mezi uživateli mezi uživateli.'
+                            },
+                            {
+                                col1: 'ARRAffinitySameSite',
+                                col2: '.www.ceps.cz',
+                                col3: 'Microsoft Azure cloud platform',
+                                col4: 'sezení',
+                                col5: 'Nastavena platformou Microsoft Azure cloud platform. Používá se pro distribuci zátěže webu.'
+                            },
+                            {
+                                col1: 'ARRAffinity',
+                                col2: '.www.ceps.cz',
+                                col3: 'Microsoft Azure cloud platform',
+                                col4: 'sezení',
+                                col5: 'Nastavena platformou Microsoft Azure cloud platform. Používá se pro distribuci zátěže webu.'
+                            }
+                        ]
+                    }, {
+                        title: 'Sledovací a konverzní cookies',
+                        description: 'Sledovací a konverzní cookies se používají k pochopení interakce návštěvníků s webem. Tyto soubory cookie pomáhají poskytovat informace o metrikách počet návštěvníků, míru okamžitého opuštění, zdroj provozu atd. Cookies se uchovávají po dobu 182 dnů.',
+                        toggle: {
+                            value: 'analytics',     // your cookie category
+                            enabled: false,
+                            readonly: false
+                        },
+                        cookie_table: [
+                            {
+                                col1: '__utma',
+                                col2: '.ceps.cz (Google Analytics)',
+                                col3: 'Google Analytics',
+                                col4: '2 roky',
+                                col5: 'Používán k odlišení uživatelů a relací. Cookie se vytvoří, pokud javascript spustí kontrolu existence __utma cookies. Cookie je aktualizován pokaždé, když jsou data odeslána Google Analytics.'
+                            },
+                            {
+                                col1: '__utmb',
+                                col2: '.ceps.cz',
+                                col3: 'Google Analytics',
+                                col4: '30 min',
+                                col5: 'Používá se k určení nové relace / návštěv. Cookie se vytvoří, pokud javascript spustí kontrolu existence __utmb cookies. Cookie je aktualizován pokaždé, když jsou data odeslána Google Analytics.'
+                            },
+                            {
+                                col1: '__utmc',
+                                col2: '.ceps.cz',
+                                col3: 'Google Analytics',
+                                col4: '30 minut',
+                                col5: 'Nepoužíván v ga.js. Nastaven pro interoperabilitu s urchin.js. Historicky je toto cookie provozováno ve spojení s __utmb cookie za účelem zjištění, zda se uživatel nachází v nové relaci/návštěvě.'
+                            },
+                            {
+                                col1: '__utmz',
+                                col2: '.ceps.cz',
+                                col3: 'Google Analytics',
+                                col4: '6 měsíců',
+                                col5: 'Ukládá zdroj nebo kampaň, které udávají, jak se uživatel dostal na Vaši stránku. Soubor cookie se vytvoří, pokud javascript spustí a je aktualizován pokaždé, když jsou data odeslána Google Analytics.'
+                            },
+                            {
+                                col1: '__utmt',
+                                col2: '.ceps.cz',
+                                col3: 'Google Analytics',
+                                col4: '10 minut',
+                                col5: 'Reguluje počet požadavků na služby. Automaticky monitoruje a reguluje provoz a předchází problémům, které by mohly nastat při pohybu návštěvníků na stránce.'
+                            }
+                        ]
+                    }, /*{
+                        title: 'Marketingové cookies',
+                        description: 'Marketingové cookies se používají k poskytování relevantních reklam a marketingových kampaní návštěvníkům. Tyto soubory cookie sledují návštěvníky napříč webovými stránkami a shromažďují informace za účelem poskytování přizpůsobených reklam.',
+                        toggle: {
+                            value: 'targeting',
+                            enabled: false,
+                            readonly: false
+                        }
+                    },*/ {
+                        title: 'Více informací',
+                        description: 'Pokud máte dotazy k ochraně osobních údajů a nebo fungování cookies <a class="cc-link" href="'+cc_contact_link+'">kontaktujte nás</a>.',
+                    }
+                ]
+            }
+        },
+        'en': {
+            consent_modal: {
+                title: 'Cookies',
+                description: 'We use cookies to improve the user experience and analytics. By using our website, you agree to all cookies in accordance with our cookie policy. <button type="button" data-cc="c-settings" class="cc-link">Let me choose</button>',
+                primary_btn: {
+                    text: 'Accept all',
+                    role: 'accept_all'              // 'accept_selected' or 'accept_all'
+                },
+                secondary_btn: {
+                    text: 'Reject all',
+                    role: 'accept_necessary'        // 'settings' or 'accept_necessary'
+                }
+            },
+            settings_modal: {
+                title: 'Cookie preferences',
+                save_settings_btn: 'Save settings',
+                accept_all_btn: 'Accept all',
+                reject_all_btn: 'Reject all',
+                close_btn_label: 'Close',
+                cookie_table_headers: [
+                    {col1: 'Name'},
+                    {col2: 'Domain'},
+                    {col3: 'Provider'},
+                    {col4: 'Expiration'},
+                    {col5: 'Description'}
+                ],
+                blocks: [
+                    {
+                        title: 'Cookie usage 📢',
+                        description: 'We use cookies to improve the user experience and analytics. By using our website, you agree to all cookies in accordance with our cookie policy. <a href="'+cc_policy_link+'" class="cc-link">privacy policy</a>.'
+                    }, {
+                        title: 'Strictly necessary cookies',
+                        description: 'These cookies are essential for the proper functioning of my website. Without these cookies, the website would not work properly. Stored for 182 days.',
+                        toggle: {
+                            value: 'necessary',
+                            enabled: true,
+                            readonly: true          // cookie categories with readonly=true are all treated as "necessary cookies"
+                        },
+                        cookie_table: [
+                            {
+                                col1: 'cc_cookie',
+                                col2: 'www.ceps.cz',
+                                col3: 'ČEPS',
+                                col4: 'sezení',
+                                col5: 'This cookie is used to save the status of whether the user agrees to the use of cookies.'
+                            },
+                            {
+                                col1: 'nette-samesite',
+                                col2: 'www.ceps.cz',
+                                col3: 'ČEPS',
+                                col4: 'sezení',
+                                col5: 'This cookie is used for one of system defense against CSRF.'
+                            },
+                            {
+                                col1: 'PHPSESSID',
+                                col2: 'www.ceps.cz',
+                                col3: 'ČEPS',
+                                col4: '30 minutes',
+                                col5: 'Cookie generated by applications based on the PHP language. This is a general purpose identifier used to maintain user session variables. It is normally a random generated number, how it is used can be specific to the site, but a good example is maintaining a logged-in status for a user between pages.'
+                            },
+                            {
+                                col1: 'ARRAffinitySameSite',
+                                col2: '.www.ceps.cz',
+                                col3: 'ČEPS',
+                                col4: 'sezení',
+                                col5: 'Cookie set by Microsoft Azure cloud platform. Used to distribute traffic to the website on several servers in order to optimise response times.'
+                            },
+                            {
+                                col1: 'ARRAffinity',
+                                col2: '.www.ceps.cz',
+                                col3: 'ČEPS',
+                                col4: 'sezení',
+                                col5: 'Cookie set by Microsoft Azure cloud platform. Used to distribute traffic to the website on several servers in order to optimise response times.'
+                            }
+                        ]
+                    }, {
+                        title: 'Performance and Analytics cookies',
+                        description: 'Tracking and conversion cookies are used to understand the interaction of visitors with the site. These cookies help provide information about metrics, number of visitors, bounce rate, source of traffic, etc.  Stored for 182 days.',
+                        toggle: {
+                            value: 'analytics',     // your cookie category
+                            enabled: false,
+                            readonly: false
+                        },
+                        cookie_table: [
+                            {
+                                col1: '__utma',
+                                col2: '.ceps.cz (Google Analytics)',
+                                col3: 'Google Analytics',
+                                col4: '2 years',
+                                col5: '	Used to distinguish users and sessions. The cookie is created when the javascript library executes and no existing __utma cookies exists. The cookie is updated every time data is sent to Google Analytics.'
+                            },
+                            {
+                                col1: '__utmb',
+                                col2: '.ceps.cz',
+                                col3: 'Google Analytics',
+                                col4: '30 min',
+                                col5: 'Used to determine new sessions/visits. The cookie is created when the javascript library executes and no existing __utmb cookies exists. The cookie is updated every time data is sent to Google Analytics.'
+                            },
+                            {
+                                col1: '__utmc',
+                                col2: '.ceps.cz',
+                                col3: 'Google Analytics',
+                                col4: 'sezení',
+                                col5: 'Not used in ga.js. Set for interoperability with urchin.js. Historically, this cookie operated in conjunction with the __utmb cookie to determine whether the user was in a new session/visit.'
+                            },
+                            {
+                                col1: '__utmz',
+                                col2: '.ceps.cz',
+                                col3: 'Google Analytics',
+                                col4: '6 měsíců',
+                                col5: 'Stores the traffic source or campaign that explains how the user reached your site. The cookie is created when the javascript library executes and is updated every time data is sent to Google Analytics.'
+                            },
+                            {
+                                col1: '__utmt',
+                                col2: '.ceps.cz',
+                                col3: 'Google Analytics',
+                                col4: '10 minut',
+                                col5: 'Regulates the number of service requests. It automatically monitors and regulates traffic and prevents problems that might arise as visitors move around the page.'
+                            }
+                        ]
+                    }, /*{
+                        title: 'Advertisement and Targeting cookies',
+                        description: 'Marketing cookies are used to provide relevant ads and marketing campaigns to visitors. These cookies track visitors across the website and collect information to provide personalized ads.',
+                        toggle: {
+                            value: 'targeting',
+                            enabled: false,
+                            readonly: false
+                        }
+                    },*/ {
+                        title: 'More information',
+                        description: 'For any queries in relation to our policy on cookies and your choices, please <a class="cc-link" href="'+cc_contact_link+'">contact us</a>.',
+                    }
+                ]
+            }
+        }
+    },
+    
+});

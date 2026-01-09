@@ -29,16 +29,17 @@ class ImbalanceRunner(BaseRunner):
     RUNNER_NAME = "ENTSO-E Imbalance Runner"
 
     # Table configuration
+    # NOTE: This is the OLD runner - use entsoe_unified_imbalance_runner.py instead
     TABLE_NAME = "entsoe_imbalance_prices"
     COLUMNS = [
-        "trade_date", "period", "time_interval",
+        "trade_date", "period", "area_id", "country_code", "time_interval",
         "pos_imb_price_czk_mwh", "pos_imb_scarcity_czk_mwh",
         "pos_imb_incentive_czk_mwh", "pos_imb_financial_neutrality_czk_mwh",
         "neg_imb_price_czk_mwh", "neg_imb_scarcity_czk_mwh",
         "neg_imb_incentive_czk_mwh", "neg_imb_financial_neutrality_czk_mwh",
         "imbalance_mwh", "difference_mwh", "situation", "status"
     ]
-    CONFLICT_COLUMNS = ["trade_date", "time_interval"]
+    CONFLICT_COLUMNS = ["trade_date", "period", "area_id", "country_code"]
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -129,6 +130,8 @@ class ImbalanceRunner(BaseRunner):
             records.append((
                 record['trade_date'],
                 record['period'],
+                record.get('area_id', 1),  # Default to 1 (CZ) for old data
+                record.get('country_code', 'CZ'),  # Default to CZ for old data
                 record['time_interval'],
                 record['pos_imb_price_czk_mwh'],
                 record['pos_imb_scarcity_czk_mwh'],

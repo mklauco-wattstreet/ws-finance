@@ -14,6 +14,7 @@ alembic>=1.13.0
 
 # HTTP (optional - download scripts use stdlib urllib)
 requests>=2.31.0
+brotli>=1.1.0  # Required for Brotli decompression in requests
 
 # Selenium for browser automation
 selenium>=4.15.0

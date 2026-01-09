@@ -432,3 +432,64 @@ class EntsoeScheduledCrossBorderFlows(Base):
     scheduled_sk_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     scheduled_total_net_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+
+
+class CepsActualRePrice1Min(Base):
+    """CEPS actual reserve energy (RE) prices at 1-minute granularity.
+
+    Stores minute-level pricing data for automatic frequency restoration reserve (aFRR)
+    and manual frequency restoration reserve (mFRR) in the Czech grid.
+
+    Note: Partitioned by year based on delivery_timestamp for efficient data management.
+    """
+    __tablename__ = 'ceps_actual_re_price_1min'
+    __table_args__ = (
+        PrimaryKeyConstraint('delivery_timestamp', 'id', name='ceps_actual_re_price_1min_pkey'),
+        UniqueConstraint('delivery_timestamp', name='uq_ceps_re_price_1min_delivery_timestamp'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(Integer, autoincrement=True)
+    delivery_timestamp: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    price_afrr_plus_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    price_afrr_minus_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    price_mfrr_plus_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    price_mfrr_minus_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    price_mfrr_5_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+
+
+class CepsActualRePrice15Min(Base):
+    """CEPS actual reserve energy (RE) prices aggregated to 15-minute intervals.
+
+    Provides mean, median, and last-in-interval pricing statistics for aFRR and mFRR.
+    This aggregated view supports correlation analysis with 15-minute imbalance data.
+
+    Note: Partitioned by year based on trade_date for efficient data management.
+    """
+    __tablename__ = 'ceps_actual_re_price_15min'
+    __table_args__ = (
+        PrimaryKeyConstraint('trade_date', 'time_interval', 'id', name='ceps_actual_re_price_15min_pkey'),
+        UniqueConstraint('trade_date', 'time_interval', name='uq_ceps_re_price_15min_trade_date_interval'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(Integer, autoincrement=True)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    price_afrr_plus_mean_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    price_afrr_minus_mean_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    price_mfrr_plus_mean_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    price_mfrr_minus_mean_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    price_mfrr_5_mean_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    price_afrr_plus_median_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    price_afrr_minus_median_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    price_mfrr_plus_median_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    price_mfrr_minus_median_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    price_mfrr_5_median_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    price_afrr_plus_last_at_interval_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    price_afrr_minus_last_at_interval_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    price_mfrr_plus_last_at_interval_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    price_mfrr_minus_last_at_interval_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    price_mfrr_5_last_at_interval_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')

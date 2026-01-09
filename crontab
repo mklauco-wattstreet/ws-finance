@@ -22,6 +22,20 @@
 # OTE-CR - Download OTE trade balance reports every 2 hours
 0 */2 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 ote_trade_balance_downloader.py >> /var/log/cron.log 2>&1
 
+# ============================================================================
+# CEPS - Czech Grid Imbalance Data
+# ============================================================================
+
+# CEPS - Download and upload ALL datasets (RE price, SVR activation, imbalance)
+# Runs at minutes 4, 19, 34, 49 every hour
+# Downloads today's data in sequence: RE → 65s delay → SVR → 65s delay → Imbalance
+# Total runtime: ~3.5 minutes per cycle
+12,27,42,57 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 ceps/ceps_runner.py >> /var/log/cron.log 2>&1
+
+# ============================================================================
+# ENTSO-E - Pan-European Data Pipelines
+# ============================================================================
+
 # ENTSO-E - Unified imbalance data pipeline every 15 minutes
 # Fetches imbalance prices (A85) and volumes (A86) for all areas
 */15 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.entsoe_unified_imbalance_runner >> /var/log/cron.log 2>&1
