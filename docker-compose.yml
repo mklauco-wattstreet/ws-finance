@@ -8,7 +8,7 @@ services:
     logging:
       driver: "json-file"
       options:
-        max-size: "50m"
+        max-size: "10m"
         max-file: "3"
     volumes:
       # Mount app directory containing Python scripts (read-write for downloads)
