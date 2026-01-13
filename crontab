@@ -23,14 +23,13 @@
 0 */2 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 ote_trade_balance_downloader.py >> /var/log/cron.log 2>&1
 
 # ============================================================================
-# CEPS - Czech Grid Imbalance Data
+# CEPS - Czech Grid Imbalance Data (via SOAP API)
 # ============================================================================
 
-# CEPS - Download and upload ALL datasets (RE price, SVR activation, imbalance)
-# Runs at minutes 4, 19, 34, 49 every hour
-# Downloads today's data in sequence: RE → 65s delay → SVR → 65s delay → Imbalance
-# Total runtime: ~3.5 minutes per cycle
-12,27,42,57 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 ceps/ceps_runner.py >> /var/log/cron.log 2>&1
+# CEPS - Download and upload ALL datasets (imbalance, RE price, SVR activation, export/import SVR)
+# Runs at minutes 12, 27, 42, 57 every hour (every 15 minutes offset)
+# Uses SOAP API - completes in ~7 seconds (50-100x faster than Selenium)
+12,27,42,57 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 ceps/ceps_soap_pipeline.py --dataset all >> /var/log/cron.log 2>&1
 
 # ============================================================================
 # ENTSO-E - Pan-European Data Pipelines
