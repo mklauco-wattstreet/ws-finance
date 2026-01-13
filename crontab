@@ -67,9 +67,18 @@
 # Fetches day-ahead scheduled exchanges (A09) for all CZ border pairs
 */15 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.entsoe_unified_sched_flow_runner >> /var/log/cron.log 2>&1
 
-# ENTSO-E - XML cleanup daily at 02:00
-# Retention policy: Delete XML files older than 1 day (keep only last 24 hours for verification)
-0 02 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 entsoe/cleanup_old_xml.py >> /var/log/cron.log 2>&1
+# ============================================================================
+# Cleanup - Delete old downloaded files daily at 02:00
+# ============================================================================
+
+# ENTSO-E XML files - keep 1 day
+0 02 * * * find /app/scripts/entsoe/data -type f -name "*.xml" -mtime +1 -delete 2>/dev/null; echo "$(date '+\%Y-\%m-\%d \%H:\%M:\%S') - Cleaned ENTSO-E XML files older than 1 day" >> /var/log/cron.log
+
+# CEPS files (CSV + XML) - keep 1 day
+5 02 * * * find /app/downloads/ceps -type f \( -name "*.xml" -o -name "*.csv" \) -mtime +1 -delete 2>/dev/null; echo "$(date '+\%Y-\%m-\%d \%H:\%M:\%S') - Cleaned CEPS files older than 1 day" >> /var/log/cron.log
+
+# OTE files - keep 7 days
+10 02 * * * find /app/ote_files -type f -mtime +7 -delete 2>/dev/null; echo "$(date '+\%Y-\%m-\%d \%H:\%M:\%S') - Cleaned OTE files older than 7 days" >> /var/log/cron.log
 
 # Manual test command for OTE portal login:
 # export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 ote_OTE-CR_login.py
