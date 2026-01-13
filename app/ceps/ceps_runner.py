@@ -43,6 +43,8 @@ from ceps.ceps_re_price_downloader import download_ceps_re_price
 from ceps.ceps_re_price_uploader import process_csv_file as process_re_price_csv_file
 from ceps.ceps_svr_activation_downloader import download_ceps_svr_activation
 from ceps.ceps_svr_activation_uploader import process_csv_file as process_svr_activation_csv_file
+from ceps.ceps_export_import_svr_downloader import download_ceps_export_import_svr
+from ceps.ceps_export_import_svr_uploader import process_csv_file as process_export_import_svr_csv_file
 
 
 def run_download_and_upload(start_date: date, end_date: date, dataset: str, logger):
@@ -141,6 +143,7 @@ def run_download_and_upload_single_day(target_date: date, dataset: str, logger):
     results = {
         're_price': {'success': False, 'records_1min': 0, 'intervals_15min': 0, 'csv_path': None},
         'svr_activation': {'success': False, 'records_1min': 0, 'intervals_15min': 0, 'csv_path': None},
+        'export_import_svr': {'success': False, 'records_1min': 0, 'intervals_15min': 0, 'csv_path': None},
         'imbalance': {'success': False, 'records_1min': 0, 'intervals_15min': 0, 'csv_path': None}
     }
 
@@ -348,6 +351,74 @@ def run_download_and_upload_single_day(target_date: date, dataset: str, logger):
                     except Exception as e:
                         logger.warning(f"Warning: Failed to close browser: {e}")
 
+                # 65 second delay before next download
+                if dataset == 'all':
+                    logger.info("")
+                    logger.info("Waiting 65 seconds before next download...")
+                    time.sleep(65)
+
+        # ====================================================================
+        # DATASET 4: Export/Import SVR (ExportImportSVR) - FOURTH
+        # ====================================================================
+        if dataset in ['export_import_svr', 'all']:
+            logger.info("")
+            logger.info("=" * 80)
+            logger.info("DATASET 4: EXPORT/IMPORT SVR (ExportImportSVR)")
+            logger.info("=" * 80)
+
+            try:
+                # Step 4.1: Download Export/Import SVR CSV
+                logger.info("STEP 4.1: DOWNLOADING EXPORT/IMPORT SVR DATA")
+                logger.info("-" * 80)
+
+                driver = init_browser()
+                export_import_svr_csv = download_ceps_export_import_svr(
+                    driver=driver,
+                    start_date=start_dt,
+                    end_date=end_dt,
+                    logger=logger
+                )
+
+                if export_import_svr_csv and export_import_svr_csv.exists():
+                    logger.info(f"✓ Export/Import SVR download successful: {export_import_svr_csv}")
+                    results['export_import_svr']['csv_path'] = export_import_svr_csv
+
+                    # Step 4.2: Upload Export/Import SVR to database
+                    logger.info("")
+                    logger.info("STEP 4.2: UPLOADING EXPORT/IMPORT SVR TO DATABASE")
+                    logger.info("-" * 80)
+
+                    records_1min, intervals_15min = process_export_import_svr_csv_file(export_import_svr_csv, conn, logger)
+                    results['export_import_svr']['records_1min'] = records_1min
+                    results['export_import_svr']['intervals_15min'] = intervals_15min
+
+                    if records_1min > 0:
+                        results['export_import_svr']['success'] = True
+                        logger.info("✓ Export/Import SVR data uploaded successfully")
+                    else:
+                        logger.warning("⚠ No Export/Import SVR records uploaded")
+                        overall_success = False
+                else:
+                    logger.error("✗ Export/Import SVR download failed")
+                    overall_success = False
+
+            except Exception as e:
+                logger.error(f"✗ Export/Import SVR pipeline failed: {e}")
+                overall_success = False
+                if logger.level == 10:  # DEBUG level
+                    import traceback
+                    logger.error(traceback.format_exc())
+
+            finally:
+                # Clean up browser
+                if driver:
+                    try:
+                        driver.quit()
+                        driver = None
+                        logger.info("✓ Browser closed")
+                    except Exception as e:
+                        logger.warning(f"Warning: Failed to close browser: {e}")
+
         # ====================================================================
         # SUMMARY
         # ====================================================================
@@ -372,6 +443,12 @@ def run_download_and_upload_single_day(target_date: date, dataset: str, logger):
             logger.info(f"  CSV: {results['svr_activation']['csv_path'].name}")
             logger.info(f"  1min records: {results['svr_activation']['records_1min']:,}")
             logger.info(f"  15min intervals: {results['svr_activation']['intervals_15min']:,}")
+
+        if dataset in ['export_import_svr', 'all'] and results['export_import_svr']['success']:
+            logger.info("Export/Import SVR:")
+            logger.info(f"  CSV: {results['export_import_svr']['csv_path'].name}")
+            logger.info(f"  1min records: {results['export_import_svr']['records_1min']:,}")
+            logger.info(f"  15min intervals: {results['export_import_svr']['intervals_15min']:,}")
 
         if dataset in ['imbalance', 'all'] and results['imbalance']['success']:
             logger.info("System Imbalance:")
@@ -450,9 +527,9 @@ Examples:
     parser.add_argument(
         '--dataset',
         type=str,
-        choices=['re_price', 'svr_activation', 'imbalance', 'all'],
+        choices=['re_price', 'svr_activation', 'export_import_svr', 'imbalance', 'all'],
         default='all',
-        help='Which dataset to download (re_price, svr_activation, imbalance, or all). Defaults to all.'
+        help='Which dataset to download (re_price, svr_activation, export_import_svr, imbalance, or all). Defaults to all.'
     )
     parser.add_argument(
         '--debug',

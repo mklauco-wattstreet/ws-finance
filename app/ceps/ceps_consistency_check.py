@@ -6,6 +6,7 @@ Checks data completeness for all CEPS datasets:
 1. System Imbalance (AktualniSystemovaOdchylkaCR)
 2. RE Prices (AktualniCenaRE)
 3. SVR Activation (AktivaceSVRvCR)
+4. Export/Import SVR (ExportImportSVR)
 
 Expected: All data from 2024-12-01 00:00 to current time (1440 records per day)
 """
@@ -123,6 +124,47 @@ def get_summary_stats(table_name: str, start_date: date, end_date: date, conn) -
         }
 
 
+def get_last_12h_stats(table_name: str, current_time: datetime, conn) -> dict:
+    """
+    Get statistics for the last 12 hours.
+
+    Args:
+        table_name: Name of the 1min table
+        current_time: Current datetime
+        conn: Database connection
+
+    Returns:
+        Dict with last 12h statistics
+    """
+    twelve_hours_ago = current_time.replace(microsecond=0) - timedelta(hours=12)
+
+    query = f"""
+        SELECT
+            COUNT(*) AS total_records,
+            MIN(delivery_timestamp) AS first_record,
+            MAX(delivery_timestamp) AS last_record
+        FROM finance.{table_name}
+        WHERE delivery_timestamp >= %s
+          AND delivery_timestamp <= %s;
+    """
+
+    with conn.cursor() as cur:
+        cur.execute(query, (twelve_hours_ago, current_time))
+        row = cur.fetchone()
+
+        if row:
+            return {
+                'total_records': row[0] or 0,
+                'first_record': row[1],
+                'last_record': row[2]
+            }
+        return {
+            'total_records': 0,
+            'first_record': None,
+            'last_record': None
+        }
+
+
 def main():
     """Main entry point."""
     # Date range: 2024-12-01 to current time
@@ -178,6 +220,11 @@ def main():
                 'name': 'SVR Activation',
                 'table': 'ceps_svr_activation_1min',
                 'tag': 'AktivaceSVRvCR'
+            },
+            {
+                'name': 'Export/Import SVR',
+                'table': 'ceps_export_import_svr_1min',
+                'tag': 'ExportImportSVR'
             }
         ]
 
@@ -261,10 +308,45 @@ def main():
                 print()
 
         # ====================================================================
+        # LAST 12 HOURS HEALTH CHECK
+        # ====================================================================
+        print("=" * 80)
+        print("LAST 12 HOURS HEALTH CHECK (Most Critical)")
+        print("=" * 80)
+        twelve_hours_ago = current_time - timedelta(hours=12)
+        expected_12h = 12 * 60  # 720 minutes
+        print(f"Period: {twelve_hours_ago.strftime('%Y-%m-%d %H:%M')} to {current_time.strftime('%Y-%m-%d %H:%M')}")
+        print(f"Expected: {expected_12h} records per dataset")
+        print()
+
+        for dataset in datasets:
+            stats_12h = get_last_12h_stats(dataset['table'], current_time, conn)
+            completeness_12h = (stats_12h['total_records'] / expected_12h * 100) if expected_12h > 0 else 0
+
+            # Determine status emoji
+            if completeness_12h >= 99:
+                status = "✅"
+            elif completeness_12h >= 95:
+                status = "⚠️"
+            else:
+                status = "❌"
+
+            print(f"{dataset['name']}: {completeness_12h:.2f}% Complete {status}")
+            print(f"  Records: {stats_12h['total_records']:,} / {expected_12h:,}")
+            print(f"  Missing: {expected_12h - stats_12h['total_records']:,} records")
+
+            if stats_12h['first_record']:
+                print(f"  First: {stats_12h['first_record']}")
+            if stats_12h['last_record']:
+                print(f"  Last: {stats_12h['last_record']}")
+
+            print()
+
+        # ====================================================================
         # OVERALL SUMMARY
         # ====================================================================
         print("=" * 80)
-        print("OVERALL SUMMARY")
+        print("OVERALL SUMMARY (Since 2024-12-01)")
         print("=" * 80)
         print()
 
