@@ -7,20 +7,24 @@
 # - Download all missing files from last download date + 1 to yesterday
 # - If no files exist, download last 7 days
 
+# ============================================================================
+# OTE-CR - Czech Market Data
+# ============================================================================
+
 # OTE-CR - Download day-ahead prices daily at 16:00
-0 16 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 download_day_ahead_prices.py >> /var/log/cron.log 2>&1
+0 16 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 download_day_ahead_prices.py >> /var/log/ote.log 2>&1
 
 # OTE-CR - Download imbalance prices every 2 hours
-0 */2 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 download_imbalance_prices.py >> /var/log/cron.log 2>&1
+0 */2 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 download_imbalance_prices.py >> /var/log/ote.log 2>&1
 
 # OTE-CR - Download intraday prices every 15 minutes
-*/15 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 download_intraday_prices.py >> /var/log/cron.log 2>&1
+*/15 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 download_intraday_prices.py >> /var/log/ote.log 2>&1
 
 # OTE-CR - Download OTE daily settlement reports at 09:00
-0 09 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 ote_production.py >> /var/log/cron.log 2>&1
+0 09 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 ote_production.py >> /var/log/ote.log 2>&1
 
 # OTE-CR - Download OTE trade balance reports every 2 hours
-0 */2 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 ote_trade_balance_downloader.py >> /var/log/cron.log 2>&1
+0 */2 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 ote_trade_balance_downloader.py >> /var/log/ote.log 2>&1
 
 # ============================================================================
 # CEPS - Czech Grid Imbalance Data (via SOAP API)
@@ -29,58 +33,54 @@
 # CEPS - Download and upload ALL datasets (imbalance, RE price, SVR activation, export/import SVR)
 # Runs at minutes 12, 27, 42, 57 every hour (every 15 minutes offset)
 # Uses SOAP API - completes in ~7 seconds (50-100x faster than Selenium)
-12,27,42,57 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 ceps/ceps_soap_pipeline.py --dataset all >> /var/log/cron.log 2>&1
+12,27,42,57 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 ceps/ceps_soap_pipeline.py --dataset all >> /var/log/ceps.log 2>&1
 
 # ============================================================================
-# ENTSO-E - Pan-European Data Pipelines
+# ENTSO-E - Pan-European Data Pipelines (separate logs per runner)
 # ============================================================================
 
 # ENTSO-E - Unified imbalance data pipeline every 15 minutes
-# Fetches imbalance prices (A85) and volumes (A86) for all areas
-*/15 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.entsoe_unified_imbalance_runner >> /var/log/cron.log 2>&1
+*/15 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.entsoe_unified_imbalance_runner >> /var/log/entsoe_imbalance.log 2>&1
 
 # ENTSO-E - Unified load data pipeline every 15 minutes
-# Fetches actual load (A65/A16) and day-ahead forecast (A65/A01) for all areas
-*/15 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.entsoe_unified_load_runner >> /var/log/cron.log 2>&1
+*/15 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.entsoe_unified_load_runner >> /var/log/entsoe_load.log 2>&1
 
 # ENTSO-E - Unified generation data pipeline every 15 minutes
-# Fetches actual generation per type (A75) for ALL areas: CZ, DE, AT, PL, SK
-*/15 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.entsoe_unified_gen_runner >> /var/log/cron.log 2>&1
+*/15 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.entsoe_unified_gen_runner >> /var/log/entsoe_gen.log 2>&1
 
 # ENTSO-E - Unified cross-border flows pipeline every 15 minutes
-# Fetches physical flows (A11) for all CZ border pairs (DE, AT, PL, SK)
-*/15 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.entsoe_unified_flow_runner >> /var/log/cron.log 2>&1
+*/15 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.entsoe_unified_flow_runner >> /var/log/entsoe_flow.log 2>&1
 
 # ENTSO-E - Unified generation forecast pipeline every 15 minutes
-# Fetches day-ahead wind/solar forecasts (A69) for all areas
-*/15 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.entsoe_unified_forecast_runner >> /var/log/cron.log 2>&1
+*/15 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.entsoe_unified_forecast_runner >> /var/log/entsoe_forecast.log 2>&1
 
 # ENTSO-E - Unified balancing energy pipeline every 15 minutes
-# Fetches activated aFRR/mFRR reserves (A84) for all areas
-*/15 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.entsoe_unified_balancing_runner >> /var/log/cron.log 2>&1
+*/15 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.entsoe_unified_balancing_runner >> /var/log/entsoe_balancing.log 2>&1
 
 # ENTSO-E - Unified scheduled generation pipeline every 15 minutes
-# Fetches day-ahead scheduled generation (A71) for all areas
-*/15 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.entsoe_unified_scheduled_runner >> /var/log/cron.log 2>&1
+*/15 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.entsoe_unified_scheduled_runner >> /var/log/entsoe_scheduled.log 2>&1
 
 # ENTSO-E - Unified scheduled cross-border flows pipeline every 15 minutes
-# Fetches day-ahead scheduled exchanges (A09) for all CZ border pairs
-*/15 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.entsoe_unified_sched_flow_runner >> /var/log/cron.log 2>&1
+*/15 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.entsoe_unified_sched_flow_runner >> /var/log/entsoe_sched_flow.log 2>&1
 
 # ============================================================================
 # Cleanup - Delete old downloaded files daily at 02:00
 # ============================================================================
 
 # ENTSO-E XML files - keep 1 day
-0 02 * * * find /app/scripts/entsoe/data -type f -name "*.xml" -mtime +1 -delete 2>/dev/null; echo "$(date '+\%Y-\%m-\%d \%H:\%M:\%S') - Cleaned ENTSO-E XML files older than 1 day" >> /var/log/cron.log
+0 02 * * * find /app/scripts/entsoe/data -type f -name "*.xml" -mtime +1 -delete 2>/dev/null
 
 # CEPS files (CSV + XML) - keep 1 day
-5 02 * * * find /app/downloads/ceps -type f \( -name "*.xml" -o -name "*.csv" \) -mtime +1 -delete 2>/dev/null; echo "$(date '+\%Y-\%m-\%d \%H:\%M:\%S') - Cleaned CEPS files older than 1 day" >> /var/log/cron.log
+5 02 * * * find /app/downloads/ceps -type f \( -name "*.xml" -o -name "*.csv" \) -mtime +1 -delete 2>/dev/null
 
 # OTE files - keep 7 days
-10 02 * * * find /app/ote_files -type f -mtime +7 -delete 2>/dev/null; echo "$(date '+\%Y-\%m-\%d \%H:\%M:\%S') - Cleaned OTE files older than 7 days" >> /var/log/cron.log
+10 02 * * * find /app/ote_files -type f -mtime +7 -delete 2>/dev/null
 
-# Manual test command for OTE portal login:
-# export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 ote_OTE-CR_login.py
+# ============================================================================
+# Log rotation - Keep only last 96 hours (4 days) of logs
+# ============================================================================
+
+# Rotate all logs daily at 03:00 - keep last 10000 lines (~4 days of logs)
+0 03 * * * for f in /var/log/ote.log /var/log/ceps.log /var/log/entsoe_*.log; do [ -f "$f" ] && tail -10000 "$f" > "$f.tmp" && mv "$f.tmp" "$f"; done 2>/dev/null
 
 # Empty line required at end of crontab file
