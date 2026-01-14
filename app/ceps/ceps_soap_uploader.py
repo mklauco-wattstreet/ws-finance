@@ -20,39 +20,51 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from config import DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT
 
 
-def get_affected_intervals(records: List[Dict]) -> Set[str]:
+def get_affected_intervals(records: List[Dict]) -> Set[tuple]:
     """
     Get unique (trade_date, time_interval) pairs from records.
     Used to determine which 15min intervals need re-aggregation.
+    Time interval format: "HH:MM-HH:MM" (e.g., "14:00-14:15")
     """
     intervals = set()
     for r in records:
         ts = r['delivery_timestamp']
         trade_date = ts.strftime('%Y-%m-%d')
         interval_minute = (ts.minute // 15) * 15
-        time_interval = f"{ts.hour:02d}:{interval_minute:02d}"
+        next_minute = (interval_minute + 15) % 60
+        next_hour = ts.hour + (1 if interval_minute == 45 else 0)
+        if next_hour == 24:
+            next_hour = 0
+        time_interval = f"{ts.hour:02d}:{interval_minute:02d}-{next_hour:02d}:{next_minute:02d}"
         intervals.add((trade_date, time_interval))
     return intervals
 
 
-def aggregate_imbalance_15min(affected_intervals: Set[str], conn, logger) -> int:
+def aggregate_imbalance_15min(affected_intervals: Set[tuple], conn, logger) -> int:
     """Aggregate imbalance data for affected 15-minute intervals."""
     if not affected_intervals:
         return 0
 
     query = """
+        WITH interval_data AS (
+            SELECT
+                delivery_timestamp::date AS trade_date,
+                DATE_TRUNC('hour', delivery_timestamp) +
+                    INTERVAL '15 minutes' * FLOOR(EXTRACT(MINUTE FROM delivery_timestamp) / 15) AS interval_start,
+                load_mw
+            FROM finance.ceps_actual_imbalance_1min
+        )
         INSERT INTO finance.ceps_actual_imbalance_15min
             (trade_date, time_interval, load_mean_mw, load_median_mw, last_load_at_interval_mw)
         SELECT
-            delivery_timestamp::date AS trade_date,
-            to_char(delivery_timestamp, 'HH24:') || lpad(((extract(minute from delivery_timestamp)::int / 15) * 15)::text, 2, '0') AS time_interval,
-            avg(load_mw),
-            percentile_cont(0.5) within group (order by load_mw),
-            (array_agg(load_mw order by delivery_timestamp desc))[1]
-        FROM finance.ceps_actual_imbalance_1min
-        WHERE (delivery_timestamp::date, to_char(delivery_timestamp, 'HH24:') || lpad(((extract(minute from delivery_timestamp)::int / 15) * 15)::text, 2, '0'))
-              IN %s
-        GROUP BY trade_date, time_interval
+            trade_date,
+            TO_CHAR(interval_start, 'HH24:MI') || '-' || TO_CHAR(interval_start + INTERVAL '15 minutes', 'HH24:MI') AS time_interval,
+            AVG(load_mw),
+            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY load_mw),
+            (ARRAY_AGG(load_mw ORDER BY interval_start DESC))[1]
+        FROM interval_data
+        WHERE (trade_date, TO_CHAR(interval_start, 'HH24:MI') || '-' || TO_CHAR(interval_start + INTERVAL '15 minutes', 'HH24:MI')) IN %s
+        GROUP BY trade_date, interval_start
         ON CONFLICT (trade_date, time_interval) DO UPDATE SET
             load_mean_mw = EXCLUDED.load_mean_mw,
             load_median_mw = EXCLUDED.load_median_mw,
@@ -68,12 +80,22 @@ def aggregate_imbalance_15min(affected_intervals: Set[str], conn, logger) -> int
     return rows
 
 
-def aggregate_re_price_15min(affected_intervals: Set[str], conn, logger) -> int:
+def aggregate_re_price_15min(affected_intervals: Set[tuple], conn, logger) -> int:
     """Aggregate RE price data for affected 15-minute intervals."""
     if not affected_intervals:
         return 0
 
     query = """
+        WITH interval_data AS (
+            SELECT
+                delivery_timestamp::date AS trade_date,
+                DATE_TRUNC('hour', delivery_timestamp) +
+                    INTERVAL '15 minutes' * FLOOR(EXTRACT(MINUTE FROM delivery_timestamp) / 15) AS interval_start,
+                delivery_timestamp,
+                price_afrr_plus_eur_mwh, price_afrr_minus_eur_mwh,
+                price_mfrr_plus_eur_mwh, price_mfrr_minus_eur_mwh, price_mfrr_5_eur_mwh
+            FROM finance.ceps_actual_re_price_1min
+        )
         INSERT INTO finance.ceps_actual_re_price_15min
             (trade_date, time_interval,
              price_afrr_plus_mean_eur_mwh, price_afrr_minus_mean_eur_mwh,
@@ -83,24 +105,23 @@ def aggregate_re_price_15min(affected_intervals: Set[str], conn, logger) -> int:
              price_afrr_plus_last_at_interval_eur_mwh, price_afrr_minus_last_at_interval_eur_mwh,
              price_mfrr_plus_last_at_interval_eur_mwh, price_mfrr_minus_last_at_interval_eur_mwh, price_mfrr_5_last_at_interval_eur_mwh)
         SELECT
-            delivery_timestamp::date AS trade_date,
-            to_char(delivery_timestamp, 'HH24:') || lpad(((extract(minute from delivery_timestamp)::int / 15) * 15)::text, 2, '0') AS time_interval,
-            avg(price_afrr_plus_eur_mwh), avg(price_afrr_minus_eur_mwh),
-            avg(price_mfrr_plus_eur_mwh), avg(price_mfrr_minus_eur_mwh), avg(price_mfrr_5_eur_mwh),
-            percentile_cont(0.5) within group (order by price_afrr_plus_eur_mwh),
-            percentile_cont(0.5) within group (order by price_afrr_minus_eur_mwh),
-            percentile_cont(0.5) within group (order by price_mfrr_plus_eur_mwh),
-            percentile_cont(0.5) within group (order by price_mfrr_minus_eur_mwh),
-            percentile_cont(0.5) within group (order by price_mfrr_5_eur_mwh),
-            (array_agg(price_afrr_plus_eur_mwh order by delivery_timestamp desc))[1],
-            (array_agg(price_afrr_minus_eur_mwh order by delivery_timestamp desc))[1],
-            (array_agg(price_mfrr_plus_eur_mwh order by delivery_timestamp desc))[1],
-            (array_agg(price_mfrr_minus_eur_mwh order by delivery_timestamp desc))[1],
-            (array_agg(price_mfrr_5_eur_mwh order by delivery_timestamp desc))[1]
-        FROM finance.ceps_actual_re_price_1min
-        WHERE (delivery_timestamp::date, to_char(delivery_timestamp, 'HH24:') || lpad(((extract(minute from delivery_timestamp)::int / 15) * 15)::text, 2, '0'))
-              IN %s
-        GROUP BY trade_date, time_interval
+            trade_date,
+            TO_CHAR(interval_start, 'HH24:MI') || '-' || TO_CHAR(interval_start + INTERVAL '15 minutes', 'HH24:MI') AS time_interval,
+            AVG(price_afrr_plus_eur_mwh), AVG(price_afrr_minus_eur_mwh),
+            AVG(price_mfrr_plus_eur_mwh), AVG(price_mfrr_minus_eur_mwh), AVG(price_mfrr_5_eur_mwh),
+            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY price_afrr_plus_eur_mwh),
+            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY price_afrr_minus_eur_mwh),
+            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY price_mfrr_plus_eur_mwh),
+            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY price_mfrr_minus_eur_mwh),
+            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY price_mfrr_5_eur_mwh),
+            (ARRAY_AGG(price_afrr_plus_eur_mwh ORDER BY delivery_timestamp DESC))[1],
+            (ARRAY_AGG(price_afrr_minus_eur_mwh ORDER BY delivery_timestamp DESC))[1],
+            (ARRAY_AGG(price_mfrr_plus_eur_mwh ORDER BY delivery_timestamp DESC))[1],
+            (ARRAY_AGG(price_mfrr_minus_eur_mwh ORDER BY delivery_timestamp DESC))[1],
+            (ARRAY_AGG(price_mfrr_5_eur_mwh ORDER BY delivery_timestamp DESC))[1]
+        FROM interval_data
+        WHERE (trade_date, TO_CHAR(interval_start, 'HH24:MI') || '-' || TO_CHAR(interval_start + INTERVAL '15 minutes', 'HH24:MI')) IN %s
+        GROUP BY trade_date, interval_start
         ON CONFLICT (trade_date, time_interval) DO UPDATE SET
             price_afrr_plus_mean_eur_mwh = EXCLUDED.price_afrr_plus_mean_eur_mwh,
             price_afrr_minus_mean_eur_mwh = EXCLUDED.price_afrr_minus_mean_eur_mwh,
@@ -128,35 +149,43 @@ def aggregate_re_price_15min(affected_intervals: Set[str], conn, logger) -> int:
     return rows
 
 
-def aggregate_svr_activation_15min(affected_intervals: Set[str], conn, logger) -> int:
+def aggregate_svr_activation_15min(affected_intervals: Set[tuple], conn, logger) -> int:
     """Aggregate SVR activation data for affected 15-minute intervals."""
     if not affected_intervals:
         return 0
 
     query = """
+        WITH interval_data AS (
+            SELECT
+                delivery_timestamp::date AS trade_date,
+                DATE_TRUNC('hour', delivery_timestamp) +
+                    INTERVAL '15 minutes' * FLOOR(EXTRACT(MINUTE FROM delivery_timestamp) / 15) AS interval_start,
+                delivery_timestamp,
+                afrr_plus_mw, afrr_minus_mw, mfrr_plus_mw, mfrr_minus_mw, mfrr_5_mw
+            FROM finance.ceps_svr_activation_1min
+        )
         INSERT INTO finance.ceps_svr_activation_15min
             (trade_date, time_interval,
              afrr_plus_mean_mw, afrr_minus_mean_mw, mfrr_plus_mean_mw, mfrr_minus_mean_mw, mfrr_5_mean_mw,
              afrr_plus_median_mw, afrr_minus_median_mw, mfrr_plus_median_mw, mfrr_minus_median_mw, mfrr_5_median_mw,
              afrr_plus_last_at_interval_mw, afrr_minus_last_at_interval_mw, mfrr_plus_last_at_interval_mw, mfrr_minus_last_at_interval_mw, mfrr_5_last_at_interval_mw)
         SELECT
-            delivery_timestamp::date AS trade_date,
-            to_char(delivery_timestamp, 'HH24:') || lpad(((extract(minute from delivery_timestamp)::int / 15) * 15)::text, 2, '0') AS time_interval,
-            avg(afrr_plus_mw), avg(afrr_minus_mw), avg(mfrr_plus_mw), avg(mfrr_minus_mw), avg(mfrr_5_mw),
-            percentile_cont(0.5) within group (order by afrr_plus_mw),
-            percentile_cont(0.5) within group (order by afrr_minus_mw),
-            percentile_cont(0.5) within group (order by mfrr_plus_mw),
-            percentile_cont(0.5) within group (order by mfrr_minus_mw),
-            percentile_cont(0.5) within group (order by mfrr_5_mw),
-            (array_agg(afrr_plus_mw order by delivery_timestamp desc))[1],
-            (array_agg(afrr_minus_mw order by delivery_timestamp desc))[1],
-            (array_agg(mfrr_plus_mw order by delivery_timestamp desc))[1],
-            (array_agg(mfrr_minus_mw order by delivery_timestamp desc))[1],
-            (array_agg(mfrr_5_mw order by delivery_timestamp desc))[1]
-        FROM finance.ceps_svr_activation_1min
-        WHERE (delivery_timestamp::date, to_char(delivery_timestamp, 'HH24:') || lpad(((extract(minute from delivery_timestamp)::int / 15) * 15)::text, 2, '0'))
-              IN %s
-        GROUP BY trade_date, time_interval
+            trade_date,
+            TO_CHAR(interval_start, 'HH24:MI') || '-' || TO_CHAR(interval_start + INTERVAL '15 minutes', 'HH24:MI') AS time_interval,
+            AVG(afrr_plus_mw), AVG(afrr_minus_mw), AVG(mfrr_plus_mw), AVG(mfrr_minus_mw), AVG(mfrr_5_mw),
+            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY afrr_plus_mw),
+            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY afrr_minus_mw),
+            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY mfrr_plus_mw),
+            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY mfrr_minus_mw),
+            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY mfrr_5_mw),
+            (ARRAY_AGG(afrr_plus_mw ORDER BY delivery_timestamp DESC))[1],
+            (ARRAY_AGG(afrr_minus_mw ORDER BY delivery_timestamp DESC))[1],
+            (ARRAY_AGG(mfrr_plus_mw ORDER BY delivery_timestamp DESC))[1],
+            (ARRAY_AGG(mfrr_minus_mw ORDER BY delivery_timestamp DESC))[1],
+            (ARRAY_AGG(mfrr_5_mw ORDER BY delivery_timestamp DESC))[1]
+        FROM interval_data
+        WHERE (trade_date, TO_CHAR(interval_start, 'HH24:MI') || '-' || TO_CHAR(interval_start + INTERVAL '15 minutes', 'HH24:MI')) IN %s
+        GROUP BY trade_date, interval_start
         ON CONFLICT (trade_date, time_interval) DO UPDATE SET
             afrr_plus_mean_mw = EXCLUDED.afrr_plus_mean_mw,
             afrr_minus_mean_mw = EXCLUDED.afrr_minus_mean_mw,
@@ -184,33 +213,41 @@ def aggregate_svr_activation_15min(affected_intervals: Set[str], conn, logger) -
     return rows
 
 
-def aggregate_export_import_svr_15min(affected_intervals: Set[str], conn, logger) -> int:
+def aggregate_export_import_svr_15min(affected_intervals: Set[tuple], conn, logger) -> int:
     """Aggregate Export/Import SVR data for affected 15-minute intervals."""
     if not affected_intervals:
         return 0
 
     query = """
+        WITH interval_data AS (
+            SELECT
+                delivery_timestamp::date AS trade_date,
+                DATE_TRUNC('hour', delivery_timestamp) +
+                    INTERVAL '15 minutes' * FLOOR(EXTRACT(MINUTE FROM delivery_timestamp) / 15) AS interval_start,
+                delivery_timestamp,
+                imbalance_netting_mw, mari_mfrr_mw, picasso_afrr_mw, sum_exchange_european_platforms_mw
+            FROM finance.ceps_export_import_svr_1min
+        )
         INSERT INTO finance.ceps_export_import_svr_15min
             (trade_date, time_interval,
              imbalance_netting_mean_mw, mari_mfrr_mean_mw, picasso_afrr_mean_mw, sum_exchange_mean_mw,
              imbalance_netting_median_mw, mari_mfrr_median_mw, picasso_afrr_median_mw, sum_exchange_median_mw,
              imbalance_netting_last_at_interval_mw, mari_mfrr_last_at_interval_mw, picasso_afrr_last_at_interval_mw, sum_exchange_last_at_interval_mw)
         SELECT
-            delivery_timestamp::date AS trade_date,
-            to_char(delivery_timestamp, 'HH24:') || lpad(((extract(minute from delivery_timestamp)::int / 15) * 15)::text, 2, '0') AS time_interval,
-            avg(imbalance_netting_mw), avg(mari_mfrr_mw), avg(picasso_afrr_mw), avg(sum_exchange_european_platforms_mw),
-            percentile_cont(0.5) within group (order by imbalance_netting_mw),
-            percentile_cont(0.5) within group (order by mari_mfrr_mw),
-            percentile_cont(0.5) within group (order by picasso_afrr_mw),
-            percentile_cont(0.5) within group (order by sum_exchange_european_platforms_mw),
-            (array_agg(imbalance_netting_mw order by delivery_timestamp desc))[1],
-            (array_agg(mari_mfrr_mw order by delivery_timestamp desc))[1],
-            (array_agg(picasso_afrr_mw order by delivery_timestamp desc))[1],
-            (array_agg(sum_exchange_european_platforms_mw order by delivery_timestamp desc))[1]
-        FROM finance.ceps_export_import_svr_1min
-        WHERE (delivery_timestamp::date, to_char(delivery_timestamp, 'HH24:') || lpad(((extract(minute from delivery_timestamp)::int / 15) * 15)::text, 2, '0'))
-              IN %s
-        GROUP BY trade_date, time_interval
+            trade_date,
+            TO_CHAR(interval_start, 'HH24:MI') || '-' || TO_CHAR(interval_start + INTERVAL '15 minutes', 'HH24:MI') AS time_interval,
+            AVG(imbalance_netting_mw), AVG(mari_mfrr_mw), AVG(picasso_afrr_mw), AVG(sum_exchange_european_platforms_mw),
+            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY imbalance_netting_mw),
+            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY mari_mfrr_mw),
+            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY picasso_afrr_mw),
+            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY sum_exchange_european_platforms_mw),
+            (ARRAY_AGG(imbalance_netting_mw ORDER BY delivery_timestamp DESC))[1],
+            (ARRAY_AGG(mari_mfrr_mw ORDER BY delivery_timestamp DESC))[1],
+            (ARRAY_AGG(picasso_afrr_mw ORDER BY delivery_timestamp DESC))[1],
+            (ARRAY_AGG(sum_exchange_european_platforms_mw ORDER BY delivery_timestamp DESC))[1]
+        FROM interval_data
+        WHERE (trade_date, TO_CHAR(interval_start, 'HH24:MI') || '-' || TO_CHAR(interval_start + INTERVAL '15 minutes', 'HH24:MI')) IN %s
+        GROUP BY trade_date, interval_start
         ON CONFLICT (trade_date, time_interval) DO UPDATE SET
             imbalance_netting_mean_mw = EXCLUDED.imbalance_netting_mean_mw,
             mari_mfrr_mean_mw = EXCLUDED.mari_mfrr_mean_mw,
