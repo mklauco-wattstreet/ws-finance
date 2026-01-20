@@ -421,10 +421,216 @@ def upsert_export_import_svr_data(records: List[Dict], conn, logger) -> int:
     return len(records)
 
 
+def aggregate_generation_res_15min(affected_intervals: Set[tuple], conn, logger) -> int:
+    """Aggregate Generation RES data for affected 15-minute intervals."""
+    if not affected_intervals:
+        return 0
+
+    query = """
+        WITH interval_data AS (
+            SELECT
+                delivery_timestamp::date AS trade_date,
+                DATE_TRUNC('hour', delivery_timestamp) +
+                    INTERVAL '15 minutes' * FLOOR(EXTRACT(MINUTE FROM delivery_timestamp) / 15) AS interval_start,
+                delivery_timestamp,
+                wind_mw, solar_mw
+            FROM finance.ceps_generation_res_1min
+        )
+        INSERT INTO finance.ceps_generation_res_15min
+            (trade_date, time_interval,
+             wind_mean_mw, wind_median_mw, wind_last_at_interval_mw,
+             solar_mean_mw, solar_median_mw, solar_last_at_interval_mw)
+        SELECT
+            trade_date,
+            TO_CHAR(interval_start, 'HH24:MI') || '-' || TO_CHAR(interval_start + INTERVAL '15 minutes', 'HH24:MI') AS time_interval,
+            AVG(wind_mw), PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY wind_mw),
+            (ARRAY_AGG(wind_mw ORDER BY delivery_timestamp DESC))[1],
+            AVG(solar_mw), PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY solar_mw),
+            (ARRAY_AGG(solar_mw ORDER BY delivery_timestamp DESC))[1]
+        FROM interval_data
+        WHERE (trade_date, TO_CHAR(interval_start, 'HH24:MI') || '-' || TO_CHAR(interval_start + INTERVAL '15 minutes', 'HH24:MI')) IN %s
+        GROUP BY trade_date, interval_start
+        ON CONFLICT (trade_date, time_interval) DO UPDATE SET
+            wind_mean_mw = EXCLUDED.wind_mean_mw,
+            wind_median_mw = EXCLUDED.wind_median_mw,
+            wind_last_at_interval_mw = EXCLUDED.wind_last_at_interval_mw,
+            solar_mean_mw = EXCLUDED.solar_mean_mw,
+            solar_median_mw = EXCLUDED.solar_median_mw,
+            solar_last_at_interval_mw = EXCLUDED.solar_last_at_interval_mw,
+            created_at = CURRENT_TIMESTAMP
+    """
+
+    with conn.cursor() as cur:
+        cur.execute(query, (tuple(affected_intervals),))
+        rows = cur.rowcount
+        conn.commit()
+
+    return rows
+
+
+def upsert_generation_res_data(records: List[Dict], conn, logger) -> int:
+    """Upload Generation RES data with UPSERT logic and aggregate to 15min."""
+    if not records:
+        return 0
+
+    affected_intervals = get_affected_intervals(records)
+
+    values = [
+        (r['delivery_timestamp'], r['wind_mw'], r['solar_mw'])
+        for r in records
+    ]
+
+    query_1min = """
+        INSERT INTO finance.ceps_generation_res_1min
+            (delivery_timestamp, wind_mw, solar_mw)
+        VALUES %s
+        ON CONFLICT (delivery_timestamp)
+        DO UPDATE SET
+            wind_mw = EXCLUDED.wind_mw,
+            solar_mw = EXCLUDED.solar_mw,
+            created_at = CURRENT_TIMESTAMP
+    """
+
+    with conn.cursor() as cur:
+        execute_values(cur, query_1min, values)
+        conn.commit()
+
+    logger.info(f"  ✓ Upserted {len(records):,} records to ceps_generation_res_1min")
+
+    agg_count = aggregate_generation_res_15min(affected_intervals, conn, logger)
+    logger.info(f"  ✓ Aggregated {agg_count:,} intervals to ceps_generation_res_15min")
+
+    return len(records)
+
+
+def get_15min_interval(ts: datetime) -> tuple:
+    """
+    Convert timestamp to (trade_date, time_interval) for native 15-min data.
+    Time interval format: "HH:MM-HH:MM" (e.g., "14:00-14:15")
+    """
+    trade_date = ts.strftime('%Y-%m-%d')
+    interval_minute = (ts.minute // 15) * 15
+    next_minute = (interval_minute + 15) % 60
+    next_hour = ts.hour + (1 if interval_minute == 45 else 0)
+    if next_hour == 24:
+        next_hour = 0
+    time_interval = f"{ts.hour:02d}:{interval_minute:02d}-{next_hour:02d}:{next_minute:02d}"
+    return (trade_date, time_interval)
+
+
+def upsert_generation_data(records: List[Dict], conn, logger) -> int:
+    """
+    Upload actual Generation data (by plant type) with UPSERT logic.
+    Native 15-min data - no aggregation needed.
+    """
+    if not records:
+        return 0
+
+    values = []
+    for r in records:
+        trade_date, time_interval = get_15min_interval(r['delivery_timestamp'])
+        values.append((
+            trade_date, time_interval,
+            r['tpp_mw'], r['ccgt_mw'], r['npp_mw'], r['hpp_mw'],
+            r['pspp_mw'], r['altpp_mw'], r['appp_mw'], r['wpp_mw'], r['pvpp_mw']
+        ))
+
+    query = """
+        INSERT INTO finance.ceps_generation_15min
+            (trade_date, time_interval, tpp_mw, ccgt_mw, npp_mw, hpp_mw,
+             pspp_mw, altpp_mw, appp_mw, wpp_mw, pvpp_mw)
+        VALUES %s
+        ON CONFLICT (trade_date, time_interval)
+        DO UPDATE SET
+            tpp_mw = EXCLUDED.tpp_mw,
+            ccgt_mw = EXCLUDED.ccgt_mw,
+            npp_mw = EXCLUDED.npp_mw,
+            hpp_mw = EXCLUDED.hpp_mw,
+            pspp_mw = EXCLUDED.pspp_mw,
+            altpp_mw = EXCLUDED.altpp_mw,
+            appp_mw = EXCLUDED.appp_mw,
+            wpp_mw = EXCLUDED.wpp_mw,
+            pvpp_mw = EXCLUDED.pvpp_mw,
+            created_at = CURRENT_TIMESTAMP
+    """
+
+    with conn.cursor() as cur:
+        execute_values(cur, query, values)
+        conn.commit()
+
+    logger.info(f"  ✓ Upserted {len(records):,} records to ceps_generation_15min")
+    return len(records)
+
+
+def upsert_generation_plan_data(records: List[Dict], conn, logger) -> int:
+    """
+    Upload Generation Plan data (total planned) with UPSERT logic.
+    Native 15-min data - no aggregation needed.
+    """
+    if not records:
+        return 0
+
+    values = []
+    for r in records:
+        trade_date, time_interval = get_15min_interval(r['delivery_timestamp'])
+        values.append((trade_date, time_interval, r['total_mw']))
+
+    query = """
+        INSERT INTO finance.ceps_generation_plan_15min
+            (trade_date, time_interval, total_mw)
+        VALUES %s
+        ON CONFLICT (trade_date, time_interval)
+        DO UPDATE SET
+            total_mw = EXCLUDED.total_mw,
+            created_at = CURRENT_TIMESTAMP
+    """
+
+    with conn.cursor() as cur:
+        execute_values(cur, query, values)
+        conn.commit()
+
+    logger.info(f"  ✓ Upserted {len(records):,} records to ceps_generation_plan_15min")
+    return len(records)
+
+
+def upsert_estimated_imbalance_price_data(records: List[Dict], conn, logger) -> int:
+    """
+    Upload Estimated Imbalance Price data (OdhadovanaCenaOdchylky) with UPSERT logic.
+    Native 15-min data - no aggregation needed.
+
+    This dataset uses trade_date and time_interval directly from the parser
+    (unique structure compared to other datasets).
+    """
+    if not records:
+        return 0
+
+    values = []
+    for r in records:
+        # This dataset already has trade_date and time_interval from the parser
+        values.append((r['trade_date'], r['time_interval'], r['estimated_price_czk_mwh']))
+
+    query = """
+        INSERT INTO finance.ceps_estimated_imbalance_price_15min
+            (trade_date, time_interval, estimated_price_czk_mwh)
+        VALUES %s
+        ON CONFLICT (trade_date, time_interval)
+        DO UPDATE SET
+            estimated_price_czk_mwh = EXCLUDED.estimated_price_czk_mwh,
+            created_at = CURRENT_TIMESTAMP
+    """
+
+    with conn.cursor() as cur:
+        execute_values(cur, query, values)
+        conn.commit()
+
+    logger.info(f"  ✓ Upserted {len(records):,} records to ceps_estimated_imbalance_price_15min")
+    return len(records)
+
+
 def upsert_data(dataset: str, records: List[Dict], conn, logger) -> int:
     """
     Upload data for any dataset with UPSERT logic.
-    Automatically aggregates to 15-minute intervals.
+    Automatically aggregates to 15-minute intervals where applicable.
     """
     if dataset == 'imbalance':
         return upsert_imbalance_data(records, conn, logger)
@@ -434,5 +640,13 @@ def upsert_data(dataset: str, records: List[Dict], conn, logger) -> int:
         return upsert_svr_activation_data(records, conn, logger)
     elif dataset == 'export_import_svr':
         return upsert_export_import_svr_data(records, conn, logger)
+    elif dataset == 'generation_res':
+        return upsert_generation_res_data(records, conn, logger)
+    elif dataset == 'generation':
+        return upsert_generation_data(records, conn, logger)
+    elif dataset == 'generation_plan':
+        return upsert_generation_plan_data(records, conn, logger)
+    elif dataset == 'estimated_imbalance_price':
+        return upsert_estimated_imbalance_price_data(records, conn, logger)
     else:
         raise ValueError(f"Unknown dataset: {dataset}")

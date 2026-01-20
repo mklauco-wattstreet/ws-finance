@@ -180,6 +180,42 @@ ORDER BY trade_date, interval_start;
 
 ---
 
+## 5. Generation RES (Renewable Energy Sources)
+
+**Tables:** `ceps_generation_res_1min` → `ceps_generation_res_15min`
+
+```sql
+INSERT INTO finance.ceps_generation_res_15min
+    (trade_date, time_interval,
+     wind_mean_mw, wind_median_mw, wind_last_at_interval_mw,
+     solar_mean_mw, solar_median_mw, solar_last_at_interval_mw)
+WITH interval_data AS (
+    SELECT
+        DATE(delivery_timestamp) AS trade_date,
+        DATE_TRUNC('hour', delivery_timestamp) +
+            INTERVAL '15 minutes' * FLOOR(EXTRACT(MINUTE FROM delivery_timestamp) / 15) AS interval_start,
+        delivery_timestamp,
+        wind_mw, solar_mw
+    FROM finance.ceps_generation_res_1min
+)
+SELECT
+    trade_date,
+    TO_CHAR(interval_start, 'HH24:MI') || '-' || TO_CHAR(interval_start + INTERVAL '15 minutes', 'HH24:MI') AS time_interval,
+    -- Wind
+    AVG(wind_mw) AS wind_mean_mw,
+    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY wind_mw) AS wind_median_mw,
+    (ARRAY_AGG(wind_mw ORDER BY delivery_timestamp DESC))[1] AS wind_last_at_interval_mw,
+    -- Solar
+    AVG(solar_mw) AS solar_mean_mw,
+    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY solar_mw) AS solar_median_mw,
+    (ARRAY_AGG(solar_mw ORDER BY delivery_timestamp DESC))[1] AS solar_last_at_interval_mw
+FROM interval_data
+GROUP BY trade_date, interval_start
+ORDER BY trade_date, interval_start;
+```
+
+---
+
 ## Key Concepts
 
 ### Time Interval Calculation
@@ -214,3 +250,24 @@ ON CONFLICT (trade_date, time_interval) DO UPDATE SET
     last_load_at_interval_mw = EXCLUDED.last_load_at_interval_mw,
     created_at = CURRENT_TIMESTAMP
 ```
+
+---
+
+## Native 15-Minute Datasets (No Aggregation Needed)
+
+The following datasets are already 15-minute native data from CEPS API:
+
+### 6. Generation (Actual by Plant Type)
+**Table:** `ceps_generation_15min`
+- Direct insert from SOAP API (no 1-min source)
+- 9 columns: TPP, CCGT, NPP, HPP, PsPP, AltPP, ApPP, WPP, PVPP
+
+### 7. Generation Plan (Total Planned)
+**Table:** `ceps_generation_plan_15min`
+- Direct insert from SOAP API (no 1-min source)
+- 1 column: total_mw
+
+### 8. Estimated Imbalance Price (OdhadovanaCenaOdchylky)
+**Table:** `ceps_estimated_imbalance_price_15min`
+- Direct insert from SOAP API (no 1-min source)
+- 1 column: estimated_price_czk_mwh (CZK/MWh)

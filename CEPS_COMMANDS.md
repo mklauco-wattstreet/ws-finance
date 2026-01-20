@@ -2,6 +2,19 @@
 
 ## SOAP Pipeline (Primary Method)
 
+### Supported Datasets (8 total)
+
+| Key | Description | Resolution | Records/Day |
+|-----|-------------|------------|-------------|
+| `imbalance` | System Imbalance | 1-min → 15-min | 1440 |
+| `re_price` | RE Prices (aFRR/mFRR) | 1-min → 15-min | 1440 |
+| `svr_activation` | SVR Activation | 1-min → 15-min | 1440 |
+| `export_import_svr` | Cross-Border Balancing | 1-min → 15-min | 1440 |
+| `generation_res` | Generation RES (Wind/Solar) | 1-min → 15-min | 1440 |
+| `generation` | Generation by Plant Type | Native 15-min | 96 |
+| `generation_plan` | Planned Generation | Native 15-min | 96 |
+| `estimated_imbalance_price` | Estimated Imbalance Price | Native 15-min | 96 |
+
 ### Download + Upload Today's Data
 ```bash
 # Download and upload all datasets for today (default)
@@ -12,6 +25,10 @@ docker compose exec entsoe-ote-data-uploader python3 /app/scripts/ceps/ceps_soap
 docker compose exec entsoe-ote-data-uploader python3 /app/scripts/ceps/ceps_soap_pipeline.py --dataset re_price
 docker compose exec entsoe-ote-data-uploader python3 /app/scripts/ceps/ceps_soap_pipeline.py --dataset svr_activation
 docker compose exec entsoe-ote-data-uploader python3 /app/scripts/ceps/ceps_soap_pipeline.py --dataset export_import_svr
+docker compose exec entsoe-ote-data-uploader python3 /app/scripts/ceps/ceps_soap_pipeline.py --dataset generation_res
+docker compose exec entsoe-ote-data-uploader python3 /app/scripts/ceps/ceps_soap_pipeline.py --dataset generation
+docker compose exec entsoe-ote-data-uploader python3 /app/scripts/ceps/ceps_soap_pipeline.py --dataset generation_plan
+docker compose exec entsoe-ote-data-uploader python3 /app/scripts/ceps/ceps_soap_pipeline.py --dataset estimated_imbalance_price
 ```
 
 ### Download + Upload for Specific Date
@@ -77,6 +94,6 @@ docker compose restart entsoe-ote-data-uploader
 ```
 
 ## Performance
-- SOAP API: ~0.2s per day (50-100x faster than old Selenium)
-- Full pipeline for all 4 datasets: ~7 seconds
-- Backfill 30 days: ~1.7 seconds
+- SOAP API: ~0.1-0.2s per dataset per day
+- Full pipeline for all 8 datasets: ~14 seconds
+- Backfill 30 days: ~3 seconds

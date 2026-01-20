@@ -54,6 +54,22 @@ DATASETS = {
     'export_import_svr': {
         'operation': 'ExportImportSVR',
         'soap_action': 'https://www.ceps.cz/CepsData/ExportImportSVR',
+    },
+    'generation_res': {
+        'operation': 'GenerationRES',
+        'soap_action': 'https://www.ceps.cz/CepsData/GenerationRES',
+    },
+    'generation': {
+        'operation': 'Generation',
+        'soap_action': 'https://www.ceps.cz/CepsData/Generation',
+    },
+    'generation_plan': {
+        'operation': 'GenerationPlan',
+        'soap_action': 'https://www.ceps.cz/CepsData/GenerationPlan',
+    },
+    'estimated_imbalance_price': {
+        'operation': 'OdhadovanaCenaOdchylky',
+        'soap_action': 'https://www.ceps.cz/CepsData/OdhadovanaCenaOdchylky',
     }
 }
 
@@ -75,6 +91,48 @@ def build_soap_envelope(operation: str, date_from: str, date_to: str) -> str:
             <dateTo>{date_to}</dateTo>
             <agregation>MI</agregation>
             <function>AVG</function>
+        </{operation}>
+        """
+    elif operation == 'GenerationRES':
+        body_content = f"""
+        <{operation} xmlns="https://www.ceps.cz/CepsData/">
+            <dateFrom>{date_from}</dateFrom>
+            <dateTo>{date_to}</dateTo>
+            <agregation>MI</agregation>
+            <function>AVG</function>
+            <version>RT</version>
+            <para1>all</para1>
+        </{operation}>
+        """
+    elif operation == 'Generation':
+        # Actual generation by plant type (15-min native)
+        body_content = f"""
+        <{operation} xmlns="https://www.ceps.cz/CepsData/">
+            <dateFrom>{date_from}</dateFrom>
+            <dateTo>{date_to}</dateTo>
+            <agregation>QH</agregation>
+            <function>AVG</function>
+            <version>RT</version>
+            <para1>all</para1>
+        </{operation}>
+        """
+    elif operation == 'GenerationPlan':
+        # Planned total generation (15-min native)
+        body_content = f"""
+        <{operation} xmlns="https://www.ceps.cz/CepsData/">
+            <dateFrom>{date_from}</dateFrom>
+            <dateTo>{date_to}</dateTo>
+            <agregation>QH</agregation>
+            <function>AVG</function>
+            <version>RT</version>
+        </{operation}>
+        """
+    elif operation == 'OdhadovanaCenaOdchylky':
+        # Estimated imbalance price (15-min native, only dateFrom/dateTo params)
+        body_content = f"""
+        <{operation} xmlns="https://www.ceps.cz/CepsData/">
+            <dateFrom>{date_from}</dateFrom>
+            <dateTo>{date_to}</dateTo>
         </{operation}>
         """
     else:
@@ -230,10 +288,15 @@ def process_dataset(dataset: str, start_date: datetime, end_date: datetime, conn
                     # Step 3: Upload immediately
                     if records:
                         try:
-                            # Deduplicate records (keep last occurrence for each timestamp)
+                            # Deduplicate records (keep last occurrence for each key)
                             seen = {}
                             for record in records:
-                                seen[record['delivery_timestamp']] = record
+                                # estimated_imbalance_price uses trade_date+time_interval as key
+                                if dataset == 'estimated_imbalance_price':
+                                    key = (record['trade_date'], record['time_interval'])
+                                else:
+                                    key = record['delivery_timestamp']
+                                seen[key] = record
                             deduped_records = list(seen.values())
 
                             if len(deduped_records) < len(records):
@@ -283,7 +346,7 @@ def main():
         '--dataset',
         type=str,
         required=True,
-        choices=['imbalance', 're_price', 'svr_activation', 'export_import_svr', 'all'],
+        choices=['imbalance', 're_price', 'svr_activation', 'export_import_svr', 'generation_res', 'generation', 'generation_plan', 'estimated_imbalance_price', 'all'],
         help='Dataset to process (or "all" for all datasets)'
     )
     parser.add_argument(
@@ -352,7 +415,7 @@ def main():
     try:
         # Determine which datasets to process
         if args.dataset == 'all':
-            datasets_to_process = ['imbalance', 're_price', 'svr_activation', 'export_import_svr']
+            datasets_to_process = ['imbalance', 're_price', 'svr_activation', 'export_import_svr', 'generation_res', 'generation', 'generation_plan', 'estimated_imbalance_price']
         else:
             datasets_to_process = [args.dataset]
 

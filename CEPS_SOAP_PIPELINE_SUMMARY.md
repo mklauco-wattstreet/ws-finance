@@ -8,14 +8,14 @@ Complete SOAP API pipeline for CEPS data with the following features:
 
 #### `ceps_soap_api_downloader.py`
 - Downloads CEPS data via SOAP API
-- Automatic chunking for requests > 30 days
-- Supports all 4 datasets (imbalance, re_price, svr_activation, export_import_svr)
+- Automatic chunking for requests > 7 days
+- Supports all 8 datasets
 - Returns parsed XML root elements
 
 #### `ceps_soap_xml_parser.py`
 - Parses XML responses from SOAP API
 - Converts to structured Python dictionaries
-- Handles all 4 dataset formats
+- Handles all 8 dataset formats
 - Extracts all data columns with correct types
 
 #### `ceps_soap_uploader.py`
@@ -110,16 +110,17 @@ docker compose exec entsoe-ote-data-uploader python3 /app/scripts/ceps/ceps_soap
 
 ## Database Tables
 
-### 1-Minute Tables (Populated by SOAP Pipeline)
-- `finance.ceps_actual_imbalance_1min`
-- `finance.ceps_actual_re_price_1min`
-- `finance.ceps_svr_activation_1min`
-- `finance.ceps_export_import_svr_1min`
+### 1-Minute Tables (with auto-aggregation to 15min)
+- `finance.ceps_actual_imbalance_1min` → `ceps_actual_imbalance_15min`
+- `finance.ceps_actual_re_price_1min` → `ceps_actual_re_price_15min`
+- `finance.ceps_svr_activation_1min` → `ceps_svr_activation_15min`
+- `finance.ceps_export_import_svr_1min` → `ceps_export_import_svr_15min`
+- `finance.ceps_generation_res_1min` → `ceps_generation_res_15min`
 
-### 15-Minute Tables (NOT Populated by SOAP Pipeline)
-- Aggregation is **skipped** by SOAP pipeline
-- Use existing Selenium-based uploaders or manual aggregation
-- Reason: Different table schemas across datasets
+### Native 15-Minute Tables (no aggregation needed)
+- `finance.ceps_generation_15min` - Actual generation by plant type
+- `finance.ceps_generation_plan_15min` - Planned total generation
+- `finance.ceps_estimated_imbalance_price_15min` - Estimated imbalance price (CZK/MWh)
 
 ## UPSERT Behavior
 

@@ -228,12 +228,195 @@ def parse_export_import_svr_xml(xml_root: ET.Element) -> List[Dict]:
     return records
 
 
+def parse_generation_res_xml(xml_root: ET.Element) -> List[Dict]:
+    """
+    Parse Generation RES XML data (Renewable Energy Sources).
+
+    Expected structure:
+    <root>
+      <data>
+        <item date="..." value1="..." value2="..." />
+        <!-- value1 = VTE (wind) [MW] -->
+        <!-- value2 = FVE (solar) [MW] -->
+      </data>
+    </root>
+
+    Args:
+        xml_root: XML root element from SOAP response
+
+    Returns:
+        List of dicts with keys: delivery_timestamp, wind_mw, solar_mw
+    """
+    records = []
+
+    # Find all data items
+    data_items = xml_root.findall('.//ns1:item', NS)
+
+    for item in data_items:
+        date_str = item.get('date')
+        value1 = item.get('value1')  # VTE (wind)
+        value2 = item.get('value2')  # FVE (solar)
+
+        if date_str:
+            try:
+                records.append({
+                    'delivery_timestamp': parse_datetime(date_str),
+                    'wind_mw': float(value1) if value1 else None,
+                    'solar_mw': float(value2) if value2 else None
+                })
+            except (ValueError, TypeError) as e:
+                # Skip invalid records
+                continue
+
+    return records
+
+
+def parse_generation_xml(xml_root: ET.Element) -> List[Dict]:
+    """
+    Parse Generation XML data (actual generation by plant type, 15-min native).
+
+    Power plant types:
+    - TPP: Thermal Power Plant
+    - CCGT: Combined-Cycle Gas Turbine
+    - NPP: Nuclear Power Plant
+    - HPP: Hydro Power Plant
+    - PsPP: Pumped-Storage Plant
+    - AltPP: Alternative Power Plant
+    - ApPP: Autoproducer Power Plant (canceled since Oct 2014)
+    - WPP: Wind Power Plant
+    - PVPP: Photovoltaic Power Plant
+
+    Expected structure:
+    <root>
+      <data>
+        <item date="..." value1="TPP" value2="CCGT" value3="NPP" value4="HPP"
+              value5="PsPP" value6="AltPP" value7="ApPP" value8="WPP" value9="PVPP" />
+      </data>
+    </root>
+
+    Args:
+        xml_root: XML root element from SOAP response
+
+    Returns:
+        List of dicts with keys: delivery_timestamp, tpp_mw, ccgt_mw, npp_mw, hpp_mw,
+                                 pspp_mw, altpp_mw, appp_mw, wpp_mw, pvpp_mw
+    """
+    records = []
+
+    data_items = xml_root.findall('.//ns1:item', NS)
+
+    for item in data_items:
+        date_str = item.get('date')
+        if date_str:
+            try:
+                records.append({
+                    'delivery_timestamp': parse_datetime(date_str),
+                    'tpp_mw': float(item.get('value1')) if item.get('value1') else None,
+                    'ccgt_mw': float(item.get('value2')) if item.get('value2') else None,
+                    'npp_mw': float(item.get('value3')) if item.get('value3') else None,
+                    'hpp_mw': float(item.get('value4')) if item.get('value4') else None,
+                    'pspp_mw': float(item.get('value5')) if item.get('value5') else None,
+                    'altpp_mw': float(item.get('value6')) if item.get('value6') else None,
+                    'appp_mw': float(item.get('value7')) if item.get('value7') else None,
+                    'wpp_mw': float(item.get('value8')) if item.get('value8') else None,
+                    'pvpp_mw': float(item.get('value9')) if item.get('value9') else None,
+                })
+            except (ValueError, TypeError):
+                continue
+
+    return records
+
+
+def parse_generation_plan_xml(xml_root: ET.Element) -> List[Dict]:
+    """
+    Parse Generation Plan XML data (planned total generation, 15-min native).
+
+    Expected structure:
+    <root>
+      <data>
+        <item date="..." value1="total_mw" />
+      </data>
+    </root>
+
+    Args:
+        xml_root: XML root element from SOAP response
+
+    Returns:
+        List of dicts with keys: delivery_timestamp, total_mw
+    """
+    records = []
+
+    data_items = xml_root.findall('.//ns1:item', NS)
+
+    for item in data_items:
+        date_str = item.get('date')
+        value1 = item.get('value1')
+        if date_str:
+            try:
+                records.append({
+                    'delivery_timestamp': parse_datetime(date_str),
+                    'total_mw': float(value1) if value1 else None,
+                })
+            except (ValueError, TypeError):
+                continue
+
+    return records
+
+
+def parse_estimated_imbalance_price_xml(xml_root: ET.Element) -> List[Dict]:
+    """
+    Parse Estimated Imbalance Price XML data (OdhadovanaCenaOdchylky, 15-min native).
+
+    This dataset has a unique structure:
+    - value2 = Estimated price [Kč/MWh]
+    - value13 = Date (always set to 01:00 of the day, used to extract trade_date)
+    - value15 = Time interval (e.g., "00:00-00:15")
+
+    Expected structure:
+    <root>
+      <data>
+        <item value2="4249.88" value13="2026-01-17T01:00:00+01:00" value15="00:00-00:15" />
+      </data>
+    </root>
+
+    Args:
+        xml_root: XML root element from SOAP response
+
+    Returns:
+        List of dicts with keys: trade_date, time_interval, estimated_price_czk_mwh
+    """
+    records = []
+
+    data_items = xml_root.findall('.//ns1:item', NS)
+
+    for item in data_items:
+        value2 = item.get('value2')   # Estimated price
+        value13 = item.get('value13')  # Date (to extract trade_date)
+        value15 = item.get('value15')  # Time interval
+
+        if value13 and value15:
+            try:
+                # Parse date from value13 to get trade_date
+                dt = parse_datetime(value13)
+                trade_date = dt.strftime('%Y-%m-%d')
+
+                records.append({
+                    'trade_date': trade_date,
+                    'time_interval': value15,
+                    'estimated_price_czk_mwh': float(value2) if value2 else None,
+                })
+            except (ValueError, TypeError):
+                continue
+
+    return records
+
+
 def parse_soap_xml(dataset: str, xml_root: ET.Element) -> List[Dict]:
     """
     Parse SOAP XML response for any dataset.
 
     Args:
-        dataset: Dataset key ('imbalance', 're_price', 'svr_activation', 'export_import_svr')
+        dataset: Dataset key
         xml_root: XML root element from SOAP response
 
     Returns:
@@ -247,5 +430,13 @@ def parse_soap_xml(dataset: str, xml_root: ET.Element) -> List[Dict]:
         return parse_svr_activation_xml(xml_root)
     elif dataset == 'export_import_svr':
         return parse_export_import_svr_xml(xml_root)
+    elif dataset == 'generation_res':
+        return parse_generation_res_xml(xml_root)
+    elif dataset == 'generation':
+        return parse_generation_xml(xml_root)
+    elif dataset == 'generation_plan':
+        return parse_generation_plan_xml(xml_root)
+    elif dataset == 'estimated_imbalance_price':
+        return parse_estimated_imbalance_price_xml(xml_root)
     else:
         raise ValueError(f"Unknown dataset: {dataset}")

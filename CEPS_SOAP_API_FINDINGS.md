@@ -4,6 +4,9 @@
 
 The CEPS SOAP API provides a **much faster and more reliable** alternative to the Selenium-based approach for downloading CEPS data.
 
+## SOAP reference:
+https://www.ceps.cz/_layouts/CepsData.asmx
+
 ## Key Findings
 
 ### ✅ Advantages
@@ -109,12 +112,16 @@ All datasets return structured XML with this format:
 | RE Prices | AktualniCenaRE | https://www.ceps.cz/CepsData/AktualniCenaRE |
 | SVR Activation | AktivaceSVRvCR | https://www.ceps.cz/CepsData/AktivaceSVRvCR |
 | Export/Import SVR | ExportImportSVR | https://www.ceps.cz/CepsData/ExportImportSVR |
+| Generation RES | GenerationRES | https://www.ceps.cz/CepsData/GenerationRES |
+| Generation (by plant type) | Generation | https://www.ceps.cz/CepsData/Generation |
+| Generation Plan | GenerationPlan | https://www.ceps.cz/CepsData/GenerationPlan |
+| Estimated Imbalance Price | OdhadovanaCenaOdchylky | https://www.ceps.cz/CepsData/OdhadovanaCenaOdchylky |
 
 **Base URL**: https://www.ceps.cz/_layouts/CepsData.asmx
 
 ## Test Script Usage
 
-The lightweight test script supports all 4 datasets:
+The lightweight test script supports all 8 datasets:
 
 ```bash
 # Test imbalance data
@@ -128,6 +135,15 @@ docker compose exec entsoe-ote-data-uploader python3 /app/scripts/ceps/ceps_soap
 
 # Test Export/Import SVR
 docker compose exec entsoe-ote-data-uploader python3 /app/scripts/ceps/ceps_soap_downloader.py --dataset export_import_svr --start-date 2026-01-09
+
+# Test Generation RES (wind/solar, 1-min)
+docker compose exec entsoe-ote-data-uploader python3 /app/scripts/ceps/ceps_soap_downloader.py --dataset generation_res --start-date 2026-01-09
+
+# Test Generation (by plant type, 15-min native)
+docker compose exec entsoe-ote-data-uploader python3 /app/scripts/ceps/ceps_soap_downloader.py --dataset generation --start-date 2026-01-09
+
+# Test Generation Plan (total planned, 15-min native)
+docker compose exec entsoe-ote-data-uploader python3 /app/scripts/ceps/ceps_soap_downloader.py --dataset generation_plan --start-date 2026-01-09
 
 # Save XML response to file
 docker compose exec entsoe-ote-data-uploader python3 /app/scripts/ceps/ceps_soap_downloader.py --dataset imbalance --start-date 2026-01-09 --save
@@ -161,10 +177,10 @@ Consider implementing SOAP-based pipeline:
 
 ## Next Steps
 
-1. ✅ SOAP API works for all 4 datasets
+1. ✅ SOAP API works for all 8 datasets
 2. ✅ Performance gains confirmed (50-100x faster)
 3. ✅ Cache behavior documented
-4. ⏳ **Decision needed**: Migrate to SOAP or keep Selenium?
+4. ✅ Migrated to SOAP pipeline (Selenium deprecated)
 
 ## Notes
 
