@@ -46,7 +46,9 @@ class BaseRunner(ABC):
 
     # Override in subclasses
     RUNNER_NAME = "BaseRunner"
-    DATA_DIR = Path(__file__).parent.parent / "entsoe" / "data"
+    # Store XML files in downloads volume (separate from code)
+    # Container path: /app/downloads/entsoe (mounted from ./downloads)
+    DATA_DIR = Path("/app/downloads/entsoe")
 
     # Maximum chunk size for API requests (ENTSO-E limit)
     MAX_CHUNK_DAYS = 7

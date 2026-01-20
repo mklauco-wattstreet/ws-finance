@@ -68,7 +68,7 @@
 # ============================================================================
 
 # ENTSO-E XML files - keep 1 day
-0 02 * * * find /app/scripts/entsoe/data -type f -name "*.xml" -mtime +1 -delete 2>/dev/null
+0 02 * * * find /app/downloads/entsoe -type f -name "*.xml" -mtime +1 -delete 2>/dev/null
 
 # CEPS files (CSV + XML) - keep 1 day
 5 02 * * * find /app/downloads/ceps -type f \( -name "*.xml" -o -name "*.csv" \) -mtime +1 -delete 2>/dev/null
