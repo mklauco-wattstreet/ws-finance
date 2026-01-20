@@ -30,10 +30,10 @@
 # CEPS - Czech Grid Imbalance Data (via SOAP API)
 # ============================================================================
 
-# CEPS - Download and upload ALL datasets (imbalance, RE price, SVR activation, export/import SVR)
+# CEPS - Download and upload ALL datasets (imbalance, RE price, SVR activation, export/import SVR, generation)
 # Runs at minutes 12, 27, 42, 57 every hour (every 15 minutes offset)
 # Uses SOAP API - completes in ~7 seconds (50-100x faster than Selenium)
-12,27,42,57 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 ceps/ceps_soap_pipeline.py --dataset all >> /var/log/ceps.log 2>&1
+12,27,42,57 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m ceps.ceps_soap_pipeline --dataset all >> /var/log/ceps.log 2>&1
 
 # ============================================================================
 # ENTSO-E - Pan-European Data Pipelines (separate logs per runner)
