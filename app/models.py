@@ -34,6 +34,7 @@ class EntsoeAreas(Base):
     - id=3: AT (Austria) - 10YAT-APG------L
     - id=4: PL (Poland) - 10YPL-AREA-----S
     - id=5: SK (Slovakia) - 10YSK-SEPS-----K
+    - id=9: HU (Hungary) - 10YHU-MAVIR----U
     """
     __tablename__ = 'entsoe_areas'
     __table_args__ = (
@@ -431,6 +432,34 @@ class EntsoeScheduledCrossBorderFlows(Base):
     scheduled_pl_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     scheduled_sk_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     scheduled_total_net_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+
+
+class EntsoeDayAheadPrices(Base):
+    """ENTSO-E day-ahead prices (A44) - market clearing prices.
+
+    Partitioned by country_code for multi-area storage with partition pruning.
+    Currently supports: HU (Hungary).
+
+    Columns:
+    - price_eur_mwh: Day-ahead market clearing price in EUR/MWh
+
+    Note: This is a partitioned table. The composite PK includes country_code.
+    """
+    __tablename__ = 'entsoe_day_ahead_prices'
+    __table_args__ = (
+        # Partitioned table: composite PK includes partition key (country_code)
+        PrimaryKeyConstraint('trade_date', 'period', 'area_id', 'country_code'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(Integer, autoincrement=True)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    period: Mapped[int] = mapped_column(Integer, nullable=False)
+    area_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    country_code: Mapped[str] = mapped_column(String(5), nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    price_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
 
 

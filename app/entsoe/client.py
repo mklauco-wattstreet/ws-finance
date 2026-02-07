@@ -44,6 +44,7 @@ class EntsoeClient:
     DOC_TYPE_ACTIVATED_BALANCING = "A84"  # 17.1.E Activated Balancing Energy
     DOC_TYPE_SCHEDULED_GENERATION = "A71"  # 14.1.B Scheduled Generation
     DOC_TYPE_SCHEDULED_EXCHANGES = "A09"  # 12.1.D Scheduled Commercial Exchanges
+    DOC_TYPE_DAY_AHEAD_PRICES = "A44"  # 12.1.D Day-ahead prices
 
     # Process types for A65 differentiation
     PROCESS_TYPE_REALISED = "A16"  # Actual load
@@ -936,6 +937,52 @@ class EntsoeClient:
         except requests.RequestException as e:
             raise requests.RequestException(
                 f"Failed to fetch imbalance volumes for domain {control_area}: {e}"
+            )
+
+    def fetch_day_ahead_prices_for_domain(
+        self,
+        period_start: datetime,
+        period_end: datetime,
+        in_domain: str
+    ) -> str:
+        """
+        Fetch day-ahead prices (A44) for a specific bidding zone.
+
+        Args:
+            period_start: Start datetime
+            period_end: End datetime
+            in_domain: The bidding zone EIC code
+
+        Returns:
+            str: XML content
+        """
+        self._validate_date_range(period_start, period_end)
+
+        params = {
+            "securityToken": self.security_token,
+            "documentType": self.DOC_TYPE_DAY_AHEAD_PRICES,
+            "in_Domain": in_domain,
+            "out_Domain": in_domain,
+            "periodStart": self._format_timestamp(period_start),
+            "periodEnd": self._format_timestamp(period_end)
+        }
+
+        query_string = "&".join([f"{key}={value}" for key, value in params.items()])
+        url = f"{self.base_url}?{query_string}"
+
+        try:
+            response = self.session.get(url, timeout=60)
+            response.raise_for_status()
+
+            content_type = response.headers.get('Content-Type', '')
+            if 'zip' in content_type or self._is_zip_content(response.content):
+                return self._unzip_content(response.content)
+            else:
+                return response.text
+
+        except requests.RequestException as e:
+            raise requests.RequestException(
+                f"Failed to fetch day-ahead prices for domain {in_domain}: {e}"
             )
 
     @staticmethod

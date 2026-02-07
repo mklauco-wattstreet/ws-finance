@@ -452,9 +452,11 @@ def main():
         logger.info("")
 
     # Parse dates
+    # Default to yesterday to catch late-arriving data from midnight boundary
+    # (e.g., 23:45-00:00 interval not available until after midnight)
     try:
-        start = parse_date(args.start) or date.today()
-        end = parse_date(args.end) or start
+        start = parse_date(args.start) or (date.today() - timedelta(days=1))
+        end = parse_date(args.end) or date.today()
     except ValueError as e:
         logger.error(str(e))
         sys.exit(1)

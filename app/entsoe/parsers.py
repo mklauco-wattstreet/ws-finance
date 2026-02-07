@@ -1702,6 +1702,112 @@ class ScheduledExchangesParser(BaseParser):
         self._wide_data.clear()
 
 
+class DayAheadPricesParser(BaseParser):
+    """
+    Parser for ENTSO-E A44 (Day-ahead prices) data.
+
+    Parses day-ahead electricity market prices (EUR/MWh).
+    Supports multi-area parsing with area_id and country_code for partitioned storage.
+
+    Output columns:
+    - price_eur_mwh: Day-ahead price in EUR/MWh
+    """
+
+    def __init__(self, area_id: Optional[int] = None, country_code: Optional[str] = None):
+        """
+        Initialize parser with optional area_id and country_code.
+
+        Args:
+            area_id: Integer area ID for partitioned storage.
+            country_code: Country code (e.g., 'HU') for partition routing.
+        """
+        super().__init__()
+        self.area_id = area_id
+        self.country_code = country_code
+        self._data: Dict[tuple, Dict[str, Any]] = {}
+        import logging
+        self.logger = logging.getLogger(__name__)
+
+    def parse_xml(self, xml_file_path: str) -> List[Dict[str, Any]]:
+        """
+        Parse A44 (Day-ahead prices) XML file.
+
+        Args:
+            xml_file_path: Path to A44 XML file
+
+        Returns:
+            List of price records (one row per timestamp)
+        """
+        tree = ET.parse(xml_file_path)
+        root = tree.getroot()
+
+        for timeseries in root.findall('.//{*}TimeSeries'):
+            for period in timeseries.findall('{*}Period'):
+                self._process_price_period(period)
+
+        return self._aggregate_to_records()
+
+    def _process_price_period(self, period: ET.Element) -> None:
+        """Process a single Period element from A44 XML."""
+        time_interval = period.find('{*}timeInterval')
+        start_elem = time_interval.find('{*}start')
+        period_start = self.parse_timestamp(start_elem.text)
+
+        resolution_elem = period.find('{*}resolution')
+        resolution = resolution_elem.text if resolution_elem is not None else 'PT60M'
+        resolution_minutes = self.get_resolution_minutes(resolution)
+
+        for point in period.findall('{*}Point'):
+            position = int(point.find('{*}position').text)
+            price_elem = point.find('{*}price.amount')
+            price = float(price_elem.text) if price_elem is not None else None
+
+            interval_idx = position - 1
+            point_time_utc = period_start + timedelta(minutes=interval_idx * resolution_minutes)
+            point_time_local = self.convert_to_local_time(point_time_utc)
+            trade_date = point_time_local.date()
+            period_num = self.calculate_period_number(point_time_local)
+            time_interval_str = self.format_time_interval(point_time_local, resolution_minutes)
+
+            key = (trade_date, period_num)
+
+            if key not in self._data:
+                self._data[key] = {
+                    'time_interval': time_interval_str,
+                    'price_eur_mwh': price
+                }
+            else:
+                # If we already have data, prefer non-null price
+                if price is not None:
+                    self._data[key]['price_eur_mwh'] = price
+
+    def _aggregate_to_records(self) -> List[Dict[str, Any]]:
+        """Convert intermediate data to final records."""
+        result = []
+
+        for (trade_date, period_num), data in sorted(self._data.items()):
+            record = {
+                'trade_date': trade_date,
+                'period': period_num,
+                'time_interval': data['time_interval'],
+                'price_eur_mwh': data['price_eur_mwh'],
+            }
+
+            # Include area_id and country_code if configured
+            if self.area_id is not None:
+                record['area_id'] = self.area_id
+            if self.country_code is not None:
+                record['country_code'] = self.country_code
+
+            result.append(record)
+
+        return result
+
+    def clear(self) -> None:
+        """Clear intermediate data for reuse."""
+        self._data.clear()
+
+
 # Backward compatibility alias
 ImbalanceDataParser = ImbalanceParser
 

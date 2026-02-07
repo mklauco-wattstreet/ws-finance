@@ -63,6 +63,9 @@
 # ENTSO-E - Unified scheduled cross-border flows pipeline every 15 minutes
 */15 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.entsoe_unified_sched_flow_runner >> /var/log/entsoe_sched_flow.log 2>&1
 
+# ENTSO-E - Unified day-ahead prices pipeline daily at 14:00 CET (published ~13:00)
+0 14 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.entsoe_unified_day_ahead_prices_runner >> /var/log/entsoe_day_ahead.log 2>&1
+
 # ============================================================================
 # Cleanup - Delete old downloaded files daily at 02:00
 # ============================================================================

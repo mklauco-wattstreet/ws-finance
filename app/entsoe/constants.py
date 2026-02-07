@@ -18,6 +18,7 @@ DE_TRANSNETBW = "10YDE-ENBW-----N"  # Germany TransnetBW (southwest)
 AT_BZN = "10YAT-APG------L"     # Austria
 PL_BZN = "10YPL-AREA-----S"     # Poland
 SK_BZN = "10YSK-SEPS-----K"     # Slovakia
+HU_BZN = "10YHU-MAVIR----U"     # Hungary
 
 # Mapping for iteration in runner (key = column suffix, value = EIC code)
 # Note: For cross-border flows, we use TenneT as representative for DE
@@ -39,6 +40,7 @@ AREA_IDS = {
     DE_50HERTZ: 6,       # Germany (50Hertz)
     DE_AMPRION: 7,       # Germany (Amprion)
     DE_TRANSNETBW: 8,    # Germany (TransnetBW)
+    HU_BZN: 9,           # Hungary
 }
 
 # Reverse mapping: area_id -> EIC code
@@ -65,4 +67,11 @@ DE_TSO_AREAS = [
     (6, DE_50HERTZ, "DE-50Hertz"),
     (7, DE_AMPRION, "DE-Amprion"),
     (8, DE_TRANSNETBW, "DE-TransnetBW"),
+]
+
+# Active areas for day-ahead prices fetching
+# Tuple format: (area_id, eic_code, display_label, country_code)
+# Day-ahead prices are per bidding zone (not per TSO like generation)
+ACTIVE_DAY_AHEAD_AREAS = [
+    (9, HU_BZN, "HU", "HU"),
 ]
