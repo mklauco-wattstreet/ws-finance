@@ -228,11 +228,16 @@ class ImbalanceParser(BaseParser):
 
         # Build position -> Point mapping
         points_by_position = {}
+        period_category = None  # Track which category this Period contains (A04 or A05)
         for point in period.findall('{*}Point'):
             position = int(point.find('{*}position').text)
             price_amount = float(point.find('{*}imbalance_Price.amount').text)
             category_elem = point.find('{*}imbalance_Price.category')
             category = category_elem.text if category_elem is not None else None
+
+            # Track the category for this period (all points should have same category)
+            if period_category is None:
+                period_category = category
 
             # Get Financial_Price components
             financial_prices = {}
@@ -247,11 +252,8 @@ class ImbalanceParser(BaseParser):
                 'financial_prices': financial_prices
             }
 
-        # Process intervals with forward-filling
-        last_values = {
-            'A04': {'price_amount': 0.0, 'financial_prices': {'A01': 0.0, 'A02': 0.0, 'A03': 0.0}},
-            'A05': {'price_amount': 0.0, 'financial_prices': {'A01': 0.0, 'A02': 0.0, 'A03': 0.0}}
-        }
+        # Process intervals with forward-filling for this category only
+        last_value = {'price_amount': 0.0, 'financial_prices': {'A01': 0.0, 'A02': 0.0, 'A03': 0.0}}
 
         for interval_idx in range(num_intervals):
             point_time_utc = period_start + timedelta(minutes=interval_idx * resolution_minutes)
@@ -279,37 +281,26 @@ class ImbalanceParser(BaseParser):
                     'neg_imb_financial_neutrality_mwh': 0.0,
                 }
 
-            # Update last_values if Point exists
+            # Update last_value if Point exists for this position
             if position in points_by_position:
                 point_data = points_by_position[position]
-                category = point_data['category']
-                last_values[category] = {
+                last_value = {
                     'price_amount': point_data['price_amount'],
                     'financial_prices': point_data['financial_prices']
                 }
 
-            # Apply values
-            if last_values['A04']['price_amount'] != 0.0:
-                imb_price = last_values['A04']['price_amount']
-                scarcity = last_values['A04']['financial_prices'].get('A01', 0.0)
-                incentive = last_values['A04']['financial_prices'].get('A02', 0.0)
-                neutrality = last_values['A04']['financial_prices'].get('A03', 0.0)
-            elif last_values['A05']['price_amount'] != 0.0:
-                imb_price = last_values['A05']['price_amount']
-                scarcity = last_values['A05']['financial_prices'].get('A01', 0.0)
-                incentive = last_values['A05']['financial_prices'].get('A02', 0.0)
-                neutrality = last_values['A05']['financial_prices'].get('A03', 0.0)
-            else:
-                imb_price = scarcity = incentive = neutrality = 0.0
-
-            self.prices_data[key]['pos_imb_price_mwh'] = imb_price
-            self.prices_data[key]['pos_imb_scarcity_mwh'] = scarcity
-            self.prices_data[key]['pos_imb_incentive_mwh'] = incentive
-            self.prices_data[key]['pos_imb_financial_neutrality_mwh'] = neutrality
-            self.prices_data[key]['neg_imb_price_mwh'] = imb_price
-            self.prices_data[key]['neg_imb_scarcity_mwh'] = scarcity
-            self.prices_data[key]['neg_imb_incentive_mwh'] = incentive
-            self.prices_data[key]['neg_imb_financial_neutrality_mwh'] = neutrality
+            # Apply values only to the columns for this period's category
+            # A04 = positive imbalance, A05 = negative imbalance
+            if period_category == 'A04':
+                self.prices_data[key]['pos_imb_price_mwh'] = last_value['price_amount']
+                self.prices_data[key]['pos_imb_scarcity_mwh'] = last_value['financial_prices'].get('A01', 0.0)
+                self.prices_data[key]['pos_imb_incentive_mwh'] = last_value['financial_prices'].get('A02', 0.0)
+                self.prices_data[key]['pos_imb_financial_neutrality_mwh'] = last_value['financial_prices'].get('A03', 0.0)
+            elif period_category == 'A05':
+                self.prices_data[key]['neg_imb_price_mwh'] = last_value['price_amount']
+                self.prices_data[key]['neg_imb_scarcity_mwh'] = last_value['financial_prices'].get('A01', 0.0)
+                self.prices_data[key]['neg_imb_incentive_mwh'] = last_value['financial_prices'].get('A02', 0.0)
+                self.prices_data[key]['neg_imb_financial_neutrality_mwh'] = last_value['financial_prices'].get('A03', 0.0)
 
     def parse_volumes_xml(self, xml_file_path: str) -> None:
         """
