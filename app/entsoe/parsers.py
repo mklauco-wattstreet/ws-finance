@@ -172,6 +172,7 @@ class ImbalanceParser(BaseParser):
         super().__init__()
         self.area_id = area_id
         self.country_code = country_code
+        self.currency: Optional[str] = None  # Extracted from XML
         self.prices_data: Dict[tuple, Dict] = {}
         self.volumes_data: Dict[tuple, Dict] = {}
         self.combined_data: List[Dict] = []
@@ -195,6 +196,11 @@ class ImbalanceParser(BaseParser):
         # Get document status
         doc_status_elem = root.find('.//{*}docStatus/{*}value')
         doc_status = doc_status_elem.text if doc_status_elem is not None else 'A01'
+
+        # Extract currency from first TimeSeries (all should have same currency)
+        currency_elem = root.find('.//{*}TimeSeries/{*}currency_Unit.name')
+        if currency_elem is not None:
+            self.currency = currency_elem.text
 
         # Process each TimeSeries
         for timeseries in root.findall('.//{*}TimeSeries'):
@@ -407,10 +413,11 @@ class ImbalanceParser(BaseParser):
             if self.country_code is not None:
                 record['country_code'] = self.country_code
 
-            # Set currency based on country_code (CZ uses CZK, others use EUR)
-            if self.country_code == 'CZ':
-                record['currency'] = 'CZK'
+            # Set currency from XML (extracted in parse_prices_xml)
+            if self.currency is not None:
+                record['currency'] = self.currency
             else:
+                # Fallback if currency not found in XML
                 record['currency'] = 'EUR'
 
             if key in self.volumes_data:
