@@ -75,3 +75,12 @@ DE_TSO_AREAS = [
 ACTIVE_DAY_AHEAD_AREAS = [
     (9, HU_BZN, "HU", "HU"),
 ]
+
+# Active areas for imbalance prices fetching
+# Tuple format: (area_id, eic_code, display_label, country_code)
+# Note: Imbalance prices are fetched per control area
+# Currency: CZ uses CZK, HU uses EUR
+ACTIVE_IMBALANCE_AREAS = [
+    (1, CZ_BZN, "CZ", "CZ"),
+    (9, HU_BZN, "HU", "HU"),
+]

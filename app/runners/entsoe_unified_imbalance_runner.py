@@ -6,12 +6,13 @@ Fetches imbalance prices (A85) and volumes (A86) for active areas,
 parses the XML into records with area_id, and uploads
 to the partitioned entsoe_imbalance_prices table.
 
-Note: Imbalance prices are currently CZ-specific due to CZK currency.
-This runner supports multi-area fetching for future expansion.
+Supported countries:
+- CZ (Czech Republic) - prices in CZK
+- HU (Hungary) - prices in EUR
 
 Usage:
     python3 entsoe_unified_imbalance_runner.py [--debug] [--dry-run]
-    python3 entsoe_unified_imbalance_runner.py --start 2024-12-01 --end 2024-12-22
+    python3 entsoe_unified_imbalance_runner.py --start 2026-01-01 --end 2026-02-12
 """
 
 import sys
@@ -24,7 +25,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from runners.base_runner import BaseRunner
 from entsoe.client import EntsoeClient
 from entsoe.parsers import ImbalanceParser
-from entsoe.constants import ACTIVE_GENERATION_AREAS
+from entsoe.constants import ACTIVE_IMBALANCE_AREAS
 
 
 class UnifiedImbalanceRunner(BaseRunner):
@@ -36,11 +37,11 @@ class UnifiedImbalanceRunner(BaseRunner):
     TABLE_NAME = "entsoe_imbalance_prices"
     COLUMNS = [
         "trade_date", "period", "area_id", "country_code", "time_interval",
-        "pos_imb_price_czk_mwh", "pos_imb_scarcity_czk_mwh",
-        "pos_imb_incentive_czk_mwh", "pos_imb_financial_neutrality_czk_mwh",
-        "neg_imb_price_czk_mwh", "neg_imb_scarcity_czk_mwh",
-        "neg_imb_incentive_czk_mwh", "neg_imb_financial_neutrality_czk_mwh",
-        "imbalance_mwh", "difference_mwh", "situation", "status"
+        "pos_imb_price_mwh", "pos_imb_scarcity_mwh",
+        "pos_imb_incentive_mwh", "pos_imb_financial_neutrality_mwh",
+        "neg_imb_price_mwh", "neg_imb_scarcity_mwh",
+        "neg_imb_incentive_mwh", "neg_imb_financial_neutrality_mwh",
+        "imbalance_mwh", "difference_mwh", "situation", "status", "currency"
     ]
     CONFLICT_COLUMNS = ["trade_date", "period", "area_id", "country_code"]
 
@@ -109,18 +110,19 @@ class UnifiedImbalanceRunner(BaseRunner):
                 record['area_id'],
                 record['country_code'],
                 record['time_interval'],
-                record.get('pos_imb_price_czk_mwh'),
-                record.get('pos_imb_scarcity_czk_mwh'),
-                record.get('pos_imb_incentive_czk_mwh'),
-                record.get('pos_imb_financial_neutrality_czk_mwh'),
-                record.get('neg_imb_price_czk_mwh'),
-                record.get('neg_imb_scarcity_czk_mwh'),
-                record.get('neg_imb_incentive_czk_mwh'),
-                record.get('neg_imb_financial_neutrality_czk_mwh'),
+                record.get('pos_imb_price_mwh'),
+                record.get('pos_imb_scarcity_mwh'),
+                record.get('pos_imb_incentive_mwh'),
+                record.get('pos_imb_financial_neutrality_mwh'),
+                record.get('neg_imb_price_mwh'),
+                record.get('neg_imb_scarcity_mwh'),
+                record.get('neg_imb_incentive_mwh'),
+                record.get('neg_imb_financial_neutrality_mwh'),
                 record.get('imbalance_mwh'),
                 record.get('difference_mwh'),
                 record.get('situation'),
-                record.get('status')
+                record.get('status'),
+                record.get('currency'),
             ))
         return records
 
@@ -185,7 +187,7 @@ class UnifiedImbalanceRunner(BaseRunner):
         total_records = 0
 
         # Process each active area sequentially (to avoid API rate limits)
-        for area_id, area_code, display_label, country_code in ACTIVE_GENERATION_AREAS:
+        for area_id, area_code, display_label, country_code in ACTIVE_IMBALANCE_AREAS:
             records = self._process_area(
                 period_start, period_end,
                 area_id, area_code, display_label, country_code,
@@ -207,8 +209,8 @@ class UnifiedImbalanceRunner(BaseRunner):
         try:
             if self.is_backfill:
                 self.logger.info("")
-                self.logger.info(f"Processing {len(ACTIVE_GENERATION_AREAS)} areas: "
-                               f"{', '.join(label for _, _, label, _ in ACTIVE_GENERATION_AREAS)}")
+                self.logger.info(f"Processing {len(ACTIVE_IMBALANCE_AREAS)} areas: "
+                               f"{', '.join(label for _, _, label, _ in ACTIVE_IMBALANCE_AREAS)}")
                 with self.database_connection() as conn:
                     for period_start, period_end in self.get_backfill_chunks():
                         try:
@@ -226,8 +228,8 @@ class UnifiedImbalanceRunner(BaseRunner):
                     f"Period (UTC): {period_start.strftime('%Y-%m-%d %H:%M')} "
                     f"to {period_end.strftime('%Y-%m-%d %H:%M')}"
                 )
-                self.logger.info(f"Processing {len(ACTIVE_GENERATION_AREAS)} areas: "
-                               f"{', '.join(label for _, _, label, _ in ACTIVE_GENERATION_AREAS)}")
+                self.logger.info(f"Processing {len(ACTIVE_IMBALANCE_AREAS)} areas: "
+                               f"{', '.join(label for _, _, label, _ in ACTIVE_IMBALANCE_AREAS)}")
                 self.logger.info("")
 
                 if not self.dry_run:

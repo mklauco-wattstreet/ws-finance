@@ -263,14 +263,14 @@ class ImbalanceParser(BaseParser):
                     'period': period_num,
                     'time_interval': time_interval_str,
                     'status': doc_status,
-                    'pos_imb_price_czk_mwh': 0.0,
-                    'pos_imb_scarcity_czk_mwh': 0.0,
-                    'pos_imb_incentive_czk_mwh': 0.0,
-                    'pos_imb_financial_neutrality_czk_mwh': 0.0,
-                    'neg_imb_price_czk_mwh': 0.0,
-                    'neg_imb_scarcity_czk_mwh': 0.0,
-                    'neg_imb_incentive_czk_mwh': 0.0,
-                    'neg_imb_financial_neutrality_czk_mwh': 0.0,
+                    'pos_imb_price_mwh': 0.0,
+                    'pos_imb_scarcity_mwh': 0.0,
+                    'pos_imb_incentive_mwh': 0.0,
+                    'pos_imb_financial_neutrality_mwh': 0.0,
+                    'neg_imb_price_mwh': 0.0,
+                    'neg_imb_scarcity_mwh': 0.0,
+                    'neg_imb_incentive_mwh': 0.0,
+                    'neg_imb_financial_neutrality_mwh': 0.0,
                 }
 
             # Update last_values if Point exists
@@ -296,14 +296,14 @@ class ImbalanceParser(BaseParser):
             else:
                 imb_price = scarcity = incentive = neutrality = 0.0
 
-            self.prices_data[key]['pos_imb_price_czk_mwh'] = imb_price
-            self.prices_data[key]['pos_imb_scarcity_czk_mwh'] = scarcity
-            self.prices_data[key]['pos_imb_incentive_czk_mwh'] = incentive
-            self.prices_data[key]['pos_imb_financial_neutrality_czk_mwh'] = neutrality
-            self.prices_data[key]['neg_imb_price_czk_mwh'] = imb_price
-            self.prices_data[key]['neg_imb_scarcity_czk_mwh'] = scarcity
-            self.prices_data[key]['neg_imb_incentive_czk_mwh'] = incentive
-            self.prices_data[key]['neg_imb_financial_neutrality_czk_mwh'] = neutrality
+            self.prices_data[key]['pos_imb_price_mwh'] = imb_price
+            self.prices_data[key]['pos_imb_scarcity_mwh'] = scarcity
+            self.prices_data[key]['pos_imb_incentive_mwh'] = incentive
+            self.prices_data[key]['pos_imb_financial_neutrality_mwh'] = neutrality
+            self.prices_data[key]['neg_imb_price_mwh'] = imb_price
+            self.prices_data[key]['neg_imb_scarcity_mwh'] = scarcity
+            self.prices_data[key]['neg_imb_incentive_mwh'] = incentive
+            self.prices_data[key]['neg_imb_financial_neutrality_mwh'] = neutrality
 
     def parse_volumes_xml(self, xml_file_path: str) -> None:
         """
@@ -391,14 +391,14 @@ class ImbalanceParser(BaseParser):
                     'period': period_num,
                     'time_interval': self.calculate_time_interval_from_period(period_num),
                     'status': 'A01',
-                    'pos_imb_price_czk_mwh': 0.0,
-                    'pos_imb_scarcity_czk_mwh': 0.0,
-                    'pos_imb_incentive_czk_mwh': 0.0,
-                    'pos_imb_financial_neutrality_czk_mwh': 0.0,
-                    'neg_imb_price_czk_mwh': 0.0,
-                    'neg_imb_scarcity_czk_mwh': 0.0,
-                    'neg_imb_incentive_czk_mwh': 0.0,
-                    'neg_imb_financial_neutrality_czk_mwh': 0.0,
+                    'pos_imb_price_mwh': 0.0,
+                    'pos_imb_scarcity_mwh': 0.0,
+                    'pos_imb_incentive_mwh': 0.0,
+                    'pos_imb_financial_neutrality_mwh': 0.0,
+                    'neg_imb_price_mwh': 0.0,
+                    'neg_imb_scarcity_mwh': 0.0,
+                    'neg_imb_incentive_mwh': 0.0,
+                    'neg_imb_financial_neutrality_mwh': 0.0,
                 }
 
             # Include area_id and country_code if configured
@@ -406,6 +406,12 @@ class ImbalanceParser(BaseParser):
                 record['area_id'] = self.area_id
             if self.country_code is not None:
                 record['country_code'] = self.country_code
+
+            # Set currency based on country_code (CZ uses CZK, others use EUR)
+            if self.country_code == 'CZ':
+                record['currency'] = 'CZK'
+            else:
+                record['currency'] = 'EUR'
 
             if key in self.volumes_data:
                 record.update(self.volumes_data[key])

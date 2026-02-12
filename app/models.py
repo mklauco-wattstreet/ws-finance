@@ -51,31 +51,40 @@ class EntsoeAreas(Base):
 
 
 class EntsoeImbalancePrices(Base):
-    """ENTSO-E imbalance prices and volumes data (15-minute intervals)."""
+    """ENTSO-E imbalance prices and volumes data (15-minute intervals).
+
+    Partitioned by country_code for multi-area storage with partition pruning.
+    Partitions: CZ, DE, AT, PL, SK, HU (by country_code string).
+
+    Currency field indicates the price currency:
+    - CZ: CZK (Czech Koruna)
+    - HU, DE, AT, PL, SK: EUR (Euro)
+    """
     __tablename__ = 'entsoe_imbalance_prices'
     __table_args__ = (
-        PrimaryKeyConstraint('id', name='entsoe_imbalance_prices_pkey'),
-        UniqueConstraint('trade_date', 'time_interval', name='entsoe_imbalance_prices_trade_date_time_interval_key'),
-        UniqueConstraint('trade_date', 'period', name='entsoe_imbalance_prices_trade_date_period_key'),
+        PrimaryKeyConstraint('trade_date', 'period', 'area_id', 'country_code'),
         {'schema': DB_SCHEMA}
     )
 
     id: Mapped[int] = mapped_column(Integer, autoincrement=True)
     trade_date: Mapped[date] = mapped_column(Date, nullable=False)
     period: Mapped[int] = mapped_column(Integer, nullable=False)
+    area_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    country_code: Mapped[str] = mapped_column(String(5), nullable=False)
     time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
-    pos_imb_price_czk_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
-    pos_imb_scarcity_czk_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
-    pos_imb_incentive_czk_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
-    pos_imb_financial_neutrality_czk_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
-    neg_imb_price_czk_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
-    neg_imb_scarcity_czk_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
-    neg_imb_incentive_czk_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
-    neg_imb_financial_neutrality_czk_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    pos_imb_price_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    pos_imb_scarcity_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    pos_imb_incentive_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    pos_imb_financial_neutrality_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    neg_imb_price_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    neg_imb_scarcity_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    neg_imb_incentive_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    neg_imb_financial_neutrality_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
     imbalance_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 5))
     difference_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 5))
     situation: Mapped[Optional[str]] = mapped_column(String)
     status: Mapped[Optional[str]] = mapped_column(String)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
     delivery_datetime: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True))
 
