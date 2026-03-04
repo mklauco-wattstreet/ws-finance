@@ -20,6 +20,7 @@ Expected: All data from 2024-12-01 00:00 to current time
 """
 
 import sys
+import argparse
 from pathlib import Path
 from datetime import datetime, date, timedelta
 import psycopg2
@@ -236,9 +237,14 @@ def get_last_12h_stats_15min(table_name: str, current_time: datetime, conn) -> d
 
 def main():
     """Main entry point."""
-    start_date = date(2024, 12, 1)
+    parser = argparse.ArgumentParser(description='CEPS Data Consistency Check')
+    parser.add_argument('--start', type=str, default='2024-12-01', help='Start date (YYYY-MM-DD), default: 2024-12-01')
+    parser.add_argument('--end', type=str, default=None, help='End date (YYYY-MM-DD), default: today')
+    args = parser.parse_args()
+
+    start_date = datetime.strptime(args.start, '%Y-%m-%d').date()
     current_time = datetime.now()
-    end_date = current_time.date()
+    end_date = datetime.strptime(args.end, '%Y-%m-%d').date() if args.end else current_time.date()
 
     num_days = (end_date - start_date).days + 1
     completed_days = num_days - 1
