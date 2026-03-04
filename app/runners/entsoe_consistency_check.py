@@ -15,6 +15,7 @@ Checks data completeness for all ENTSO-E datasets:
 Expected: 96 periods per day per area (15-min resolution)
 """
 
+import argparse
 import sys
 from pathlib import Path
 from datetime import datetime, date, timedelta
@@ -186,9 +187,14 @@ def print_missing_dates_detail(dataset: dict, start_date: date, end_date: date, 
 
 def main():
     """Main entry point."""
-    start_date = date(2024, 12, 1)
+    parser = argparse.ArgumentParser(description='ENTSO-E Data Consistency Check')
+    parser.add_argument('--start', type=str, default='2024-12-01', help='Start date (YYYY-MM-DD)')
+    parser.add_argument('--end', type=str, default=None, help='End date (YYYY-MM-DD), default: today')
+    args = parser.parse_args()
+
     current_time = datetime.now()
-    end_date = current_time.date()
+    start_date = datetime.strptime(args.start, '%Y-%m-%d').date()
+    end_date = datetime.strptime(args.end, '%Y-%m-%d').date() if args.end else current_time.date()
     num_days = (end_date - start_date).days + 1
 
     print("=" * 80)

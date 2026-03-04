@@ -431,7 +431,7 @@ def main():
         print()
         print("=" * 80)
         print("Backfill command:")
-        print("docker compose exec entsoe-ote-data-uploader python3 /app/scripts/ceps/ceps_soap_pipeline.py --dataset <KEY> --start-date YYYY-MM-DD --end-date YYYY-MM-DD")
+        print("docker compose exec entsoe-ote-data-uploader python3 /app/scripts/ceps/ceps_soap_pipeline.py --dataset <KEY> --start YYYY-MM-DD --end YYYY-MM-DD")
         print("=" * 80)
 
     finally:
