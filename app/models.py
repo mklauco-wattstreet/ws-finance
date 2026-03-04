@@ -531,3 +531,77 @@ class CepsActualRePrice15Min(Base):
     price_mfrr_minus_last_at_interval_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
     price_mfrr_5_last_at_interval_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+
+
+class DaBid(Base):
+    """OTE Day-Ahead Market matching curve bid stacks.
+
+    Stores aggregated supply/demand bids from the DAM auction.
+    Period is 1-96 (15-minute intervals), converted from XML per-hour periods.
+    """
+    __tablename__ = 'da_bid'
+    __table_args__ = (
+        PrimaryKeyConstraint('delivery_date', 'period', 'side', 'price', 'order_resolution', name='da_bid_pkey'),
+        {'schema': DB_SCHEMA}
+    )
+
+    delivery_date: Mapped[date] = mapped_column(Date, nullable=False)
+    period: Mapped[int] = mapped_column(Integer, nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    side: Mapped[str] = mapped_column(String(4), nullable=False)
+    price: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    volume_bid: Mapped[Decimal] = mapped_column(Numeric(12, 3), nullable=False)
+    volume_matched: Mapped[Decimal] = mapped_column(Numeric(12, 3), nullable=False)
+    order_resolution: Mapped[str] = mapped_column(String(5), nullable=False)
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+
+
+class DaPeriodSummary(Base):
+    """OTE Day-Ahead Market per-period depth analytics.
+
+    Computed from da_bid after each fetch: clearing price/volume,
+    nearest unmatched supply/demand steps, and price/volume gaps.
+    """
+    __tablename__ = 'da_period_summary'
+    __table_args__ = (
+        PrimaryKeyConstraint('delivery_date', 'period', name='da_period_summary_pkey'),
+        {'schema': DB_SCHEMA}
+    )
+
+    delivery_date: Mapped[date] = mapped_column(Date, nullable=False)
+    period: Mapped[int] = mapped_column(Integer, nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    clearing_price: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2))
+    clearing_volume: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    supply_next_price: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2))
+    supply_next_volume: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    supply_price_gap: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2))
+    supply_volume_gap: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    demand_next_price: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2))
+    demand_next_volume: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    demand_price_gap: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2))
+    demand_volume_gap: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+
+
+class DaCurveDepth(Base):
+    """OTE Day-Ahead Market curve depth at fixed MW offsets.
+
+    For each period and side (sell/buy), stores the price at which
+    cumulative unmatched volume first reaches offset_mw.
+    NULL price_at_offset means the curve is exhausted before that offset.
+    """
+    __tablename__ = 'da_curve_depth'
+    __table_args__ = (
+        PrimaryKeyConstraint('delivery_date', 'period', 'side', 'offset_mw', name='da_curve_depth_pkey'),
+        {'schema': DB_SCHEMA}
+    )
+
+    delivery_date: Mapped[date] = mapped_column(Date, nullable=False)
+    period: Mapped[int] = mapped_column(Integer, nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    side: Mapped[str] = mapped_column(String(4), nullable=False)
+    offset_mw: Mapped[int] = mapped_column(Integer, nullable=False)
+    price_at_offset: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2))
+    volume_available: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')

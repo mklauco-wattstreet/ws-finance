@@ -26,6 +26,9 @@
 # OTE-CR - Download OTE trade balance reports every 2 hours
 0 */2 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 ote_trade_balance_downloader.py >> /var/log/ote.log 2>&1
 
+# OTE-CR - Download DAM matching curves daily at 14:30 (auction results publish ~14:00)
+30 14 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 download_dam_curves.py >> /var/log/ote.log 2>&1
+
 # ============================================================================
 # CEPS - Czech Grid Imbalance Data (via SOAP API)
 # ============================================================================
