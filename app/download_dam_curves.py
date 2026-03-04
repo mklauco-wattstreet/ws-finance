@@ -138,7 +138,7 @@ def main():
             date_pattern=date_pattern,
             logger=logger,
             minimum_date=datetime(2026, 1, 1),
-            end_date_offset=0  # yesterday (auction results for today, but data available next day)
+            end_date_offset=1  # tomorrow (day-ahead auction results published ~14:00 today)
         )
 
         if start_date is None or end_date is None:
