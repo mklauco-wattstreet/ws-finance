@@ -82,5 +82,9 @@ ACTIVE_DAY_AHEAD_AREAS = [
 # Currency: CZ uses CZK, HU uses EUR
 ACTIVE_IMBALANCE_AREAS = [
     (1, CZ_BZN, "CZ", "CZ"),
+    (2, DE_TENNET, "DE", "DE"),
+    (3, AT_BZN, "AT", "AT"),
+    (4, PL_BZN, "PL", "PL"),
+    (5, SK_BZN, "SK", "SK"),
     (9, HU_BZN, "HU", "HU"),
 ]
