@@ -69,8 +69,14 @@ docker compose exec entsoe-ote-data-uploader python3 -m ceps.ceps_soap_pipeline 
 # Dry run
 docker compose exec entsoe-ote-data-uploader python3 -m ceps.ceps_soap_pipeline --dataset all --dry-run --debug
 
-# Backfill 1-min features (no API calls, computes from existing DB data)
-docker compose exec entsoe-ote-data-uploader python /app/scripts/ceps/preprocess_ceps_data.py --start 2024-12-01 --end 2026-03-07
+# Backfill features (no API calls, computes from existing DB data)
+docker compose exec entsoe-ote-data-uploader python -m ceps.preprocess_ceps_data --table all --start 2024-12-01 --end 2026-03-07
+
+# Backfill only 1-min distributional features
+docker compose exec entsoe-ote-data-uploader python -m ceps.preprocess_ceps_data --table 1min_features --start 2024-12-01 --end 2026-03-07
+
+# Backfill only derived features (rolling memory + forecast surprise)
+docker compose exec entsoe-ote-data-uploader python -m ceps.preprocess_ceps_data --table derived --start 2024-12-01 --end 2026-03-07
 ```
 
 ### Command-Line Arguments
@@ -196,11 +202,14 @@ Each table has composite unique key `(trade_date, time_interval)` where `time_in
 | `imb_roll_2h` | NUMERIC(12,5) | Mean of load_mean_mw over trailing 8 intervals (2 hours) |
 | `imb_roll_4h` | NUMERIC(12,5) | Mean of load_mean_mw over trailing 16 intervals (4 hours) |
 | `imb_integral_4h` | NUMERIC(15,5) | Cumulative sum of load_mean_mw over trailing 16 intervals |
-| `solar_error_mw` | NUMERIC(12,3) | pvpp_mw (actual) - solar_mean_mw (RES forecast) |
-| `wind_error_mw` | NUMERIC(12,3) | wpp_mw (actual) - wind_mean_mw (RES forecast) |
-| `gen_total_error_mw` | NUMERIC(12,3) | Actual total generation - planned total_mw |
+| `solar_error_mw` | NUMERIC(12,3) | pvpp_mw (CEPS actual) - forecast_solar_mw (ENTSO-E DA forecast, CZ) |
+| `wind_error_mw` | NUMERIC(12,3) | Always NULL — CZ has negligible wind capacity |
+| `gen_total_error_mw` | NUMERIC(12,3) | Actual total generation (sum of 9 plant types) - planned total_mw |
 
-**Key insight:** `GenerationRES` SOAP operation ("Odhad vyroby obnovitelnych zdroju") provides the **RES forecast**, not actuals. Actual solar/wind come from `Generation` (`pvpp_mw`, `wpp_mw`). This enables direct forecast error computation.
+**Key design decisions:**
+- `solar_error_mw` uses ENTSO-E day-ahead solar forecast (`entsoe_generation_forecast` table, `country_code = 'CZ'`, document type A69/B16) as the baseline. The CEPS `GenerationRES` SOAP operation ("Odhad výroby obnovitelných zdrojů") is a **real-time estimate**, not a DA forecast — nearly identical to actuals (differences < 0.1 MW on 300 MW), making it useless for forecast error.
+- `wind_error_mw` is always NULL because CZ has negligible wind capacity.
+- Rolling memory windows (2h/4h) use `ROWS PRECEDING` for exact interval count regardless of gaps.
 
 ### Native 15-Minute Tables
 

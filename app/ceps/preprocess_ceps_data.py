@@ -252,9 +252,9 @@ def aggregate_derived_features(affected_intervals: Set[tuple], conn, logger) -> 
     Window functions require lookback data, so the query includes the previous day.
 
     Forecast surprise: actual generation minus forecast/plan.
-    - solar_error = pvpp_mw (actual) - solar_mean_mw (RES forecast)
-    - wind_error = wpp_mw (actual) - wind_mean_mw (RES forecast)
+    - solar_error = pvpp_mw (CEPS actual) - forecast_solar_mw (ENTSO-E DA forecast, CZ)
     - gen_total_error = actual_total - plan.total_mw
+    Note: wind_error dropped — CZ has negligible wind capacity.
     """
     if not affected_intervals:
         return 0
@@ -292,13 +292,12 @@ def aggregate_derived_features(affected_intervals: Set[tuple], conn, logger) -> 
                     COALESCE(g.appp_mw, 0) + COALESCE(g.wpp_mw, 0) + COALESCE(g.pvpp_mw, 0)
                     AS actual_total_mw,
                 g.pvpp_mw AS actual_solar_mw,
-                g.wpp_mw AS actual_wind_mw,
-                res.solar_mean_mw AS forecast_solar_mw,
-                res.wind_mean_mw AS forecast_wind_mw,
+                ef.forecast_solar_mw AS da_forecast_solar_mw,
                 plan.total_mw AS plan_total_mw
             FROM finance.ceps_generation_15min g
-            LEFT JOIN finance.ceps_generation_res_15min res
-                ON res.trade_date = g.trade_date AND res.time_interval = g.time_interval
+            LEFT JOIN finance.entsoe_generation_forecast ef
+                ON ef.trade_date = g.trade_date AND ef.time_interval = g.time_interval
+                AND ef.country_code = 'CZ'
             LEFT JOIN finance.ceps_generation_plan_15min plan
                 ON plan.trade_date = g.trade_date AND plan.time_interval = g.time_interval
             WHERE g.trade_date IN %s
@@ -311,8 +310,8 @@ def aggregate_derived_features(affected_intervals: Set[tuple], conn, logger) -> 
         SELECT
             r.trade_date, r.time_interval,
             r.imb_roll_2h, r.imb_roll_4h, r.imb_integral_4h,
-            f.actual_solar_mw - f.forecast_solar_mw,
-            f.actual_wind_mw - f.forecast_wind_mw,
+            f.actual_solar_mw - f.da_forecast_solar_mw,
+            NULL,
             f.actual_total_mw - f.plan_total_mw
         FROM rolling r
         LEFT JOIN forecast f
