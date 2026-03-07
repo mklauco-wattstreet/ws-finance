@@ -187,6 +187,21 @@ Each table has composite unique key `(trade_date, time_interval)` where `time_in
 - REGR_SLOPE uses minute index 0..14 instead of epoch to avoid floating-point precision issues
 - Thresholds (-500/+500 EUR) defined as constants in `preprocess_ceps_data.py`
 
+**ceps_derived_features_15min** — Rolling memory and forecast surprise features computed from existing 15-min tables. Triggered on upsert of imbalance, generation, generation_res, and generation_plan data.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `trade_date` | DATE | Trade date |
+| `time_interval` | VARCHAR(11) | 15-min interval |
+| `imb_roll_2h` | NUMERIC(12,5) | Mean of load_mean_mw over trailing 8 intervals (2 hours) |
+| `imb_roll_4h` | NUMERIC(12,5) | Mean of load_mean_mw over trailing 16 intervals (4 hours) |
+| `imb_integral_4h` | NUMERIC(15,5) | Cumulative sum of load_mean_mw over trailing 16 intervals |
+| `solar_error_mw` | NUMERIC(12,3) | pvpp_mw (actual) - solar_mean_mw (RES forecast) |
+| `wind_error_mw` | NUMERIC(12,3) | wpp_mw (actual) - wind_mean_mw (RES forecast) |
+| `gen_total_error_mw` | NUMERIC(12,3) | Actual total generation - planned total_mw |
+
+**Key insight:** `GenerationRES` SOAP operation ("Odhad vyroby obnovitelnych zdroju") provides the **RES forecast**, not actuals. Actual solar/wind come from `Generation` (`pvpp_mw`, `wpp_mw`). This enables direct forecast error computation.
+
 ### Native 15-Minute Tables
 
 Three datasets arrive at 15-minute resolution directly from the API. No aggregation needed.
@@ -288,6 +303,7 @@ XML files stored in `downloads/ceps/soap/YYYY/MM/` and auto-cleaned after 1 day 
 | 034 | 2026-01-16 | Create generation + generation plan tables |
 | 035 | 2026-01-17 | Create estimated imbalance price table |
 | 042 | 2026-03-07 | Create ceps_1min_features_15min table (distributional/volatility features) |
+| 043 | 2026-03-07 | Create ceps_derived_features_15min table (rolling memory + forecast surprise) |
 
 ## Troubleshooting
 

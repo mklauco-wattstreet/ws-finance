@@ -18,7 +18,7 @@ from psycopg2.extras import execute_values
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from config import DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT
-from ceps.preprocess_ceps_data import aggregate_1min_features
+from ceps.preprocess_ceps_data import aggregate_1min_features, aggregate_derived_features
 
 
 def get_affected_intervals(records: List[Dict]) -> Set[tuple]:
@@ -305,6 +305,10 @@ def upsert_imbalance_data(records: List[Dict], conn, logger) -> int:
     if feat_count:
         logger.info(f"  ✓ Computed {feat_count:,} feature intervals to ceps_1min_features_15min")
 
+    derived_count = aggregate_derived_features(affected_intervals, conn, logger)
+    if derived_count:
+        logger.info(f"  ✓ Computed {derived_count:,} derived feature intervals")
+
     return len(records)
 
 
@@ -513,6 +517,10 @@ def upsert_generation_res_data(records: List[Dict], conn, logger) -> int:
     agg_count = aggregate_generation_res_15min(affected_intervals, conn, logger)
     logger.info(f"  ✓ Aggregated {agg_count:,} intervals to ceps_generation_res_15min")
 
+    derived_count = aggregate_derived_features(affected_intervals, conn, logger)
+    if derived_count:
+        logger.info(f"  ✓ Computed {derived_count:,} derived feature intervals")
+
     return len(records)
 
 
@@ -572,6 +580,12 @@ def upsert_generation_data(records: List[Dict], conn, logger) -> int:
         conn.commit()
 
     logger.info(f"  ✓ Upserted {len(records):,} records to ceps_generation_15min")
+
+    affected_intervals = set(get_15min_interval(r['delivery_timestamp']) for r in records)
+    derived_count = aggregate_derived_features(affected_intervals, conn, logger)
+    if derived_count:
+        logger.info(f"  ✓ Computed {derived_count:,} derived feature intervals")
+
     return len(records)
 
 
@@ -603,6 +617,12 @@ def upsert_generation_plan_data(records: List[Dict], conn, logger) -> int:
         conn.commit()
 
     logger.info(f"  ✓ Upserted {len(records):,} records to ceps_generation_plan_15min")
+
+    affected_intervals = set(get_15min_interval(r['delivery_timestamp']) for r in records)
+    derived_count = aggregate_derived_features(affected_intervals, conn, logger)
+    if derived_count:
+        logger.info(f"  ✓ Computed {derived_count:,} derived feature intervals")
+
     return len(records)
 
 

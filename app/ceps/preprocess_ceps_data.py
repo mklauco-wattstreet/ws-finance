@@ -245,6 +245,133 @@ def aggregate_1min_features(affected_intervals: Set[tuple], conn, logger) -> int
     return rows
 
 
+def aggregate_derived_features(affected_intervals: Set[tuple], conn, logger) -> int:
+    """Compute rolling memory and forecast surprise features for 15-min intervals.
+
+    Rolling memory: AVG/SUM of load_mean_mw over trailing 2h (8) and 4h (16) intervals.
+    Window functions require lookback data, so the query includes the previous day.
+
+    Forecast surprise: actual generation minus forecast/plan.
+    - solar_error = pvpp_mw (actual) - solar_mean_mw (RES forecast)
+    - wind_error = wpp_mw (actual) - wind_mean_mw (RES forecast)
+    - gen_total_error = actual_total - plan.total_mw
+    """
+    if not affected_intervals:
+        return 0
+
+    # Expand dates to include 1 day lookback for rolling window context
+    affected_dates_set = set()
+    for d_str, _ in affected_intervals:
+        d = date.fromisoformat(d_str) if isinstance(d_str, str) else d_str
+        affected_dates_set.add(d_str if isinstance(d_str, str) else d_str.isoformat())
+        prev = (d - timedelta(days=1)).isoformat() if isinstance(d_str, str) else (d_str - timedelta(days=1)).isoformat()
+        affected_dates_set.add(prev)
+    lookback_dates = tuple(affected_dates_set)
+
+    query = """
+        WITH rolling AS (
+            SELECT
+                trade_date,
+                time_interval,
+                load_mean_mw,
+                AVG(load_mean_mw) OVER w8 AS imb_roll_2h,
+                AVG(load_mean_mw) OVER w16 AS imb_roll_4h,
+                SUM(load_mean_mw) OVER w16 AS imb_integral_4h
+            FROM finance.ceps_actual_imbalance_15min
+            WHERE trade_date IN %s
+            WINDOW
+                w8  AS (ORDER BY trade_date, time_interval ROWS 7 PRECEDING),
+                w16 AS (ORDER BY trade_date, time_interval ROWS 15 PRECEDING)
+        ),
+        forecast AS (
+            SELECT
+                g.trade_date,
+                g.time_interval,
+                COALESCE(g.tpp_mw, 0) + COALESCE(g.ccgt_mw, 0) + COALESCE(g.npp_mw, 0) +
+                    COALESCE(g.hpp_mw, 0) + COALESCE(g.pspp_mw, 0) + COALESCE(g.altpp_mw, 0) +
+                    COALESCE(g.appp_mw, 0) + COALESCE(g.wpp_mw, 0) + COALESCE(g.pvpp_mw, 0)
+                    AS actual_total_mw,
+                g.pvpp_mw AS actual_solar_mw,
+                g.wpp_mw AS actual_wind_mw,
+                res.solar_mean_mw AS forecast_solar_mw,
+                res.wind_mean_mw AS forecast_wind_mw,
+                plan.total_mw AS plan_total_mw
+            FROM finance.ceps_generation_15min g
+            LEFT JOIN finance.ceps_generation_res_15min res
+                ON res.trade_date = g.trade_date AND res.time_interval = g.time_interval
+            LEFT JOIN finance.ceps_generation_plan_15min plan
+                ON plan.trade_date = g.trade_date AND plan.time_interval = g.time_interval
+            WHERE g.trade_date IN %s
+        )
+        INSERT INTO finance.ceps_derived_features_15min (
+            trade_date, time_interval,
+            imb_roll_2h, imb_roll_4h, imb_integral_4h,
+            solar_error_mw, wind_error_mw, gen_total_error_mw
+        )
+        SELECT
+            r.trade_date, r.time_interval,
+            r.imb_roll_2h, r.imb_roll_4h, r.imb_integral_4h,
+            f.actual_solar_mw - f.forecast_solar_mw,
+            f.actual_wind_mw - f.forecast_wind_mw,
+            f.actual_total_mw - f.plan_total_mw
+        FROM rolling r
+        LEFT JOIN forecast f
+            ON f.trade_date = r.trade_date AND f.time_interval = r.time_interval
+        WHERE (r.trade_date::text, r.time_interval) IN %s
+        ON CONFLICT (trade_date, time_interval) DO UPDATE SET
+            imb_roll_2h = EXCLUDED.imb_roll_2h,
+            imb_roll_4h = EXCLUDED.imb_roll_4h,
+            imb_integral_4h = EXCLUDED.imb_integral_4h,
+            solar_error_mw = EXCLUDED.solar_error_mw,
+            wind_error_mw = EXCLUDED.wind_error_mw,
+            gen_total_error_mw = EXCLUDED.gen_total_error_mw,
+            created_at = CURRENT_TIMESTAMP
+    """
+
+    # affected_dates used for both rolling and forecast CTEs
+    affected_dates = tuple(set(d for d, _ in affected_intervals))
+
+    with conn.cursor() as cur:
+        cur.execute(query, (lookback_dates, affected_dates, tuple(affected_intervals)))
+        rows = cur.rowcount
+        conn.commit()
+
+    return rows
+
+
+def backfill_derived_features(start_date: date, end_date: date, conn, logger) -> int:
+    """Backfill derived features from existing 15-min tables.
+
+    Processes one day at a time. No API calls.
+    """
+    total = 0
+    current = start_date
+
+    while current <= end_date:
+        date_str = current.strftime('%Y-%m-%d')
+
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT DISTINCT trade_date::text, time_interval
+                FROM finance.ceps_actual_imbalance_15min
+                WHERE trade_date = %s
+            """, (date_str,))
+            intervals = set(cur.fetchall())
+
+        if not intervals:
+            logger.debug(f"  {date_str}: no imbalance data, skipping")
+            current += timedelta(days=1)
+            continue
+
+        rows = aggregate_derived_features(intervals, conn, logger)
+        total += rows
+        logger.info(f"  {date_str}: {rows} derived intervals computed")
+
+        current += timedelta(days=1)
+
+    return total
+
+
 def backfill_features(start_date: date, end_date: date, conn, logger) -> int:
     """Backfill features by querying all existing 15-min intervals from RE price data.
 
@@ -292,9 +419,12 @@ def backfill_features(start_date: date, end_date: date, conn, logger) -> int:
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Backfill CEPS 1-min features to 15-min intervals')
+    parser = argparse.ArgumentParser(description='Backfill CEPS feature tables from existing DB data')
     parser.add_argument('--start', type=str, required=True, metavar='YYYY-MM-DD')
     parser.add_argument('--end', type=str, required=True, metavar='YYYY-MM-DD')
+    parser.add_argument('--table', type=str, default='all',
+                        choices=['1min_features', 'derived', 'all'],
+                        help='Which feature table to backfill (default: all)')
     parser.add_argument('--debug', action='store_true')
     args = parser.parse_args()
 
@@ -307,14 +437,19 @@ if __name__ == '__main__':
     start = date.fromisoformat(args.start)
     end = date.fromisoformat(args.end)
 
-    logger.info(f"Backfilling ceps_1min_features_15min: {start} to {end}")
-
     conn = psycopg2.connect(
         host=DB_HOST, user=DB_USER, password=DB_PASSWORD,
         dbname=DB_NAME, port=DB_PORT
     )
     try:
-        total = backfill_features(start, end, conn, logger)
-        logger.info(f"Done. Total intervals: {total}")
+        if args.table in ('1min_features', 'all'):
+            logger.info(f"Backfilling ceps_1min_features_15min: {start} to {end}")
+            total = backfill_features(start, end, conn, logger)
+            logger.info(f"Done. 1min_features intervals: {total}")
+
+        if args.table in ('derived', 'all'):
+            logger.info(f"Backfilling ceps_derived_features_15min: {start} to {end}")
+            total = backfill_derived_features(start, end, conn, logger)
+            logger.info(f"Done. derived intervals: {total}")
     finally:
         conn.close()

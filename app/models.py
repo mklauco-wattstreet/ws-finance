@@ -585,6 +585,38 @@ class Ceps1MinFeatures15Min(Base):
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
 
 
+class CepsDerivedFeatures15Min(Base):
+    """CEPS derived cross-table features at 15-minute resolution.
+
+    Rolling memory: trailing 2h/4h imbalance statistics from ceps_actual_imbalance_15min.
+    Forecast surprise: actual vs forecast/plan generation errors.
+    - solar_error = pvpp_mw (actual) - solar_mean_mw (RES forecast)
+    - wind_error = wpp_mw (actual) - wind_mean_mw (RES forecast)
+    - gen_total_error = actual total - planned total_mw
+
+    Partitioned by year on trade_date.
+    """
+    __tablename__ = 'ceps_derived_features_15min'
+    __table_args__ = (
+        PrimaryKeyConstraint('trade_date', 'time_interval', 'id', name='ceps_derived_features_15min_pkey'),
+        UniqueConstraint('trade_date', 'time_interval', name='uq_ceps_derived_features_15min'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(Integer, autoincrement=True)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    # Rolling memory
+    imb_roll_2h: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 5))
+    imb_roll_4h: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 5))
+    imb_integral_4h: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    # Forecast surprise
+    solar_error_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    wind_error_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    gen_total_error_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+
+
 class DaBid(Base):
     """OTE Day-Ahead Market matching curve bid stacks.
 
