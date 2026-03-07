@@ -8,7 +8,7 @@ from decimal import Decimal
 from typing import Optional
 
 from sqlalchemy import (
-    Boolean, Date, DateTime, Integer, Numeric, String,
+    Boolean, Date, DateTime, Integer, Numeric, SmallInteger, String,
     UniqueConstraint, PrimaryKeyConstraint
 )
 from sqlalchemy.dialects.postgresql import TIMESTAMP
@@ -531,6 +531,57 @@ class CepsActualRePrice15Min(Base):
     price_mfrr_plus_last_at_interval_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
     price_mfrr_minus_last_at_interval_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
     price_mfrr_5_last_at_interval_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+
+
+class Ceps1MinFeatures15Min(Base):
+    """CEPS 1-minute distributional/volatility features aggregated to 15-minute intervals.
+
+    Computed from ceps_actual_re_price_1min, ceps_actual_imbalance_1min, and
+    ceps_export_import_svr_1min. Includes price distribution stats (min, max, std, skew)
+    for aFRR+/-, mFRR+/-, imbalance range/std/slope, and threshold counts.
+
+    Partitioned by year on trade_date.
+    """
+    __tablename__ = 'ceps_1min_features_15min'
+    __table_args__ = (
+        PrimaryKeyConstraint('trade_date', 'time_interval', 'id', name='ceps_1min_features_15min_pkey'),
+        UniqueConstraint('trade_date', 'time_interval', name='uq_ceps_1min_features_15min'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(Integer, autoincrement=True)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    minute_count: Mapped[Optional[int]] = mapped_column(SmallInteger)
+    # aFRR+ price distribution
+    afrr_plus_min_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    afrr_plus_max_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    afrr_plus_std_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    afrr_plus_skew: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 5))
+    # aFRR- price distribution
+    afrr_minus_min_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    afrr_minus_max_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    afrr_minus_std_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    afrr_minus_skew: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 5))
+    # mFRR+ price distribution
+    mfrr_plus_min_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    mfrr_plus_max_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    mfrr_plus_std_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    mfrr_plus_skew: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 5))
+    # mFRR- price distribution
+    mfrr_minus_min_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    mfrr_minus_max_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    mfrr_minus_std_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    mfrr_minus_skew: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 5))
+    # Imbalance distribution
+    imbalance_range_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 5))
+    imbalance_std_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 5))
+    imbalance_slope: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 8))
+    # Threshold counts
+    minutes_at_floor: Mapped[Optional[int]] = mapped_column(SmallInteger)
+    minutes_near_peak: Mapped[Optional[int]] = mapped_column(SmallInteger)
+    saturation_count: Mapped[Optional[int]] = mapped_column(SmallInteger)
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
 
 

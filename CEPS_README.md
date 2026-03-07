@@ -15,6 +15,7 @@ CEPS is the **real-time Czech grid signal**. While ENTSO-E provides pan-European
 - **Year-based partitioning** — Unlike ENTSO-E's country-code partitions, CEPS is CZ-only, so tables partition by year (2024-2028) on `delivery_timestamp` or `trade_date`.
 - **Three aggregation statistics** — Mean captures average behavior, median resists outliers, and last-at-interval captures the value closest to settlement time. ML models can choose the most predictive statistic per feature.
 - **Idempotent upserts** — All writes use `ON CONFLICT DO UPDATE`. Re-aggregation of 15-min data is triggered automatically when 1-min data is upserted.
+- **Derived feature table** — `ceps_1min_features_15min` stores distributional, threshold, and temporal trend features computed from the three 1-min source tables. Automatically recomputed on each upsert of imbalance, RE price, or export/import SVR data. Can also be backfilled standalone from existing data.
 
 ## Datasets
 
@@ -36,6 +37,7 @@ app/ceps/
 ├── ceps_soap_pipeline.py      # Main pipeline (download + parse + upload)
 ├── ceps_soap_xml_parser.py    # XML parsing for SOAP responses
 ├── ceps_soap_uploader.py      # Database upsert + automatic 1min->15min aggregation
+├── preprocess_ceps_data.py    # 1-min feature aggregation + standalone backfill
 ├── ceps_consistency_check.py  # Data validation utility
 └── constants.py               # SOAP operation names, Czech month mappings
 
@@ -66,6 +68,9 @@ docker compose exec entsoe-ote-data-uploader python3 -m ceps.ceps_soap_pipeline 
 
 # Dry run
 docker compose exec entsoe-ote-data-uploader python3 -m ceps.ceps_soap_pipeline --dataset all --dry-run --debug
+
+# Backfill 1-min features (no API calls, computes from existing DB data)
+docker compose exec entsoe-ote-data-uploader python /app/scripts/ceps/preprocess_ceps_data.py --start 2024-12-01 --end 2026-03-07
 ```
 
 ### Command-Line Arguments
@@ -152,6 +157,36 @@ Each table has composite unique key `(trade_date, time_interval)` where `time_in
 
 **ceps_generation_res_15min** — 6 columns (wind + solar x 3 stats each)
 
+### Derived Feature Table
+
+**ceps_1min_features_15min** — Distributional, threshold, and temporal features computed from the three 1-min source tables (RE prices, imbalance, export/import SVR). Automatically triggered on each upsert cycle; can also be backfilled standalone.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `trade_date` | DATE | Trade date |
+| `time_interval` | VARCHAR(11) | 15-min interval (e.g. `"14:00-14:15"`) |
+| `minute_count` | SMALLINT | Number of 1-min data points (features NULLed if < 12) |
+| `afrr_plus_min/max/std_eur` | NUMERIC | aFRR+ price distribution |
+| `afrr_plus_skew` | NUMERIC(10,5) | Adjusted Fisher-Pearson skewness (NULL if n < 3 or zero stddev) |
+| `afrr_minus_min/max/std_eur` | NUMERIC | aFRR- price distribution |
+| `afrr_minus_skew` | NUMERIC(10,5) | Skewness of aFRR- prices |
+| `mfrr_plus_min/max/std_eur` | NUMERIC | mFRR+ price distribution |
+| `mfrr_plus_skew` | NUMERIC(10,5) | Skewness of mFRR+ prices |
+| `mfrr_minus_min/max/std_eur` | NUMERIC | mFRR- price distribution |
+| `mfrr_minus_skew` | NUMERIC(10,5) | Skewness of mFRR- prices |
+| `imbalance_range_mw` | NUMERIC(12,5) | max(load_mw) - min(load_mw) within interval |
+| `imbalance_std_mw` | NUMERIC(12,5) | Sample stddev of load_mw |
+| `imbalance_slope` | NUMERIC(12,8) | REGR_SLOPE with normalized x (0..14), MW/min trend |
+| `minutes_at_floor` | SMALLINT | Count where aFRR- price <= -500 EUR/MWh |
+| `minutes_near_peak` | SMALLINT | Count where aFRR+ price >= 500 EUR/MWh |
+| `saturation_count` | SMALLINT | Count where \|picasso_afrr_mw\| >= 95% of daily 95th percentile |
+
+**Key design decisions:**
+- Skewness uses raw moment expansion (`SUM(x^3) - 3*AVG(x)*SUM(x^2) + 2*n*AVG(x)^3`) to avoid LATERAL joins
+- Saturation threshold is dynamic: 95th percentile of `|picasso_afrr_mw|` per trade_date (not a static MW constant)
+- REGR_SLOPE uses minute index 0..14 instead of epoch to avoid floating-point precision issues
+- Thresholds (-500/+500 EUR) defined as constants in `preprocess_ceps_data.py`
+
 ### Native 15-Minute Tables
 
 Three datasets arrive at 15-minute resolution directly from the API. No aggregation needed.
@@ -222,6 +257,12 @@ CEPS SOAP API (https://www.ceps.cz/_layouts/CepsData.asmx)
          |
          v
 +------------------+
+|  Feature Agg     |  preprocess_ceps_data.py
+|  (1min -> 15min) |  distributional/threshold/trend features
++--------+---------+  triggered after imbalance, re_price, export_import_svr
+         |
+         v
++------------------+
 |  PostgreSQL      |  Year-partitioned tables (2024-2028)
 +------------------+
 ```
@@ -246,6 +287,7 @@ XML files stored in `downloads/ceps/soap/YYYY/MM/` and auto-cleaned after 1 day 
 | 033 | 2026-01-16 | Create generation RES tables |
 | 034 | 2026-01-16 | Create generation + generation plan tables |
 | 035 | 2026-01-17 | Create estimated imbalance price table |
+| 042 | 2026-03-07 | Create ceps_1min_features_15min table (distributional/volatility features) |
 
 ## Troubleshooting
 

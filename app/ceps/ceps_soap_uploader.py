@@ -18,6 +18,7 @@ from psycopg2.extras import execute_values
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from config import DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT
+from ceps.preprocess_ceps_data import aggregate_1min_features
 
 
 def get_affected_intervals(records: List[Dict]) -> Set[tuple]:
@@ -300,6 +301,10 @@ def upsert_imbalance_data(records: List[Dict], conn, logger) -> int:
     agg_count = aggregate_imbalance_15min(affected_intervals, conn, logger)
     logger.info(f"  ✓ Aggregated {agg_count:,} intervals to ceps_actual_imbalance_15min")
 
+    feat_count = aggregate_1min_features(affected_intervals, conn, logger)
+    if feat_count:
+        logger.info(f"  ✓ Computed {feat_count:,} feature intervals to ceps_1min_features_15min")
+
     return len(records)
 
 
@@ -339,6 +344,10 @@ def upsert_re_price_data(records: List[Dict], conn, logger) -> int:
 
     agg_count = aggregate_re_price_15min(affected_intervals, conn, logger)
     logger.info(f"  ✓ Aggregated {agg_count:,} intervals to ceps_actual_re_price_15min")
+
+    feat_count = aggregate_1min_features(affected_intervals, conn, logger)
+    if feat_count:
+        logger.info(f"  ✓ Computed {feat_count:,} feature intervals to ceps_1min_features_15min")
 
     return len(records)
 
@@ -417,6 +426,10 @@ def upsert_export_import_svr_data(records: List[Dict], conn, logger) -> int:
 
     agg_count = aggregate_export_import_svr_15min(affected_intervals, conn, logger)
     logger.info(f"  ✓ Aggregated {agg_count:,} intervals to ceps_export_import_svr_15min")
+
+    feat_count = aggregate_1min_features(affected_intervals, conn, logger)
+    if feat_count:
+        logger.info(f"  ✓ Computed {feat_count:,} feature intervals to ceps_1min_features_15min")
 
     return len(records)
 
