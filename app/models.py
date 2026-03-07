@@ -364,12 +364,11 @@ class EntsoeBalancingEnergy(Base):
     """ENTSO-E activated balancing energy prices (A84) - TSO intervention.
 
     Captures activation prices for balancing reserves (EUR/MWh):
-    - afrr_up_price_eur: aFRR upward activation price
-    - afrr_down_price_eur: aFRR downward activation price
-    - mfrr_up_price_eur: mFRR upward activation price
-    - mfrr_down_price_eur: mFRR downward activation price
+    - afrr_up/down: aFRR (A95) activation prices
+    - mfrr_up/down: mFRR (A96) activation prices
+    - rr_up/down: Replacement Reserve (A97) activation prices
 
-    BusinessTypes: A95 (aFRR), A96 (mFRR)
+    BusinessTypes: A95 (aFRR), A96 (mFRR), A97 (RR)
     """
     __tablename__ = 'entsoe_balancing_energy'
     __table_args__ = (
@@ -387,6 +386,8 @@ class EntsoeBalancingEnergy(Base):
     afrr_down_price_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     mfrr_up_price_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     mfrr_down_price_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    rr_up_price_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    rr_down_price_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
 
 

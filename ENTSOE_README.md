@@ -28,7 +28,7 @@ ENTSO-E provides the **pan-European view** of the electricity grid. While CEPS g
 | `entsoe_unified_sched_flow_runner` | A09 | `entsoe_scheduled_cross_border_flows` | CZ (4 borders) | `*/15 * * * *` |
 | `entsoe_unified_balancing_runner` | A84 | `entsoe_balancing_energy` | CZ, DE, AT, PL, SK | `*/15 * * * *` |
 | `entsoe_unified_imbalance_runner` | A85/A86 | `entsoe_imbalance_prices` | CZ, DE, AT, PL, SK, HU | `*/15 * * * *` |
-| `entsoe_unified_day_ahead_prices_runner` | A44 | `entsoe_day_ahead_prices` | HU | `0 14 * * *` |
+| `entsoe_unified_day_ahead_prices_runner` | A44 | `entsoe_day_ahead_prices` | HU, DE-LU, AT | `0 14 * * *` |
 
 ## Directory Structure
 
@@ -135,6 +135,7 @@ Central reference for EIC codes and area metadata.
 | 7 | 10YDE-RWENET---I | Germany (Amprion) | DE |
 | 8 | 10YDE-ENBW-----N | Germany (TransnetBW) | DE |
 | 9 | 10YHU-MAVIR----U | Hungary | HU |
+| 10 | 10Y1001A1001A82H | Germany-Luxembourg (BZ) | DE |
 
 ### entsoe_generation_actual (A75)
 
@@ -240,7 +241,7 @@ Imbalance prices with financial components and volumes. Currency is CZK for CZ, 
 
 ### entsoe_day_ahead_prices (A44)
 
-Day-ahead market clearing prices. Currently HU only (CZ prices come from OTE).
+Day-ahead market clearing prices. HU, DE-LU (Germany-Luxembourg bidding zone), and AT. CZ prices come from OTE.
 
 | Column | Type | Description |
 |--------|------|-------------|
@@ -338,6 +339,7 @@ ORDER BY country_code, period;
 | 024 | 2025-12-23 | Partition `entsoe_cross_border_flows` by country_code |
 | 025 | 2025-12-23 | Partition `entsoe_scheduled_cross_border_flows` by country_code |
 | 036 | 2026-01-23 | Add `entsoe_day_ahead_prices` partitioned table (HU) |
+| 040 | 2026-03-07 | Add DE-LU bidding zone (area_id=10) and DE/AT partitions for day-ahead prices |
 
 ---
 

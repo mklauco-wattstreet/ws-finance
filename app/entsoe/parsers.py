@@ -1300,6 +1300,7 @@ class BalancingEnergyParser(BaseParser):
     BusinessType mapping:
     - A95: Automatic Frequency Restoration Reserve (aFRR)
     - A96: Manual Frequency Restoration Reserve (mFRR)
+    - A97: Replacement Reserve (RR)
 
     FlowDirection:
     - A01: Upward activation
@@ -1308,10 +1309,11 @@ class BalancingEnergyParser(BaseParser):
 
     BUSINESS_TYPE_AFRR = 'A95'
     BUSINESS_TYPE_MFRR = 'A96'
+    BUSINESS_TYPE_RR = 'A97'
     DIRECTION_UP = 'A01'
     DIRECTION_DOWN = 'A02'
 
-    WIDE_COLUMNS = ['afrr_up_price_eur', 'afrr_down_price_eur', 'mfrr_up_price_eur', 'mfrr_down_price_eur']
+    WIDE_COLUMNS = ['afrr_up_price_eur', 'afrr_down_price_eur', 'mfrr_up_price_eur', 'mfrr_down_price_eur', 'rr_up_price_eur', 'rr_down_price_eur']
 
     def __init__(self, area_id: Optional[int] = None, country_code: Optional[str] = None):
         """
@@ -1346,7 +1348,7 @@ class BalancingEnergyParser(BaseParser):
             business_type_elem = timeseries.find('.//{*}businessType')
             business_type = business_type_elem.text if business_type_elem is not None else None
 
-            if business_type not in (self.BUSINESS_TYPE_AFRR, self.BUSINESS_TYPE_MFRR):
+            if business_type not in (self.BUSINESS_TYPE_AFRR, self.BUSINESS_TYPE_MFRR, self.BUSINESS_TYPE_RR):
                 continue
 
             # Get flow direction (A01 = up, A02 = down)
@@ -1405,6 +1407,11 @@ class BalancingEnergyParser(BaseParser):
                     self._wide_data[key]['columns']['mfrr_up_price_eur'] = price
                 elif flow_direction == self.DIRECTION_DOWN:
                     self._wide_data[key]['columns']['mfrr_down_price_eur'] = price
+            elif business_type == self.BUSINESS_TYPE_RR:
+                if flow_direction == self.DIRECTION_UP:
+                    self._wide_data[key]['columns']['rr_up_price_eur'] = price
+                elif flow_direction == self.DIRECTION_DOWN:
+                    self._wide_data[key]['columns']['rr_down_price_eur'] = price
 
     def _aggregate_to_wide_format(self) -> List[Dict[str, Any]]:
         """Convert intermediate data to final wide-format records."""

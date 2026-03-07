@@ -45,6 +45,8 @@ class EntsoeClient:
     DOC_TYPE_SCHEDULED_GENERATION = "A71"  # 14.1.B Scheduled Generation
     DOC_TYPE_SCHEDULED_EXCHANGES = "A09"  # 12.1.D Scheduled Commercial Exchanges
     DOC_TYPE_DAY_AHEAD_PRICES = "A44"  # 12.1.D Day-ahead prices
+    DOC_TYPE_BID_DOCUMENT = "A24"     # 17.1.B Balancing energy bids (public API)
+    DOC_TYPE_ACTIVATED_BALANCING_ENERGY = "A83"  # 17.1.F Activated balancing energy volumes
 
     # Process types for A65 differentiation
     PROCESS_TYPE_REALISED = "A16"  # Actual load
@@ -801,6 +803,148 @@ class EntsoeClient:
         except requests.RequestException as e:
             raise requests.RequestException(
                 f"Failed to fetch balancing energy for domain {control_area}: {e}"
+            )
+
+    def fetch_balancing_bids_for_domain(
+        self,
+        period_start: datetime,
+        period_end: datetime,
+        control_area: str,
+        process_type: str = "A51"
+    ) -> str:
+        """
+        Fetch balancing energy bids (A24) for a specific control area.
+
+        Args:
+            period_start: Start datetime
+            period_end: End datetime
+            control_area: The control area EIC code
+            process_type: A51 (aFRR/PICASSO) or A47 (mFRR)
+
+        Returns:
+            str: XML content
+        """
+        self._validate_date_range(period_start, period_end)
+
+        params = {
+            "securityToken": self.security_token,
+            "documentType": self.DOC_TYPE_BID_DOCUMENT,
+            "area_Domain": control_area,
+            "processType": process_type,
+            "periodStart": self._format_timestamp(period_start),
+            "periodEnd": self._format_timestamp(period_end)
+        }
+
+        query_string = "&".join([f"{key}={value}" for key, value in params.items()])
+        url = f"{self.base_url}?{query_string}"
+
+        try:
+            response = self.session.get(url, timeout=60)
+            response.raise_for_status()
+
+            content_type = response.headers.get('Content-Type', '')
+            if 'zip' in content_type or self._is_zip_content(response.content):
+                return self._unzip_content(response.content)
+            else:
+                return response.text
+
+        except requests.RequestException as e:
+            raise requests.RequestException(
+                f"Failed to fetch balancing bids for domain {control_area}: {e}"
+            )
+
+    def fetch_activated_balancing_volumes_for_domain(
+        self,
+        period_start: datetime,
+        period_end: datetime,
+        control_area: str,
+        process_type: str = "A51"
+    ) -> str:
+        """
+        Fetch activated balancing energy volumes (A83) for a specific control area.
+
+        Args:
+            period_start: Start datetime
+            period_end: End datetime
+            control_area: The control area EIC code
+            process_type: A51 (aFRR/PICASSO)
+
+        Returns:
+            str: XML content
+        """
+        self._validate_date_range(period_start, period_end)
+
+        params = {
+            "securityToken": self.security_token,
+            "documentType": self.DOC_TYPE_ACTIVATED_BALANCING_ENERGY,
+            "controlArea_Domain": control_area,
+            "processType": process_type,
+            "periodStart": self._format_timestamp(period_start),
+            "periodEnd": self._format_timestamp(period_end)
+        }
+
+        query_string = "&".join([f"{key}={value}" for key, value in params.items()])
+        url = f"{self.base_url}?{query_string}"
+
+        try:
+            response = self.session.get(url, timeout=60)
+            response.raise_for_status()
+
+            content_type = response.headers.get('Content-Type', '')
+            if 'zip' in content_type or self._is_zip_content(response.content):
+                return self._unzip_content(response.content)
+            else:
+                return response.text
+
+        except requests.RequestException as e:
+            raise requests.RequestException(
+                f"Failed to fetch activated balancing volumes for domain {control_area}: {e}"
+            )
+
+    def fetch_cbmp_for_domain(
+        self,
+        period_start: datetime,
+        period_end: datetime,
+        control_area: str
+    ) -> str:
+        """
+        Fetch PICASSO CBMP prices (A84 + processType A51).
+
+        Args:
+            period_start: Start datetime
+            period_end: End datetime
+            control_area: The control area EIC code
+
+        Returns:
+            str: XML content
+        """
+        self._validate_date_range(period_start, period_end)
+
+        params = {
+            "securityToken": self.security_token,
+            "documentType": self.DOC_TYPE_ACTIVATED_BALANCING,
+            "controlArea_Domain": control_area,
+            "processType": "A51",
+            "periodStart": self._format_timestamp(period_start),
+            "periodEnd": self._format_timestamp(period_end)
+        }
+
+        query_string = "&".join([f"{key}={value}" for key, value in params.items()])
+        url = f"{self.base_url}?{query_string}"
+
+        try:
+            response = self.session.get(url, timeout=60)
+            response.raise_for_status()
+
+            content_type = response.headers.get('Content-Type', '')
+            if 'zip' in content_type or self._is_zip_content(response.content):
+                return self._unzip_content(response.content)
+            else:
+                return response.text
+
+        except requests.RequestException as e:
+            raise requests.RequestException(
+                f"Failed to fetch CBMP for domain {control_area}: {e}"
             )
 
     def fetch_scheduled_generation_for_domain(

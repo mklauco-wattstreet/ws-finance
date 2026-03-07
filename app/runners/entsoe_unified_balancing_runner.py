@@ -46,7 +46,8 @@ class UnifiedBalancingRunner(BaseRunner):
     TABLE_NAME = "entsoe_balancing_energy"
     COLUMNS = [
         "trade_date", "period", "area_id", "country_code", "time_interval",
-        "afrr_up_price_eur", "afrr_down_price_eur", "mfrr_up_price_eur", "mfrr_down_price_eur"
+        "afrr_up_price_eur", "afrr_down_price_eur", "mfrr_up_price_eur", "mfrr_down_price_eur",
+        "rr_up_price_eur", "rr_down_price_eur"
     ]
     CONFLICT_COLUMNS = ["trade_date", "period", "area_id", "country_code"]
 
@@ -108,7 +109,9 @@ class UnifiedBalancingRunner(BaseRunner):
                 record.get('afrr_up_price_eur'),
                 record.get('afrr_down_price_eur'),
                 record.get('mfrr_up_price_eur'),
-                record.get('mfrr_down_price_eur')
+                record.get('mfrr_down_price_eur'),
+                record.get('rr_up_price_eur'),
+                record.get('rr_down_price_eur')
             ))
         return records
 
