@@ -14,6 +14,9 @@ DE_50HERTZ = "10YDE-VE-------2"     # Germany 50Hertz (east)
 DE_AMPRION = "10YDE-RWENET---I"     # Germany Amprion (west)
 DE_TRANSNETBW = "10YDE-ENBW-----N"  # Germany TransnetBW (southwest)
 
+# DE-LU unified bidding zone (for day-ahead prices, distinct from TSO control areas)
+DE_LU_BZN = "10Y1001A1001A82H"
+
 # Other neighboring bidding zones
 AT_BZN = "10YAT-APG------L"     # Austria
 PL_BZN = "10YPL-AREA-----S"     # Poland
@@ -41,6 +44,7 @@ AREA_IDS = {
     DE_AMPRION: 7,       # Germany (Amprion)
     DE_TRANSNETBW: 8,    # Germany (TransnetBW)
     HU_BZN: 9,           # Hungary
+    DE_LU_BZN: 10,       # Germany-Luxembourg (bidding zone)
 }
 
 # Reverse mapping: area_id -> EIC code
@@ -74,6 +78,8 @@ DE_TSO_AREAS = [
 # Day-ahead prices are per bidding zone (not per TSO like generation)
 ACTIVE_DAY_AHEAD_AREAS = [
     (9, HU_BZN, "HU", "HU"),
+    (10, DE_LU_BZN, "DE-LU", "DE"),
+    (3, AT_BZN, "AT", "AT"),
 ]
 
 # Active areas for imbalance prices fetching

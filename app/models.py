@@ -448,7 +448,7 @@ class EntsoeDayAheadPrices(Base):
     """ENTSO-E day-ahead prices (A44) - market clearing prices.
 
     Partitioned by country_code for multi-area storage with partition pruning.
-    Currently supports: HU (Hungary).
+    Currently supports: HU (Hungary), DE (Germany-Luxembourg BZ), AT (Austria).
 
     Columns:
     - price_eur_mwh: Day-ahead market clearing price in EUR/MWh
