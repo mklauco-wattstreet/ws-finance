@@ -84,6 +84,11 @@ def download_report(date, base_dir, logger):
     filename = f"Imbalances_{date.strftime('%d_%m_%Y')}_V0_EN.xlsx"
     target_file = target_dir / filename
 
+    # Skip already-downloaded files
+    if target_file.exists() and target_file.stat().st_size > 0:
+        logger.debug(f"Already exists: {filename}")
+        return True
+
     date_str = date.strftime('%Y-%m-%d')
     logger.info(f"\n{'─' * 60}")
     logger.info(f"Date: {date_str}")
@@ -96,7 +101,8 @@ def main():
     """Main function."""
     # Parse command-line arguments
     debug_mode = '--debug' in sys.argv
-    args = [arg for arg in sys.argv[1:] if arg != '--debug']
+    no_delay = '--no-delay' in sys.argv
+    args = [arg for arg in sys.argv[1:] if arg not in ('--debug', '--no-delay')]
 
     # Check if running in auto mode or manual mode
     auto_mode = len(args) == 0
@@ -189,7 +195,7 @@ def main():
                 failed += 1
 
             # Wait random time between 1-4 seconds between downloads (except for the last one)
-            if i < len(dates):
+            if i < len(dates) and not no_delay:
                 wait_time = random.randint(1, 4)
                 logger.debug(f"Waiting {wait_time} seconds before next download...")
                 time.sleep(wait_time)

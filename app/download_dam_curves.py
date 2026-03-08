@@ -95,6 +95,10 @@ def download_report(date, base_dir, logger):
     filename = get_filename(date)
     target_file = target_dir / filename
 
+    if target_file.exists() and target_file.stat().st_size > 0:
+        logger.debug(f"Already exists: {filename}")
+        return True
+
     date_str = date.strftime('%Y-%m-%d')
     logger.info(f"\n{'─' * 60}")
     logger.info(f"Date: {date_str}")
@@ -106,7 +110,8 @@ def download_report(date, base_dir, logger):
 def main():
     """Main function."""
     debug_mode = '--debug' in sys.argv
-    args = [arg for arg in sys.argv[1:] if arg != '--debug']
+    no_delay = '--no-delay' in sys.argv
+    args = [arg for arg in sys.argv[1:] if arg not in ('--debug', '--no-delay')]
 
     auto_mode = len(args) == 0
     manual_mode = len(args) == 2
@@ -187,7 +192,7 @@ def main():
             else:
                 failed += 1
 
-            if i < len(dates):
+            if i < len(dates) and not no_delay:
                 wait_time = random.randint(1, 3)
                 logger.debug(f"Waiting {wait_time} seconds before next download...")
                 time.sleep(wait_time)
