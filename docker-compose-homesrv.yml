@@ -1,0 +1,32 @@
+services:
+  entsoe-ote-data-uploader:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: entsoe-ote-data-uploader
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    volumes:
+      - ./app:/app/scripts
+      - ./alembic.ini:/app/alembic.ini:ro
+      - ./logs:/var/log
+      - ./crontab:/etc/cron.d/entsoe-ote-cron:ro
+      - ./certs:/app/certs:ro
+      - ./browser-profile:/app/browser-profile
+      - ./downloads:/app/downloads
+      - ./ote_files:/app/ote_files
+    environment:
+      - TZ=Europe/Prague
+      - PYTHONPATH=/app/scripts
+    env_file:
+      - .env
+    networks:
+      - imbalance-shared
+
+networks:
+  imbalance-shared:
+    external: true

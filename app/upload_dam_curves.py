@@ -121,36 +121,39 @@ def parse_xml_file(file_path, delivery_date):
     for elem in data_elements:
         attrs = elem.attrib
 
-        # Map trade_type and order_resolution
+        # Map trade_type
         trade_type = attrs.get('trade_type', '')
         side = TRADE_TYPE_MAP.get(trade_type)
         if side is None:
             continue
 
-        raw_resolution = attrs.get('order_resolution', '')
-        order_resolution = ORDER_RESOLUTION_MAP.get(raw_resolution)
-        if order_resolution is None:
-            continue
-
-        # Parse price and volumes
         price = Decimal(attrs.get('price', '0'))
         volume_bid = Decimal(attrs.get('energy_order', '0'))
         volume_matched = Decimal(attrs.get('energy_match', '0'))
 
-        # XML period is already global 1-96
-        global_period = int(attrs.get('period', '1'))
-        time_interval = generate_time_interval(global_period)
+        raw_resolution = attrs.get('order_resolution', '')
+        order_resolution = ORDER_RESOLUTION_MAP.get(raw_resolution)
 
-        records.append((
-            delivery_date,
-            global_period,
-            time_interval,
-            side,
-            price,
-            volume_bid,
-            volume_matched,
-            order_resolution,
-        ))
+        if order_resolution is not None:
+            # New format (Oct 2025+): period and order_resolution present
+            global_period = int(attrs.get('period', '1'))
+            time_interval = generate_time_interval(global_period)
+            records.append((
+                delivery_date, global_period, time_interval, side,
+                price, volume_bid, volume_matched, order_resolution,
+            ))
+        else:
+            # Legacy hourly format (pre-Oct 2025): 'hour' attribute, no period/resolution
+            # Expand each hourly bid into 4 quarter-hour records.
+            # Volumes are in MW (power), so they stay the same for each quarter-hour.
+            hour = int(attrs.get('hour', '1'))
+            for q in range(4):
+                global_period = (hour - 1) * 4 + q + 1
+                time_interval = generate_time_interval(global_period)
+                records.append((
+                    delivery_date, global_period, time_interval, side,
+                    price, volume_bid, volume_matched, '60min',
+                ))
 
     return records
 
