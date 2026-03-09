@@ -582,6 +582,14 @@ class Ceps1MinFeatures15Min(Base):
     minutes_at_floor: Mapped[Optional[int]] = mapped_column(SmallInteger)
     minutes_near_peak: Mapped[Optional[int]] = mapped_column(SmallInteger)
     saturation_count: Mapped[Optional[int]] = mapped_column(SmallInteger)
+    # Golden Trio: total activation, platform saturation, marginal slope
+    total_active_mean_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    total_active_std_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 5))
+    platform_active_count: Mapped[Optional[int]] = mapped_column(SmallInteger)
+    afrr_mfrr_plus_spread_mean_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    afrr_mfrr_plus_spread_std_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    afrr_mfrr_minus_spread_mean_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    afrr_mfrr_minus_spread_std_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
 
 

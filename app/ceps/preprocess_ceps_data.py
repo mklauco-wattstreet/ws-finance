@@ -67,6 +67,10 @@ def aggregate_1min_features(affected_intervals: Set[tuple], conn, logger) -> int
                 re.price_mfrr_plus_eur_mwh,
                 re.price_mfrr_minus_eur_mwh,
                 imb.load_mw,
+                act.afrr_plus_mw,
+                act.mfrr_plus_mw,
+                svr.picasso_afrr_mw,
+                svr.mari_mfrr_mw,
                 CASE WHEN ABS(svr.picasso_afrr_mw) >= COALESCE(ds.sat_limit, 999999) * 0.95
                      THEN TRUE ELSE FALSE END AS is_saturated
             FROM finance.ceps_actual_re_price_1min re
@@ -74,6 +78,8 @@ def aggregate_1min_features(affected_intervals: Set[tuple], conn, logger) -> int
                 ON imb.delivery_timestamp = re.delivery_timestamp
             LEFT JOIN finance.ceps_export_import_svr_1min svr
                 ON svr.delivery_timestamp = re.delivery_timestamp
+            LEFT JOIN finance.ceps_svr_activation_1min act
+                ON act.delivery_timestamp = re.delivery_timestamp
             LEFT JOIN daily_sat ds
                 ON ds.td = re.delivery_timestamp::date
         ),
@@ -166,7 +172,22 @@ def aggregate_1min_features(affected_intervals: Set[tuple], conn, logger) -> int
                 )::smallint AS minutes_near_peak,
                 COUNT(*) FILTER (
                     WHERE is_saturated
-                )::smallint AS saturation_count
+                )::smallint AS saturation_count,
+
+                -- Total active MW (upward regulation: aFRR+ + mFRR+)
+                AVG(afrr_plus_mw + mfrr_plus_mw) AS total_active_mean,
+                STDDEV_SAMP(afrr_plus_mw + mfrr_plus_mw) AS total_active_std,
+
+                -- Platform active count (PICASSO or MARI non-zero = importing from EU)
+                COUNT(*) FILTER (
+                    WHERE picasso_afrr_mw != 0 OR mari_mfrr_mw != 0
+                )::smallint AS platform_active_count,
+
+                -- Marginal slope: aFRR vs mFRR price spread (wide = thin market)
+                AVG(price_afrr_plus_eur_mwh - price_mfrr_plus_eur_mwh) AS afrr_mfrr_plus_spread_mean,
+                STDDEV_SAMP(price_afrr_plus_eur_mwh - price_mfrr_plus_eur_mwh) AS afrr_mfrr_plus_spread_std,
+                AVG(price_afrr_minus_eur_mwh - price_mfrr_minus_eur_mwh) AS afrr_mfrr_minus_spread_mean,
+                STDDEV_SAMP(price_afrr_minus_eur_mwh - price_mfrr_minus_eur_mwh) AS afrr_mfrr_minus_spread_std
 
             FROM interval_data
             WHERE (
@@ -183,7 +204,10 @@ def aggregate_1min_features(affected_intervals: Set[tuple], conn, logger) -> int
             mfrr_plus_min_eur, mfrr_plus_max_eur, mfrr_plus_std_eur, mfrr_plus_skew,
             mfrr_minus_min_eur, mfrr_minus_max_eur, mfrr_minus_std_eur, mfrr_minus_skew,
             imbalance_range_mw, imbalance_std_mw, imbalance_slope,
-            minutes_at_floor, minutes_near_peak, saturation_count
+            minutes_at_floor, minutes_near_peak, saturation_count,
+            total_active_mean_mw, total_active_std_mw, platform_active_count,
+            afrr_mfrr_plus_spread_mean_eur, afrr_mfrr_plus_spread_std_eur,
+            afrr_mfrr_minus_spread_mean_eur, afrr_mfrr_minus_spread_std_eur
         )
         SELECT
             trade_date, time_interval, n,
@@ -208,7 +232,14 @@ def aggregate_1min_features(affected_intervals: Set[tuple], conn, logger) -> int
             CASE WHEN n >= {MIN_MINUTE_COUNT} THEN imb_slope END,
             CASE WHEN n >= {MIN_MINUTE_COUNT} THEN minutes_at_floor END,
             CASE WHEN n >= {MIN_MINUTE_COUNT} THEN minutes_near_peak END,
-            CASE WHEN n >= {MIN_MINUTE_COUNT} THEN saturation_count END
+            CASE WHEN n >= {MIN_MINUTE_COUNT} THEN saturation_count END,
+            CASE WHEN n >= {MIN_MINUTE_COUNT} THEN total_active_mean END,
+            CASE WHEN n >= {MIN_MINUTE_COUNT} THEN total_active_std END,
+            CASE WHEN n >= {MIN_MINUTE_COUNT} THEN platform_active_count END,
+            CASE WHEN n >= {MIN_MINUTE_COUNT} THEN afrr_mfrr_plus_spread_mean END,
+            CASE WHEN n >= {MIN_MINUTE_COUNT} THEN afrr_mfrr_plus_spread_std END,
+            CASE WHEN n >= {MIN_MINUTE_COUNT} THEN afrr_mfrr_minus_spread_mean END,
+            CASE WHEN n >= {MIN_MINUTE_COUNT} THEN afrr_mfrr_minus_spread_std END
         FROM agg
         ON CONFLICT (trade_date, time_interval) DO UPDATE SET
             minute_count = EXCLUDED.minute_count,
@@ -234,6 +265,13 @@ def aggregate_1min_features(affected_intervals: Set[tuple], conn, logger) -> int
             minutes_at_floor = EXCLUDED.minutes_at_floor,
             minutes_near_peak = EXCLUDED.minutes_near_peak,
             saturation_count = EXCLUDED.saturation_count,
+            total_active_mean_mw = EXCLUDED.total_active_mean_mw,
+            total_active_std_mw = EXCLUDED.total_active_std_mw,
+            platform_active_count = EXCLUDED.platform_active_count,
+            afrr_mfrr_plus_spread_mean_eur = EXCLUDED.afrr_mfrr_plus_spread_mean_eur,
+            afrr_mfrr_plus_spread_std_eur = EXCLUDED.afrr_mfrr_plus_spread_std_eur,
+            afrr_mfrr_minus_spread_mean_eur = EXCLUDED.afrr_mfrr_minus_spread_mean_eur,
+            afrr_mfrr_minus_spread_std_eur = EXCLUDED.afrr_mfrr_minus_spread_std_eur,
             created_at = CURRENT_TIMESTAMP
     """
 
@@ -438,7 +476,7 @@ if __name__ == '__main__':
 
     conn = psycopg2.connect(
         host=DB_HOST, user=DB_USER, password=DB_PASSWORD,
-        dbname=DB_NAME, port=DB_PORT
+        dbname=DB_NAME, port=DB_PORT, connect_timeout=15
     )
     try:
         if args.table in ('1min_features', 'all'):

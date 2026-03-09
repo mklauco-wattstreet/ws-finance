@@ -392,6 +392,10 @@ def upsert_svr_activation_data(records: List[Dict], conn, logger) -> int:
     agg_count = aggregate_svr_activation_15min(affected_intervals, conn, logger)
     logger.info(f"  ✓ Aggregated {agg_count:,} intervals to ceps_svr_activation_15min")
 
+    feat_count = aggregate_1min_features(affected_intervals, conn, logger)
+    if feat_count:
+        logger.info(f"  ✓ Computed {feat_count:,} feature intervals to ceps_1min_features_15min")
+
     return len(records)
 
 
