@@ -270,7 +270,8 @@ def main():
             user=DB_USER,
             password=DB_PASSWORD,
             dbname=DB_NAME,
-            port=DB_PORT
+            port=DB_PORT,
+            connect_timeout=15
         )
     except Exception as e:
         print(f"✗ Failed to connect to database: {e}")

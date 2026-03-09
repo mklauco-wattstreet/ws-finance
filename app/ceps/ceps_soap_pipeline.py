@@ -480,7 +480,8 @@ def main():
                 user=DB_USER,
                 password=DB_PASSWORD,
                 dbname=DB_NAME,
-                port=DB_PORT
+                port=DB_PORT,
+                connect_timeout=15
             )
             logger.info(f"Connected to {DB_NAME}@{DB_HOST}:{DB_PORT}")
             logger.info("")
