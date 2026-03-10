@@ -26,7 +26,7 @@ from psycopg2 import extras
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from config import DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT
+from config import DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT, DB_SCHEMA
 
 # Prague timezone for date conversions
 PRAGUE_TZ = zoneinfo.ZoneInfo("Europe/Prague")
@@ -114,6 +114,8 @@ class BaseRunner(ABC):
                 port=DB_PORT,
                 connect_timeout=10
             )
+            with conn.cursor() as cur:
+                cur.execute(f"SET search_path TO {DB_SCHEMA}")
             self.logger.info(f"✓ Connected to {DB_NAME}@{DB_HOST}:{DB_PORT}")
             yield conn
         except Exception as e:

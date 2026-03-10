@@ -22,7 +22,7 @@ import xml.etree.ElementTree as ET
 import psycopg2
 from psycopg2 import extras
 
-from config import DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT
+from config import DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT, DB_SCHEMA
 from common import setup_logging, print_banner
 
 # Fixed jump threshold for future filtering/flagging
@@ -601,6 +601,8 @@ def process_directory(directory_path, logger, debug_mode=False):
                 port=DB_PORT,
                 connect_timeout=10
             )
+            with conn.cursor() as cur:
+                cur.execute(f"SET search_path TO {DB_SCHEMA}")
             logger.info("Database connection established\n")
         except Exception as e:
             logger.error(f"Database connection failed: {e}")
