@@ -295,19 +295,19 @@ def upsert_imbalance_data(records: List[Dict], conn, logger) -> int:
         execute_values(cur, query_1min, values)
         conn.commit()
 
-    logger.info(f"  ✓ Upserted {len(records):,} records to ceps_actual_imbalance_1min")
+    logger.debug(f"  Upserted {len(records):,} to ceps_actual_imbalance_1min")
 
     # Aggregate affected intervals
     agg_count = aggregate_imbalance_15min(affected_intervals, conn, logger)
-    logger.info(f"  ✓ Aggregated {agg_count:,} intervals to ceps_actual_imbalance_15min")
+    logger.debug(f"  Aggregated {agg_count:,} to ceps_actual_imbalance_15min")
 
     feat_count = aggregate_1min_features(affected_intervals, conn, logger)
     if feat_count:
-        logger.info(f"  ✓ Computed {feat_count:,} feature intervals to ceps_1min_features_15min")
+        logger.debug(f" Computed {feat_count:,} feature intervals to ceps_1min_features_15min")
 
     derived_count = aggregate_derived_features(affected_intervals, conn, logger)
     if derived_count:
-        logger.info(f"  ✓ Computed {derived_count:,} derived feature intervals")
+        logger.debug(f" Computed {derived_count:,} derived feature intervals")
 
     return len(records)
 
@@ -344,14 +344,14 @@ def upsert_re_price_data(records: List[Dict], conn, logger) -> int:
         execute_values(cur, query_1min, values)
         conn.commit()
 
-    logger.info(f"  ✓ Upserted {len(records):,} records to ceps_actual_re_price_1min")
+    logger.debug(f" Upserted {len(records):,} records to ceps_actual_re_price_1min")
 
     agg_count = aggregate_re_price_15min(affected_intervals, conn, logger)
-    logger.info(f"  ✓ Aggregated {agg_count:,} intervals to ceps_actual_re_price_15min")
+    logger.debug(f" Aggregated {agg_count:,} intervals to ceps_actual_re_price_15min")
 
     feat_count = aggregate_1min_features(affected_intervals, conn, logger)
     if feat_count:
-        logger.info(f"  ✓ Computed {feat_count:,} feature intervals to ceps_1min_features_15min")
+        logger.debug(f" Computed {feat_count:,} feature intervals to ceps_1min_features_15min")
 
     return len(records)
 
@@ -387,14 +387,14 @@ def upsert_svr_activation_data(records: List[Dict], conn, logger) -> int:
         execute_values(cur, query_1min, values)
         conn.commit()
 
-    logger.info(f"  ✓ Upserted {len(records):,} records to ceps_svr_activation_1min")
+    logger.debug(f" Upserted {len(records):,} records to ceps_svr_activation_1min")
 
     agg_count = aggregate_svr_activation_15min(affected_intervals, conn, logger)
-    logger.info(f"  ✓ Aggregated {agg_count:,} intervals to ceps_svr_activation_15min")
+    logger.debug(f" Aggregated {agg_count:,} intervals to ceps_svr_activation_15min")
 
     feat_count = aggregate_1min_features(affected_intervals, conn, logger)
     if feat_count:
-        logger.info(f"  ✓ Computed {feat_count:,} feature intervals to ceps_1min_features_15min")
+        logger.debug(f" Computed {feat_count:,} feature intervals to ceps_1min_features_15min")
 
     return len(records)
 
@@ -430,14 +430,14 @@ def upsert_export_import_svr_data(records: List[Dict], conn, logger) -> int:
         execute_values(cur, query_1min, values)
         conn.commit()
 
-    logger.info(f"  ✓ Upserted {len(records):,} records to ceps_export_import_svr_1min")
+    logger.debug(f" Upserted {len(records):,} records to ceps_export_import_svr_1min")
 
     agg_count = aggregate_export_import_svr_15min(affected_intervals, conn, logger)
-    logger.info(f"  ✓ Aggregated {agg_count:,} intervals to ceps_export_import_svr_15min")
+    logger.debug(f" Aggregated {agg_count:,} intervals to ceps_export_import_svr_15min")
 
     feat_count = aggregate_1min_features(affected_intervals, conn, logger)
     if feat_count:
-        logger.info(f"  ✓ Computed {feat_count:,} feature intervals to ceps_1min_features_15min")
+        logger.debug(f" Computed {feat_count:,} feature intervals to ceps_1min_features_15min")
 
     return len(records)
 
@@ -516,14 +516,14 @@ def upsert_generation_res_data(records: List[Dict], conn, logger) -> int:
         execute_values(cur, query_1min, values)
         conn.commit()
 
-    logger.info(f"  ✓ Upserted {len(records):,} records to ceps_generation_res_1min")
+    logger.debug(f" Upserted {len(records):,} records to ceps_generation_res_1min")
 
     agg_count = aggregate_generation_res_15min(affected_intervals, conn, logger)
-    logger.info(f"  ✓ Aggregated {agg_count:,} intervals to ceps_generation_res_15min")
+    logger.debug(f" Aggregated {agg_count:,} intervals to ceps_generation_res_15min")
 
     derived_count = aggregate_derived_features(affected_intervals, conn, logger)
     if derived_count:
-        logger.info(f"  ✓ Computed {derived_count:,} derived feature intervals")
+        logger.debug(f" Computed {derived_count:,} derived feature intervals")
 
     return len(records)
 
@@ -583,12 +583,12 @@ def upsert_generation_data(records: List[Dict], conn, logger) -> int:
         execute_values(cur, query, values)
         conn.commit()
 
-    logger.info(f"  ✓ Upserted {len(records):,} records to ceps_generation_15min")
+    logger.debug(f" Upserted {len(records):,} records to ceps_generation_15min")
 
     affected_intervals = set(get_15min_interval(r['delivery_timestamp']) for r in records)
     derived_count = aggregate_derived_features(affected_intervals, conn, logger)
     if derived_count:
-        logger.info(f"  ✓ Computed {derived_count:,} derived feature intervals")
+        logger.debug(f" Computed {derived_count:,} derived feature intervals")
 
     return len(records)
 
@@ -620,12 +620,12 @@ def upsert_generation_plan_data(records: List[Dict], conn, logger) -> int:
         execute_values(cur, query, values)
         conn.commit()
 
-    logger.info(f"  ✓ Upserted {len(records):,} records to ceps_generation_plan_15min")
+    logger.debug(f" Upserted {len(records):,} records to ceps_generation_plan_15min")
 
     affected_intervals = set(get_15min_interval(r['delivery_timestamp']) for r in records)
     derived_count = aggregate_derived_features(affected_intervals, conn, logger)
     if derived_count:
-        logger.info(f"  ✓ Computed {derived_count:,} derived feature intervals")
+        logger.debug(f" Computed {derived_count:,} derived feature intervals")
 
     return len(records)
 
@@ -660,7 +660,7 @@ def upsert_estimated_imbalance_price_data(records: List[Dict], conn, logger) -> 
         execute_values(cur, query, values)
         conn.commit()
 
-    logger.info(f"  ✓ Upserted {len(records):,} records to ceps_estimated_imbalance_price_15min")
+    logger.debug(f" Upserted {len(records):,} records to ceps_estimated_imbalance_price_15min")
     return len(records)
 
 

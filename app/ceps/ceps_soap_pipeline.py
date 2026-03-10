@@ -249,7 +249,7 @@ def download_chunk_to_disk(
         with open(output_path, 'wb') as f:
             f.write(response.content)
 
-        logger.info(f"  Downloaded in {response_time:.2f}s -> {output_path.name}")
+        logger.debug(f"  {dataset}: downloaded in {response_time:.2f}s -> {output_path.name}")
         return output_path
 
     except requests.exceptions.Timeout:
@@ -272,18 +272,8 @@ def process_dataset(
     dry_run: bool = False
 ) -> Dict[str, Any]:
     """Process one dataset: download chunks, parse, upload."""
-    logger.info("=" * 70)
-    logger.info(f"DATASET: {dataset.upper()}")
-    logger.info("=" * 70)
-    logger.info(f"Date Range: {start_date.date()} to {end_date.date()}")
-    if dry_run:
-        logger.info("DRY RUN MODE - No data will be uploaded")
-
     total_days = (end_date.date() - start_date.date()).days + 1
     num_chunks = (total_days + MAX_CHUNK_DAYS - 1) // MAX_CHUNK_DAYS
-
-    logger.info(f"Chunks: {num_chunks} ({MAX_CHUNK_DAYS} days each)")
-    logger.info("")
 
     total_uploaded = 0
     total_parsed = 0
@@ -301,13 +291,11 @@ def process_dataset(
         )
         chunk_end = chunk_end.replace(hour=23, minute=59, second=59)
 
-        logger.info(f"Chunk {chunk_num}/{num_chunks}: {current_start.date()} to {chunk_end.date()}")
-
         xml_path = download_chunk_to_disk(dataset, current_start, chunk_end, logger)
 
         if xml_path is None:
             failed_chunks += 1
-            logger.error(f"  Chunk failed")
+            logger.error(f"  {dataset}: chunk {chunk_num}/{num_chunks} failed")
         else:
             try:
                 root = ET.parse(xml_path).getroot()
@@ -318,11 +306,10 @@ def process_dataset(
                 result_element = root.find(f".//{{{ns_prefix}/}}{operation}Result")
 
                 if result_element is None:
-                    logger.error(f"  Could not parse XML")
+                    logger.error(f"  {dataset}: XML parse failed")
                     failed_chunks += 1
                 else:
                     records = parse_soap_xml(dataset, result_element)
-                    logger.info(f"  Parsed {len(records):,} records")
                     total_parsed += len(records)
 
                     if records and not dry_run:
@@ -337,23 +324,16 @@ def process_dataset(
                                 seen[key] = record
                             deduped_records = list(seen.values())
 
-                            if len(deduped_records) < len(records):
-                                logger.info(f"  Deduplicated: {len(records):,} -> {len(deduped_records):,}")
-
                             uploaded = upsert_data(dataset, deduped_records, conn, logger)
                             total_uploaded += uploaded
                         except Exception as e:
-                            logger.error(f"  Upload failed: {e}")
+                            logger.error(f"  {dataset}: upload failed: {e}")
                             failed_chunks += 1
                             conn.rollback()
-                    elif dry_run:
-                        logger.info(f"  DRY RUN - Would upload {len(records):,} records")
 
             except Exception as e:
-                logger.error(f"  Parse failed: {e}")
+                logger.error(f"  {dataset}: parse failed: {e}")
                 failed_chunks += 1
-
-        logger.info("")
 
         current_start = chunk_end + timedelta(seconds=1)
         current_start = current_start.replace(hour=0, minute=0, second=0)
@@ -361,12 +341,13 @@ def process_dataset(
         if current_start <= end_date:
             time.sleep(2)
 
-    logger.info(f"Dataset {dataset.upper()} completed")
-    logger.info(f"  Total parsed: {total_parsed:,} records")
-    if not dry_run:
-        logger.info(f"  Total uploaded: {total_uploaded:,} records")
-    logger.info(f"  Failed chunks: {failed_chunks}")
-    logger.info("")
+    # One-line summary per dataset
+    if dry_run:
+        logger.info(f"  {dataset}: {total_parsed:,} parsed (dry run)")
+    elif failed_chunks > 0:
+        logger.warning(f"  {dataset}: {total_uploaded:,} uploaded, {failed_chunks} chunks failed")
+    else:
+        logger.info(f"  {dataset}: {total_uploaded:,} uploaded")
 
     return {
         'success': failed_chunks == 0,
@@ -377,23 +358,13 @@ def process_dataset(
 
 
 def print_header(logger: logging.Logger) -> None:
-    """Print pipeline header."""
-    logger.info("")
-    logger.info("=" * 70)
-    logger.info("CEPS SOAP API Pipeline")
-    logger.info("=" * 70)
-    logger.info(f"Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    logger.info("")
+    """Print pipeline header (debug only)."""
+    pass
 
 
 def print_footer(logger: logging.Logger, success: bool) -> None:
-    """Print pipeline footer."""
-    status = "Completed Successfully" if success else "Completed with Errors"
-    logger.info("=" * 70)
-    logger.info(status)
-    logger.info("=" * 70)
-    logger.info(f"Finished at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    logger.info("")
+    """Print pipeline footer (debug only)."""
+    pass
 
 
 def parse_date(date_str: Optional[str]) -> Optional[date]:
@@ -446,11 +417,6 @@ def main():
     args = parser.parse_args()
 
     logger = setup_logging(debug=args.debug)
-    print_header(logger)
-
-    if args.dry_run:
-        logger.info("DRY RUN MODE - No data will be uploaded")
-        logger.info("")
 
     # Parse dates
     # Default to yesterday to catch late-arriving data from midnight boundary
@@ -469,8 +435,9 @@ def main():
     start_date = datetime.combine(start, datetime.min.time())
     end_date = datetime.combine(end, datetime.min.time()).replace(hour=23, minute=59, second=59)
 
-    logger.info(f"Date Range: {start} to {end}")
-    logger.info("")
+    datasets_to_process = ALL_DATASETS if args.dataset == 'all' else [args.dataset]
+    ds_label = args.dataset if args.dataset != 'all' else f"all ({len(datasets_to_process)})"
+    logger.info(f"CEPS {ds_label} {start}..{end}{' (dry run)' if args.dry_run else ''}")
 
     # Connect to database (skip if dry run)
     conn = None
@@ -484,15 +451,11 @@ def main():
                 port=DB_PORT,
                 connect_timeout=15
             )
-            logger.info(f"Connected to {DB_NAME}@{DB_HOST}:{DB_PORT}")
-            logger.info("")
         except Exception as e:
-            logger.error(f"Failed to connect to database: {e}")
+            logger.error(f"DB connection failed: {e}")
             sys.exit(1)
 
     try:
-        datasets_to_process = ALL_DATASETS if args.dataset == 'all' else [args.dataset]
-
         results = {}
         for dataset in datasets_to_process:
             result = process_dataset(
@@ -502,40 +465,17 @@ def main():
             results[dataset] = result
 
         # Summary
-        logger.info("=" * 70)
-        logger.info("PIPELINE SUMMARY")
-        logger.info("=" * 70)
-        logger.info(f"Date Range: {start} to {end}")
-        logger.info("")
-
-        total_success = 0
-        total_failed = 0
-        total_records = 0
-
-        for dataset, result in results.items():
-            if result['success']:
-                total_success += 1
-                total_records += result['parsed']
-                if args.dry_run:
-                    logger.info(f"  {dataset}: {result['parsed']:,} records parsed (dry run)")
-                else:
-                    logger.info(f"  {dataset}: {result['uploaded']:,} records uploaded")
-            else:
-                total_failed += 1
-                logger.error(f"  {dataset}: FAILED ({result['failed_chunks']} chunks failed)")
-
-        logger.info("")
-        logger.info(f"Datasets: {total_success} successful, {total_failed} failed")
-        logger.info(f"Total Records: {total_records:,}")
-
-        print_footer(logger, success=(total_failed == 0))
+        total_failed = sum(1 for r in results.values() if not r['success'])
+        total_uploaded = sum(r['uploaded'] for r in results.values())
 
         if total_failed > 0:
+            logger.warning(f"CEPS done: {total_uploaded:,} records, {total_failed} datasets failed")
             sys.exit(1)
+        else:
+            logger.info(f"CEPS done: {total_uploaded:,} records uploaded")
 
     except KeyboardInterrupt:
-        logger.info("")
-        logger.info("Pipeline interrupted by user")
+        logger.info("Interrupted")
         sys.exit(1)
     except Exception as e:
         logger.error(f"Pipeline failed: {e}")
