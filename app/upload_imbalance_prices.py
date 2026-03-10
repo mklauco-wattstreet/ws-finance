@@ -84,13 +84,8 @@ def read_imbalance_file(file_path, trade_date):
     Returns:
         list of dictionaries containing the data
     """
-    print(f"  Reading file: {file_path.name}")
-
     # Read Excel file, skipping first 5 rows (header is on row 6, index 5)
-    # Data starts on row 7 (index 6)
     df = pd.read_excel(file_path, skiprows=5)
-
-    print(f"  Found {len(df)} rows of data")
 
     records = []
 
@@ -196,7 +191,7 @@ def upload_to_database(records, conn, trade_date):
     except psycopg2.IntegrityError as e:
         conn.rollback()
         cursor.close()
-        raise Exception(f"Conflict detected - data for {trade_date} already exists in database: {e}")
+        raise Exception(f"Conflict - data for {trade_date} already exists: {e}")
     except Exception as e:
         conn.rollback()
         cursor.close()
@@ -224,17 +219,10 @@ def process_directory(directory_path):
     excel_files = list(dir_path.glob("Imbalances_*.xlsx"))
 
     if not excel_files:
-        print(f"No imbalance Excel files found in '{directory_path}'")
+        print(f"No imbalance Excel files in '{directory_path}'")
         return False
 
-    print(f"╔══════════════════════════════════════════════════════════╗")
-    print(f"║  Imbalance Price Data Uploader                           ║")
-    print(f"╚══════════════════════════════════════════════════════════╝")
-    print(f"\nDirectory: {dir_path.absolute()}")
-    print(f"Found {len(excel_files)} Excel file(s)\n")
-
     # Connect to database
-    print("Connecting to database...")
     try:
         conn = psycopg2.connect(
             host=DB_HOST,
@@ -246,9 +234,8 @@ def process_directory(directory_path):
         )
         with conn.cursor() as cur:
             cur.execute(f"SET search_path TO {DB_SCHEMA}")
-        print("✓ Database connection established\n")
     except Exception as e:
-        print(f"✗ Database connection failed: {e}")
+        print(f"DB connection failed: {e}")
         return False
 
     total_inserted = 0
@@ -257,58 +244,40 @@ def process_directory(directory_path):
 
     try:
         for excel_file in sorted(excel_files):
-            print(f"{'─' * 60}")
-            print(f"Processing: {excel_file.name}")
-
-            # Extract trade date from filename
             trade_date = parse_date_from_filename(excel_file.name)
 
             if not trade_date:
-                print(f"  ✗ Failed to extract date from filename")
+                print(f"Bad filename: {excel_file.name}")
                 files_failed += 1
                 continue
 
-            print(f"  Trade date: {trade_date}")
-
             try:
-                # Read data from Excel
                 records = read_imbalance_file(excel_file, trade_date)
 
                 if not records:
-                    print(f"  ⚠️  No valid records found")
+                    print(f"No records: {excel_file.name}")
                     files_failed += 1
                     continue
 
-                print(f"  Expected rows: 96, Found: {len(records)}")
-
-                # Upload to database using bulk insert
-                print(f"  Uploading {len(records)} records to database (bulk insert)...")
                 inserted = upload_to_database(records, conn, trade_date)
-
                 total_inserted += inserted
                 files_processed += 1
 
-                print(f"  ✓ Complete - Inserted: {inserted} records")
-
             except Exception as e:
-                print(f"  ✗ Error processing file: {e}")
+                print(f"Error {excel_file.name}: {e}")
                 files_failed += 1
                 continue
 
-        # Summary
-        print(f"\n{'═' * 60}")
-        print(f"UPLOAD SUMMARY")
-        print(f"{'═' * 60}")
-        print(f"Files processed successfully: {files_processed}")
-        print(f"Files failed: {files_failed}")
-        print(f"Total records inserted: {total_inserted}")
-        print(f"{'═' * 60}\n")
+        # Compact summary
+        summary = f"Imbalance upload: {files_processed} files, {total_inserted} rows inserted"
+        if files_failed > 0:
+            summary += f" ({files_failed} failed)"
+        print(summary)
 
         return True
 
     finally:
         conn.close()
-        print("Database connection closed.")
 
 
 def main():
@@ -326,10 +295,10 @@ def main():
         success = process_directory(directory_path)
         sys.exit(0 if success else 1)
     except KeyboardInterrupt:
-        print("\n\n⚠️  Upload interrupted by user")
+        print("Interrupted by user")
         sys.exit(1)
     except Exception as e:
-        print(f"\n✗ Fatal error: {e}")
+        print(f"Fatal: {e}")
         sys.exit(1)
 
 

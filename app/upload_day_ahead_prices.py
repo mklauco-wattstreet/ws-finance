@@ -119,12 +119,8 @@ def read_legacy_day_ahead_file(file_path, trade_date):
     Returns:
         list of dictionaries containing the data (96 records)
     """
-    print(f"  Reading LEGACY file (hourly data): {file_path.name}")
-
     # Read Excel file, skipping first 21 rows
     df = pd.read_excel(file_path, sheet_name='Day-Ahead Market CZ Results', skiprows=21)
-
-    print(f"  Found {len(df)} rows (including header rows)")
 
     records = []
 
@@ -178,13 +174,8 @@ def read_new_day_ahead_file(file_path, trade_date):
     Returns:
         list of dictionaries containing the data (96 records)
     """
-    print(f"  Reading NEW file (15-minute data): {file_path.name}")
-
     # Read Excel file, skipping first 21 rows (header is on row 22, index 21)
-    # Data starts on row 24 (index 23), but there's an empty row after header
     df = pd.read_excel(file_path, sheet_name='Day-Ahead Market CZ Results', skiprows=21)
-
-    print(f"  Found {len(df)} rows (including empty rows)")
 
     records = []
 
@@ -442,16 +433,12 @@ def process_directory(directory_path, logger, debug_mode=False):
     excel_files = list(dir_path.glob("DM_*.xlsx"))
 
     if not excel_files:
-        logger.warning(f"No day-ahead Excel files found in '{directory_path}'")
+        logger.warning(f"No day-ahead Excel files in '{directory_path}'")
         return True  # Not an error, just nothing to upload
-
-    logger.info(f"\nDirectory: {dir_path.absolute()}")
-    logger.info(f"Found {len(excel_files)} Excel file(s)\n")
 
     # Connect to database only if not in debug mode
     conn = None
     if not debug_mode:
-        logger.info("Connecting to database...")
         try:
             conn = psycopg2.connect(
                 host=DB_HOST,
@@ -463,79 +450,60 @@ def process_directory(directory_path, logger, debug_mode=False):
             )
             with conn.cursor() as cur:
                 cur.execute(f"SET search_path TO {DB_SCHEMA}")
-            logger.info("✓ Database connection established\n")
         except Exception as e:
-            logger.error(f"✗ Database connection failed: {e}")
+            logger.error(f"DB connection failed: {e}")
             return False
 
-    total_inserted = 0
+    total_upserted = 0
     files_processed = 0
     files_failed = 0
 
     try:
         for excel_file in sorted(excel_files):
-            logger.info(f"{'─' * 60}")
-            logger.info(f"Processing: {excel_file.name}")
-
             # Extract trade date from filename
             trade_date = parse_date_from_filename(excel_file.name)
 
             if not trade_date:
-                logger.warning(f"  ✗ Failed to extract date from filename")
+                logger.warning(f"Bad filename: {excel_file.name}")
                 files_failed += 1
                 continue
-
-            logger.info(f"  Trade date: {trade_date}")
-            logger.info(f"  Format: {'LEGACY (hourly)' if trade_date < CUTOFF_DATE else 'NEW (15-minute)'}")
 
             try:
                 # Read data from Excel
                 records = read_day_ahead_file(excel_file, trade_date)
 
                 if not records:
-                    logger.warning(f"  ⚠️  No valid records found")
+                    logger.warning(f"No records: {excel_file.name}")
                     files_failed += 1
                     continue
 
-                logger.info(f"  Expected rows: 96, Found: {len(records)}")
-
                 if debug_mode:
-                    # Print debug info for first 2 hours
                     print_debug_info(records, trade_date, excel_file)
                     files_processed += 1
                 else:
-                    # Upload to database using bulk upsert
-                    logger.info(f"  Uploading {len(records)} records to database (bulk upsert)...")
                     upserted = upload_to_database(records, conn, trade_date)
-
-                    total_inserted += upserted
+                    total_upserted += upserted
                     files_processed += 1
 
-                    logger.info(f"  ✓ Complete - Upserted: {upserted} records")
-
             except Exception as e:
-                logger.error(f"  ✗ Error processing file: {e}")
+                logger.error(f"Error {excel_file.name}: {e}")
                 files_failed += 1
                 continue
 
-        # Summary
-        logger.info(f"\n{'═' * 60}")
-        logger.info(f"UPLOAD SUMMARY")
-        logger.info(f"{'═' * 60}")
-        logger.info(f"Files processed successfully: {files_processed}")
-        logger.info(f"Files failed: {files_failed}")
-        if not debug_mode:
-            logger.info(f"Total records upserted: {total_inserted}")
+        # Compact summary
+        if debug_mode:
+            print(f"DayAhead upload: {files_processed} files (debug mode)")
         else:
-            logger.info(f"DEBUG MODE - No records upserted to database")
-        logger.info(f"{'═' * 60}\n")
+            summary = f"DayAhead upload: {files_processed} files, {total_upserted} rows upserted"
+            if files_failed > 0:
+                summary += f" ({files_failed} failed)"
+            print(summary)
 
         return True
 
     finally:
         if conn:
             conn.close()
-            logger.info("Database connection closed.")
 
 
 def main():
@@ -559,10 +527,10 @@ def main():
         success = process_directory(directory_path, logger, debug_mode)
         sys.exit(0 if success else 1)
     except KeyboardInterrupt:
-        logger.warning("\n\nUpload interrupted by user")
+        logger.warning("Interrupted by user")
         sys.exit(1)
     except Exception as e:
-        logger.error(f"\nFatal error: {e}")
+        logger.error(f"Fatal: {e}")
         sys.exit(1)
 
 

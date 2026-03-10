@@ -38,16 +38,10 @@ def setup_logging(debug=False):
     handler.setLevel(log_level)
 
     # Create formatter
-    if debug:
-        formatter = logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            datefmt='%Y-%m-%dT%H:%M:%S'
-        )
-    else:
-        formatter = logging.Formatter(
-            '%(asctime)s - %(levelname)s - %(message)s',
-            datefmt='%Y-%m-%dT%H:%M:%S'
-        )
+    formatter = logging.Formatter(
+        '%(asctime)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%dT%H:%M:%S'
+    )
 
     handler.setFormatter(formatter)
     logger.addHandler(handler)
@@ -123,16 +117,14 @@ def download_file(url, target_path, logger, timeout=30):
             with open(target_path, 'wb') as f:
                 f.write(file_data)
 
-            file_size = len(file_data)
-            logger.info(f"Download completed ({file_size:,} bytes)")
-            logger.info(f"File saved to: {target_path}")
+            logger.debug(f"Saved {len(file_data):,} bytes to {target_path}")
             return True
 
     except urllib.error.HTTPError as e:
         if e.code == 404:
-            logger.warning(f"File not found (404) - The report might not be available")
+            logger.warning(f"404 not found: {target_path.name}")
         else:
-            logger.warning(f"HTTP Error {e.code}")
+            logger.warning(f"HTTP {e.code}: {target_path.name}")
         return False
 
     except urllib.error.URLError as e:
@@ -140,11 +132,11 @@ def download_file(url, target_path, logger, timeout=30):
         return False
 
     except TimeoutError:
-        logger.warning(f"Download timeout")
+        logger.warning(f"Timeout: {target_path.name}")
         return False
 
     except Exception as e:
-        logger.error(f"Error: {str(e)}")
+        logger.error(f"Error downloading {target_path.name}: {str(e)}")
         return False
 
 
@@ -166,17 +158,17 @@ def validate_date_range(start_date, end_date):
 
 def print_banner(title, debug_mode=False):
     """
-    Print a formatted banner.
+    Print a formatted banner (only in debug mode).
 
     Args:
         title: Title to display in banner
-        debug_mode: If True, add debug mode indicator
+        debug_mode: If True, print the banner
     """
-    print(f"╔══════════════════════════════════════════════════════════╗")
-    print(f"║  {title:<56}║")
     if debug_mode:
+        print(f"╔══════════════════════════════════════════════════════════╗")
+        print(f"║  {title:<56}║")
         print(f"║  DEBUG MODE - Verbose logging enabled                   ║")
-    print(f"╚══════════════════════════════════════════════════════════╝")
+        print(f"╚══════════════════════════════════════════════════════════╝")
 
 
 def extract_date_from_filename(filename, pattern):
@@ -232,8 +224,7 @@ def find_last_downloaded_file(base_dir, file_pattern, date_pattern, logger):
                 latest_file = file_path
 
     if latest_date:
-        logger.info(f"Last downloaded file: {latest_file.name}")
-        logger.info(f"Last download date: {latest_date.strftime('%Y-%m-%d')}")
+        logger.debug(f"Last downloaded: {latest_file.name} ({latest_date.strftime('%Y-%m-%d')})")
     else:
         logger.debug("No valid dates found in existing files")
 
@@ -271,19 +262,19 @@ def auto_determine_date_range(base_dir, file_pattern, date_pattern, logger, mini
         # For intraday data that updates continuously, re-download the last file if it's still relevant
         if redownload_latest and last_date <= target_end_date:
             start_date = last_date
-            logger.info(f"Re-downloading from last file date (data updates continuously): {last_date.strftime('%Y-%m-%d')}")
+            logger.debug(f"Re-downloading from {last_date.strftime('%Y-%m-%d')} (continuous updates)")
         else:
             # Start from the day after the last download
             start_date = last_date + timedelta(days=1)
 
         # If last download was at or beyond target end date, nothing to download
         if start_date > target_end_date:
-            logger.info(f"Already up to date. Last download: {last_date.strftime('%Y-%m-%d')}")
+            logger.info(f"Up to date (last: {last_date.strftime('%Y-%m-%d')})")
             return None, None
 
         end_date = target_end_date
-        logger.info(f"Auto-determined date range: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
-        logger.info(f"Gap detected: {(end_date - start_date).days + 1} days to download")
+        days = (end_date - start_date).days + 1
+        logger.info(f"Range: {start_date.strftime('%Y-%m-%d')}..{end_date.strftime('%Y-%m-%d')} ({days} days)")
 
     else:
         # No files exist - download from minimum date to target end date
@@ -292,9 +283,8 @@ def auto_determine_date_range(base_dir, file_pattern, date_pattern, logger, mini
 
         start_date = minimum_date
         end_date = target_end_date
-        days_count = (end_date - start_date).days + 1
-        logger.info(f"No existing files found. Downloading from minimum date: {start_date.strftime('%Y-%m-%d')}")
-        logger.info(f"Date range: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')} ({days_count} days)")
+        days = (end_date - start_date).days + 1
+        logger.info(f"No files found, downloading {start_date.strftime('%Y-%m-%d')}..{end_date.strftime('%Y-%m-%d')} ({days} days)")
 
     return start_date, end_date
 
@@ -315,10 +305,6 @@ def run_upload_script(upload_script_name, base_dir, start_date, end_date, logger
     Returns:
         bool: True if upload succeeded, False otherwise
     """
-    logger.info(f"\n{'═' * 60}")
-    logger.info(f"Starting Upload Process")
-    logger.info(f"{'═' * 60}\n")
-
     # Get unique year/month combinations for the date range
     year_months = set()
     current = start_date
@@ -333,10 +319,8 @@ def run_upload_script(upload_script_name, base_dir, start_date, end_date, logger
         dir_path = base_dir / year_month
 
         if not dir_path.exists():
-            logger.warning(f"Directory not found: {dir_path} - Skipping")
+            logger.warning(f"Upload dir not found: {dir_path}")
             continue
-
-        logger.info(f"Running upload for directory: {year_month}")
 
         try:
             # Execute upload script as subprocess
@@ -350,18 +334,17 @@ def run_upload_script(upload_script_name, base_dir, start_date, end_date, logger
                 env=os.environ.copy()  # Pass environment variables to subprocess
             )
 
-            # Log output from upload script
+            # Log output from upload script (already compact)
             if result.stdout:
                 for line in result.stdout.strip().split('\n'):
-                    logger.info(f"  {line}")
+                    if line.strip():
+                        logger.info(f"  {line}")
 
             if result.returncode != 0:
                 logger.error(f"Upload failed for {year_month}")
                 if result.stderr:
-                    logger.error(f"Error output: {result.stderr}")
+                    logger.error(f"  stderr: {result.stderr.strip()}")
                 all_success = False
-            else:
-                logger.info(f"✓ Upload completed for {year_month}")
 
         except subprocess.TimeoutExpired:
             logger.error(f"Upload timeout for {year_month}")
@@ -369,9 +352,5 @@ def run_upload_script(upload_script_name, base_dir, start_date, end_date, logger
         except Exception as e:
             logger.error(f"Upload error for {year_month}: {e}")
             all_success = False
-
-    logger.info(f"\n{'═' * 60}")
-    logger.info(f"Upload Process {'Completed' if all_success else 'Completed with Errors'}")
-    logger.info(f"{'═' * 60}\n")
 
     return all_success

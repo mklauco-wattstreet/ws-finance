@@ -114,11 +114,6 @@ def download_report(date, base_dir, logger):
     filename = get_filename(date)
     target_file = target_dir / filename
 
-    date_str = date.strftime('%Y-%m-%d')
-    logger.info(f"\n{'─' * 60}")
-    logger.info(f"Date: {date_str}")
-    logger.info(f"Target directory: {target_dir}")
-
     return download_file(url, target_file, logger)
 
 
@@ -152,7 +147,7 @@ def main():
 
     if auto_mode:
         print_banner("OTE-CR Day-Ahead Price Report Downloader (AUTO)", debug_mode)
-        logger.info("\nRunning in AUTO mode - determining date range automatically...\n")
+        logger.info("DayAhead AUTO mode")
 
         # Regex pattern to extract date from filename (DD_MM_YYYY)
         # Matches both DM_DD_MM_YYYY_EN.xlsx and DM_15MIN_DD_MM_YYYY_EN.xlsx
@@ -167,10 +162,7 @@ def main():
         )
 
         if start_date is None or end_date is None:
-            logger.info("\nNothing to download.")
             # Still run upload to process any existing files
-            logger.info("Running upload for existing files...")
-            # Use last 30 days as range to check for unuploaded files
             end_date_upload = datetime.now() - timedelta(days=1)
             start_date_upload = end_date_upload - timedelta(days=30)
             run_upload_script(
@@ -188,8 +180,6 @@ def main():
         end_date_str = args[1]
 
         print_banner("OTE-CR Day-Ahead Price Report Downloader (MANUAL)", debug_mode)
-        logger.info(f"\nRunning in MANUAL mode")
-        logger.info(f"Date range: {start_date_str} to {end_date_str}")
 
         # Parse dates
         start_date = parse_date(start_date_str)
@@ -198,10 +188,10 @@ def main():
         # Validate date range
         validate_date_range(start_date, end_date)
 
+        mode = "MANUAL"
+        logger.info(f"DayAhead {mode} {start_date.strftime('%Y-%m-%d')}..{end_date.strftime('%Y-%m-%d')}")
+
     dates = list(date_range(start_date, end_date))
-    logger.info(f"Total reports to download: {len(dates)}")
-    logger.info(f"Base directory: {script_dir}")
-    logger.info(f"Files will be organized in: YYYY/MM/ structure\n")
 
     successful = 0
     failed = 0
@@ -209,31 +199,24 @@ def main():
     try:
         # Download reports for each date
         for i, date in enumerate(dates, 1):
-            logger.info(f"\nProgress: {i}/{len(dates)}")
-
             success = download_report(date, script_dir, logger)
 
             if success:
                 successful += 1
-                logger.info("✓ Download successful")
             else:
                 failed += 1
 
             # Wait random time between 1-3 seconds between downloads (except for the last one)
             if i < len(dates):
                 wait_time = random.randint(1, 3)
-                logger.debug(f"Waiting {wait_time} seconds before next download...")
+                logger.debug(f"Waiting {wait_time}s...")
                 time.sleep(wait_time)
 
-        # Summary
-        logger.info(f"\n{'═' * 60}")
-        logger.info("DOWNLOAD SUMMARY")
-        logger.info(f"{'═' * 60}")
-        logger.info(f"Total reports processed: {len(dates)}")
-        logger.info(f"Successful downloads: {successful}")
-        logger.info(f"Failed downloads: {failed}")
-        logger.info(f"Base directory: {script_dir}")
-        logger.info(f"{'═' * 60}\n")
+        # One-line summary
+        summary = f"DayAhead: downloaded {successful}/{len(dates)}"
+        if failed > 0:
+            summary += f" ({failed} failed)"
+        logger.info(summary)
 
         # Upload downloaded files to database (runs even if some downloads failed)
         if successful > 0:
@@ -245,13 +228,13 @@ def main():
                 logger=logger
             )
         else:
-            logger.warning("No files were downloaded successfully. Skipping upload.")
+            logger.warning("No files downloaded. Skipping upload.")
 
     except KeyboardInterrupt:
-        logger.warning("\n\nDownload interrupted by user")
+        logger.warning("Interrupted by user")
         sys.exit(1)
     except Exception as e:
-        logger.error(f"\nFatal error: {str(e)}")
+        logger.error(f"Fatal: {str(e)}")
         sys.exit(1)
 
 
