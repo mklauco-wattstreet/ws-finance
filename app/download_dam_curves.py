@@ -20,6 +20,7 @@ Notes:
     - If no files exist, downloads from 2026-01-01 to yesterday
 """
 
+import sentry_init  # noqa: F401 - must be first to capture errors
 import sys
 import random
 import time

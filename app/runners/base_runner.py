@@ -11,6 +11,7 @@ Features:
 - Backfill support with automatic 7-day chunking
 """
 
+import sentry_init  # noqa: F401 - must be first to capture errors
 import sys
 import logging
 import argparse

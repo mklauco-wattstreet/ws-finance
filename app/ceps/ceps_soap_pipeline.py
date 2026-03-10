@@ -23,6 +23,7 @@ Usage:
     python3 -m ceps.ceps_soap_pipeline --dataset all --dry-run --debug
 """
 
+import sentry_init  # noqa: F401 - must be first to capture errors
 import sys
 import argparse
 import logging

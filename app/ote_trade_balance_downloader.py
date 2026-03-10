@@ -4,6 +4,7 @@ OTE Portal Trade Balance Downloader
 Downloads trade balance reports from the OTE portal.
 """
 
+import sentry_init  # noqa: F401 - must be first to capture errors
 import sys
 import time
 import shutil
