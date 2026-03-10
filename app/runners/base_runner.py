@@ -107,7 +107,6 @@ class BaseRunner(ABC):
         """
         conn = None
         try:
-            self.logger.info("Connecting to database...")
             conn = psycopg2.connect(
                 host=DB_HOST,
                 user=DB_USER,
@@ -118,15 +117,14 @@ class BaseRunner(ABC):
             )
             with conn.cursor() as cur:
                 cur.execute(f"SET search_path TO {DB_SCHEMA}")
-            self.logger.info(f"✓ Connected to {DB_NAME}@{DB_HOST}:{DB_PORT}")
+            self.logger.debug(f"Connected to {DB_NAME}@{DB_HOST}:{DB_PORT}")
             yield conn
         except Exception as e:
-            self.logger.error(f"✗ Database connection failed: {e}")
+            self.logger.error(f"DB connection failed: {e}")
             raise
         finally:
             if conn:
                 conn.close()
-                self.logger.info("Database connection closed")
 
     def bulk_upsert(
         self,
@@ -180,7 +178,7 @@ class BaseRunner(ABC):
             extras.execute_values(cursor, query, records, page_size=1000)
             conn.commit()
             upserted = len(records)
-            self.logger.info(f"✓ Upserted {upserted} records to {table}")
+            self.logger.debug(f"Upserted {upserted} records to {table}")
             return upserted
         except Exception as e:
             conn.rollback()
@@ -236,7 +234,7 @@ class BaseRunner(ABC):
         if end < start:
             raise ValueError(f"end_date ({end}) must be >= start_date ({start})")
 
-        self.logger.info(f"Backfill mode: {start} to {end}")
+        self.logger.debug(f"Backfill: {start} to {end}")
 
         # Convert dates to UTC datetimes (start of day in Prague -> UTC)
         current_start = datetime.combine(start, datetime.min.time())
@@ -245,7 +243,6 @@ class BaseRunner(ABC):
         final_end = datetime.combine(end + timedelta(days=1), datetime.min.time())
         final_end = final_end.replace(tzinfo=PRAGUE_TZ).astimezone(timezone.utc)
 
-        chunk_count = 0
         while current_start < final_end:
             # Calculate chunk end (max 7 days from start)
             chunk_end = min(
@@ -253,19 +250,10 @@ class BaseRunner(ABC):
                 final_end
             )
 
-            chunk_count += 1
-            self.logger.info(
-                f"  Chunk {chunk_count}: "
-                f"{current_start.strftime('%Y-%m-%d %H:%M')} UTC -> "
-                f"{chunk_end.strftime('%Y-%m-%d %H:%M')} UTC"
-            )
-
             yield current_start, chunk_end
 
             # Move to next chunk
             current_start = chunk_end
-
-        self.logger.info(f"Total chunks: {chunk_count}")
 
     def get_output_path(self, filename: str, period_start: datetime) -> Path:
         """
@@ -297,25 +285,12 @@ class BaseRunner(ABC):
         self.logger.debug(f"Saved XML to: {filepath}")
 
     def print_header(self) -> None:
-        """Print runner header."""
-        self.logger.info("")
-        self.logger.info("╔══════════════════════════════════════════════════════════╗")
-        self.logger.info(f"║  {self.RUNNER_NAME:<56} ║")
-        self.logger.info("╚══════════════════════════════════════════════════════════╝")
-        self.logger.info(f"Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        if self.dry_run:
-            self.logger.info("DRY RUN MODE - No data will be uploaded")
-        self.logger.info("")
+        """Print runner header (no-op, kept for API compatibility)."""
+        pass
 
     def print_footer(self, success: bool = True) -> None:
-        """Print runner footer."""
-        status = "Completed Successfully" if success else "Completed with Errors"
-        self.logger.info("")
-        self.logger.info("╔══════════════════════════════════════════════════════════╗")
-        self.logger.info(f"║  {status:<56} ║")
-        self.logger.info("╚══════════════════════════════════════════════════════════╝")
-        self.logger.info(f"Finished at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        self.logger.info("")
+        """Print runner footer (no-op, kept for API compatibility)."""
+        pass
 
     @abstractmethod
     def run(self) -> bool:

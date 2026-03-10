@@ -53,10 +53,10 @@ class UnifiedSchedFlowRunner(BaseRunner):
 
     def _init_client(self) -> bool:
         """Initialize ENTSO-E client."""
-        self.logger.info("Initializing ENTSO-E client...")
+        self.logger.debug("Initializing ENTSO-E client...")
         try:
             self.client = EntsoeClient()
-            self.logger.info("✓ Client initialized")
+            self.logger.debug("Client initialized")
             return True
         except Exception as e:
             self.logger.error(f"✗ Client initialization failed: {e}")
@@ -171,7 +171,7 @@ class UnifiedSchedFlowRunner(BaseRunner):
         conn=None
     ) -> int:
         """Process scheduled exchanges for a single area."""
-        self.logger.info(f"  Processing {display_label} (area_id={area_id}, country={country_code})...")
+        self.logger.debug(f"  Processing {display_label} (area_id={area_id}, country={country_code})...")
 
         try:
             # Fetch all border data
@@ -191,7 +191,7 @@ class UnifiedSchedFlowRunner(BaseRunner):
                 self.logger.warning(f"    No data for {country_code}")
                 return 0
 
-            self.logger.info(f"    Parsed {len(data)} records")
+            self.logger.debug(f"    Parsed {len(data)} records")
 
             # Prepare records for bulk insert
             records = self._prepare_records(data)
@@ -219,7 +219,7 @@ class UnifiedSchedFlowRunner(BaseRunner):
 
     def _process_chunk(self, period_start, period_end, conn=None) -> int:
         """Process a single time chunk for CZ (primary area with border data)."""
-        self.logger.info(
+        self.logger.debug(
             f"Processing: {period_start.strftime('%Y-%m-%d %H:%M')} "
             f"to {period_end.strftime('%Y-%m-%d %H:%M')} UTC"
         )
@@ -242,8 +242,8 @@ class UnifiedSchedFlowRunner(BaseRunner):
 
         try:
             if self.is_backfill:
-                self.logger.info("")
-                self.logger.info("Processing CZ scheduled cross-border flows")
+                self.logger.debug("")
+                self.logger.debug("Processing CZ scheduled cross-border flows")
                 with self.database_connection() as conn:
                     for period_start, period_end in self.get_backfill_chunks():
                         try:
@@ -257,12 +257,12 @@ class UnifiedSchedFlowRunner(BaseRunner):
                             continue
             else:
                 period_start, period_end = self.get_time_range(hours=3)
-                self.logger.info(
-                    f"Period (UTC): {period_start.strftime('%Y-%m-%d %H:%M')} "
+                self.logger.debug(
+            f"Period (UTC): {period_start.strftime('%Y-%m-%d %H:%M')} "
                     f"to {period_end.strftime('%Y-%m-%d %H:%M')}"
                 )
-                self.logger.info("Processing CZ scheduled cross-border flows")
-                self.logger.info("")
+                self.logger.debug("Processing CZ scheduled cross-border flows")
+                self.logger.debug("")
 
                 if not self.dry_run:
                     with self.database_connection() as conn:
@@ -270,8 +270,8 @@ class UnifiedSchedFlowRunner(BaseRunner):
                 else:
                     total_records = self._process_chunk(period_start, period_end)
 
-            self.logger.info("")
-            self.logger.info(f"Total records processed: {total_records}")
+            self.logger.debug("")
+            self.logger.info(f"{self.RUNNER_NAME}: {total_records} records")
             self.print_footer(success=True)
             return True
 

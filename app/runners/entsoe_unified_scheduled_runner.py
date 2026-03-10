@@ -50,10 +50,10 @@ class UnifiedScheduledRunner(BaseRunner):
 
     def _init_client(self) -> bool:
         """Initialize ENTSO-E client."""
-        self.logger.info("Initializing ENTSO-E client...")
+        self.logger.debug("Initializing ENTSO-E client...")
         try:
             self.client = EntsoeClient()
-            self.logger.info("✓ Client initialized")
+            self.logger.debug("Client initialized")
             return True
         except Exception as e:
             self.logger.error(f"✗ Client initialization failed: {e}")
@@ -109,7 +109,7 @@ class UnifiedScheduledRunner(BaseRunner):
         conn=None
     ) -> int:
         """Process a single area: fetch, parse, and upload."""
-        self.logger.info(f"  Fetching {display_label} (area_id={area_id}, country={country_code})...")
+        self.logger.debug(f"  Fetching {display_label} (area_id={area_id}, country={country_code})...")
 
         try:
             xml_content = self._fetch_data_for_area(period_start, period_end, area_code)
@@ -122,7 +122,7 @@ class UnifiedScheduledRunner(BaseRunner):
                 self.logger.warning(f"    No data for {country_code}")
                 return 0
 
-            self.logger.info(f"    Parsed {len(data)} records")
+            self.logger.debug(f"    Parsed {len(data)} records")
 
             records = self._prepare_records(data)
 
@@ -148,7 +148,7 @@ class UnifiedScheduledRunner(BaseRunner):
 
     def _process_chunk(self, period_start, period_end, conn=None) -> int:
         """Process a single time chunk for ALL areas."""
-        self.logger.info(
+        self.logger.debug(
             f"Processing: {period_start.strftime('%Y-%m-%d %H:%M')} "
             f"to {period_end.strftime('%Y-%m-%d %H:%M')} UTC"
         )
@@ -176,8 +176,8 @@ class UnifiedScheduledRunner(BaseRunner):
 
         try:
             if self.is_backfill:
-                self.logger.info("")
-                self.logger.info(f"Processing {len(ACTIVE_GENERATION_AREAS)} areas: "
+                self.logger.debug("")
+                self.logger.debug(f"Processing {len(ACTIVE_GENERATION_AREAS)} areas: "
                                f"{', '.join(label for _, _, label, _ in ACTIVE_GENERATION_AREAS)}")
                 with self.database_connection() as conn:
                     for period_start, period_end in self.get_backfill_chunks():
@@ -192,13 +192,13 @@ class UnifiedScheduledRunner(BaseRunner):
                             continue
             else:
                 period_start, period_end = self.get_time_range(hours=3)
-                self.logger.info(
-                    f"Period (UTC): {period_start.strftime('%Y-%m-%d %H:%M')} "
+                self.logger.debug(
+            f"Period (UTC): {period_start.strftime('%Y-%m-%d %H:%M')} "
                     f"to {period_end.strftime('%Y-%m-%d %H:%M')}"
                 )
-                self.logger.info(f"Processing {len(ACTIVE_GENERATION_AREAS)} areas: "
+                self.logger.debug(f"Processing {len(ACTIVE_GENERATION_AREAS)} areas: "
                                f"{', '.join(label for _, _, label, _ in ACTIVE_GENERATION_AREAS)}")
-                self.logger.info("")
+                self.logger.debug("")
 
                 if not self.dry_run:
                     with self.database_connection() as conn:
@@ -206,8 +206,8 @@ class UnifiedScheduledRunner(BaseRunner):
                 else:
                     total_records = self._process_chunk(period_start, period_end)
 
-            self.logger.info("")
-            self.logger.info(f"Total records processed: {total_records}")
+            self.logger.debug("")
+            self.logger.info(f"{self.RUNNER_NAME}: {total_records} records")
             self.print_footer(success=True)
             return True
 

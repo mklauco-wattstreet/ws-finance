@@ -49,10 +49,10 @@ class UnifiedLoadRunner(BaseRunner):
 
     def _init_client(self) -> bool:
         """Initialize ENTSO-E client."""
-        self.logger.info("Initializing ENTSO-E client...")
+        self.logger.debug("Initializing ENTSO-E client...")
         try:
             self.client = EntsoeClient()
-            self.logger.info("✓ Client initialized")
+            self.logger.debug("Client initialized")
             return True
         except Exception as e:
             self.logger.error(f"✗ Client initialization failed: {e}")
@@ -141,7 +141,7 @@ class UnifiedLoadRunner(BaseRunner):
         Returns:
             Number of records processed
         """
-        self.logger.info(f"  Fetching {display_label} (area_id={area_id}, country={country_code})...")
+        self.logger.debug(f"  Fetching {display_label} (area_id={area_id}, country={country_code})...")
 
         try:
             # Fetch data
@@ -160,7 +160,7 @@ class UnifiedLoadRunner(BaseRunner):
                 self.logger.warning(f"    No data for {country_code}")
                 return 0
 
-            self.logger.info(f"    Parsed {len(data)} records")
+            self.logger.debug(f"    Parsed {len(data)} records")
 
             # Prepare records for bulk insert
             records = self._prepare_records(data)
@@ -198,7 +198,7 @@ class UnifiedLoadRunner(BaseRunner):
         Returns:
             Total number of records processed across all areas
         """
-        self.logger.info(
+        self.logger.debug(
             f"Processing: {period_start.strftime('%Y-%m-%d %H:%M')} "
             f"to {period_end.strftime('%Y-%m-%d %H:%M')} UTC"
         )
@@ -229,8 +229,8 @@ class UnifiedLoadRunner(BaseRunner):
         try:
             if self.is_backfill:
                 # Backfill mode: process multiple chunks
-                self.logger.info("")
-                self.logger.info(f"Processing {len(ACTIVE_GENERATION_AREAS)} areas: "
+                self.logger.debug("")
+                self.logger.debug(f"Processing {len(ACTIVE_GENERATION_AREAS)} areas: "
                                f"{', '.join(label for _, _, label, _ in ACTIVE_GENERATION_AREAS)}")
                 with self.database_connection() as conn:
                     for period_start, period_end in self.get_backfill_chunks():
@@ -246,13 +246,13 @@ class UnifiedLoadRunner(BaseRunner):
             else:
                 # Normal mode: single time range
                 period_start, period_end = self.get_time_range(hours=3)
-                self.logger.info(
-                    f"Period (UTC): {period_start.strftime('%Y-%m-%d %H:%M')} "
+                self.logger.debug(
+            f"Period (UTC): {period_start.strftime('%Y-%m-%d %H:%M')} "
                     f"to {period_end.strftime('%Y-%m-%d %H:%M')}"
                 )
-                self.logger.info(f"Processing {len(ACTIVE_GENERATION_AREAS)} areas: "
+                self.logger.debug(f"Processing {len(ACTIVE_GENERATION_AREAS)} areas: "
                                f"{', '.join(label for _, _, label, _ in ACTIVE_GENERATION_AREAS)}")
-                self.logger.info("")
+                self.logger.debug("")
 
                 if not self.dry_run:
                     with self.database_connection() as conn:
@@ -260,8 +260,8 @@ class UnifiedLoadRunner(BaseRunner):
                 else:
                     total_records = self._process_chunk(period_start, period_end)
 
-            self.logger.info("")
-            self.logger.info(f"Total records processed: {total_records}")
+            self.logger.debug("")
+            self.logger.info(f"{self.RUNNER_NAME}: {total_records} records")
             self.print_footer(success=True)
             return True
 
