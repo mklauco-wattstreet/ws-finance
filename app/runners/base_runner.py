@@ -12,6 +12,7 @@ Features:
 """
 
 import sentry_init  # noqa: F401 - must be first to capture errors
+sentry_init.set_module("entsoe")
 import sys
 import logging
 import argparse

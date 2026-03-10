@@ -5,6 +5,7 @@ Optimized for automated daily execution in production environment.
 """
 
 import sentry_init  # noqa: F401 - must be first to capture errors
+sentry_init.set_module("ote")
 import sys
 import time
 import shutil
