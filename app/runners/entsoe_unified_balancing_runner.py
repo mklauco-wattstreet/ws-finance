@@ -149,6 +149,7 @@ class UnifiedBalancingRunner(BaseRunner):
             elif self.dry_run:
                 self.logger.info(f"    DRY RUN - Would upload {len(records)} records")
 
+            self.track_country(country_code, len(records))
             return len(records)
 
         except Exception as e:
@@ -219,7 +220,7 @@ class UnifiedBalancingRunner(BaseRunner):
                     total_records = self._process_chunk(period_start, period_end)
 
             self.logger.debug("")
-            self.logger.info(f"{self.RUNNER_NAME}: {total_records} records")
+            self.logger.info(self.format_summary(total_records))
             self.print_footer(success=True)
             return True
 

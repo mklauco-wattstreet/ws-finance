@@ -76,7 +76,19 @@ class BaseRunner(ABC):
         self.start_date = start_date
         self.end_date = end_date
         self.is_backfill = start_date is not None or end_date is not None
+        self.country_stats = {}  # {country_code: record_count}
         self.logger = self._setup_logging()
+
+    def track_country(self, country_code: str, count: int):
+        """Track records processed per country for summary logging."""
+        self.country_stats[country_code] = self.country_stats.get(country_code, 0) + count
+
+    def format_summary(self, total: int) -> str:
+        """Format one-line summary with per-country breakdown."""
+        if self.country_stats:
+            parts = [f"{cc}={n}" for cc, n in sorted(self.country_stats.items())]
+            return f"{self.RUNNER_NAME}: {total} records ({', '.join(parts)})"
+        return f"{self.RUNNER_NAME}: {total} records"
 
     def _setup_logging(self) -> logging.Logger:
         """Configure logging for the runner."""
