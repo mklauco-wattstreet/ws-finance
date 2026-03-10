@@ -21,7 +21,7 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 
 import psycopg2
-from config import DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT, DB_SCHEMA
+from config import DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT
 
 
 def fetch_bids(conn, delivery_date, period):
@@ -132,8 +132,7 @@ def main():
 
     conn = psycopg2.connect(
         host=DB_HOST, user=DB_USER, password=DB_PASSWORD,
-        database=DB_NAME, port=DB_PORT,
-        options=f'-c search_path={DB_SCHEMA}'
+        database=DB_NAME, port=DB_PORT
     )
 
     bids = fetch_bids(conn, delivery_date, period)

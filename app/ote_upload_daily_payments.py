@@ -14,7 +14,7 @@ import psycopg2
 from psycopg2 import OperationalError, DatabaseError, IntegrityError
 
 # Import database configuration and logging
-from config import DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT, DB_SCHEMA
+from config import DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT
 from common import setup_logging
 
 # XML namespace for OTE portal exports
@@ -155,8 +155,7 @@ def insert_records(records, logger):
             password=DB_PASSWORD,
             database=DB_NAME,
             port=DB_PORT,
-            connect_timeout=10,
-            options=f'-c search_path={DB_SCHEMA}'
+            connect_timeout=10
         )
 
         logger.info("✓ Database connection established")
