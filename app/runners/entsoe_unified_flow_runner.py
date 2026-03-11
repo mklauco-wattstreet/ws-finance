@@ -178,7 +178,7 @@ class UnifiedFlowRunner(BaseRunner):
             data = self._parse_data(xml_files, area_id, country_code)
 
             if not data:
-                self.logger.warning(f"    No data for {country_code}")
+                self.logger.info(f"{self.RUNNER_NAME}: no data for {country_code}")
                 return 0
 
             self.logger.debug(f"    Parsed {len(data)} records")
@@ -203,7 +203,7 @@ class UnifiedFlowRunner(BaseRunner):
 
         except Exception as e:
             if self.is_data_unavailable_error(e):
-                self.logger.info(f"  {country_code} not available for [{period_start.strftime('%Y-%m-%d %H:%M')}-{period_end.strftime('%Y-%m-%d %H:%M')}]")
+                self.logger.info(f"{self.RUNNER_NAME}: {country_code} not available for [{period_start.strftime('%Y-%m-%d %H:%M')}-{period_end.strftime('%Y-%m-%d %H:%M')}]")
             else:
                 self.logger.error(f"  Failed {country_code}: {e}")
                 if self.debug:
