@@ -202,10 +202,13 @@ class UnifiedFlowRunner(BaseRunner):
             return len(records)
 
         except Exception as e:
-            self.logger.error(f"    Failed to process {country_code}: {e}")
-            if self.debug:
-                import traceback
-                traceback.print_exc()
+            if self.is_data_unavailable_error(e):
+                self.logger.info(f"  {country_code} not available for [{period_start.strftime('%Y-%m-%d %H:%M')}-{period_end.strftime('%Y-%m-%d %H:%M')}]")
+            else:
+                self.logger.error(f"  Failed {country_code}: {e}")
+                if self.debug:
+                    import traceback
+                    traceback.print_exc()
             return 0
 
     def _process_chunk(self, period_start, period_end, conn=None) -> int:
