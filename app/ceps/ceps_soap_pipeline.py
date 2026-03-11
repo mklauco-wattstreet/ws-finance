@@ -344,11 +344,11 @@ def process_dataset(
 
     # One-line summary per dataset
     if dry_run:
-        logger.info(f"  {dataset}: {total_parsed:,} parsed (dry run)")
+        logger.info(f"  CEPS {dataset}: {total_parsed:,} parsed (dry run)")
     elif failed_chunks > 0:
-        logger.warning(f"  {dataset}: {total_uploaded:,} uploaded, {failed_chunks} chunks failed")
+        logger.warning(f"  CEPS {dataset}: {total_uploaded:,} uploaded, {failed_chunks} chunks failed")
     else:
-        logger.info(f"  {dataset}: {total_uploaded:,} uploaded")
+        logger.info(f"  CEPS {dataset}: {total_uploaded:,} uploaded")
 
     return {
         'success': failed_chunks == 0,

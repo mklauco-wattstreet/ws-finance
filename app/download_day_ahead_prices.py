@@ -148,7 +148,7 @@ def main():
 
     if auto_mode:
         print_banner("OTE-CR Day-Ahead Price Report Downloader (AUTO)", debug_mode)
-        logger.info("DayAhead AUTO mode")
+        logger.info("OTE DayAhead AUTO mode")
 
         # Regex pattern to extract date from filename (DD_MM_YYYY)
         # Matches both DM_DD_MM_YYYY_EN.xlsx and DM_15MIN_DD_MM_YYYY_EN.xlsx
@@ -190,7 +190,7 @@ def main():
         validate_date_range(start_date, end_date)
 
         mode = "MANUAL"
-        logger.info(f"DayAhead {mode} {start_date.strftime('%Y-%m-%d')}..{end_date.strftime('%Y-%m-%d')}")
+        logger.info(f"OTE DayAhead {mode} {start_date.strftime('%Y-%m-%d')}..{end_date.strftime('%Y-%m-%d')}")
 
     dates = list(date_range(start_date, end_date))
 
@@ -214,7 +214,7 @@ def main():
                 time.sleep(wait_time)
 
         # One-line summary
-        summary = f"DayAhead: downloaded {successful}/{len(dates)}"
+        summary = f"OTE DayAhead: downloaded {successful}/{len(dates)}"
         if failed > 0:
             summary += f" ({failed} failed)"
         logger.info(summary)

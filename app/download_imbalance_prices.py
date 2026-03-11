@@ -125,7 +125,7 @@ def main():
 
     if auto_mode:
         print_banner("OTE-CR Imbalance Price Report Downloader (AUTO)", debug_mode)
-        logger.info("Imbalance AUTO mode")
+        logger.info("OTE Imbalance AUTO mode")
 
         # Regex pattern to extract date from filename (DD_MM_YYYY)
         date_pattern = r'Imbalances_(\d{2})_(\d{2})_(\d{4})_V\d+_EN\.xlsx'
@@ -165,7 +165,7 @@ def main():
         # Validate date range
         validate_date_range(start_date, end_date)
 
-        logger.info(f"Imbalance MANUAL {start_date.strftime('%Y-%m-%d')}..{end_date.strftime('%Y-%m-%d')}")
+        logger.info(f"OTE Imbalance MANUAL {start_date.strftime('%Y-%m-%d')}..{end_date.strftime('%Y-%m-%d')}")
 
     dates = list(date_range(start_date, end_date))
 
@@ -189,7 +189,7 @@ def main():
                 time.sleep(wait_time)
 
         # One-line summary
-        summary = f"Imbalance: downloaded {successful}/{len(dates)}"
+        summary = f"OTE Imbalance: downloaded {successful}/{len(dates)}"
         if failed > 0:
             summary += f" ({failed} failed)"
         logger.info(summary)

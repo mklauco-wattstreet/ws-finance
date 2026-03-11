@@ -119,7 +119,7 @@ def main():
 
     if auto_mode:
         print_banner("OTE-CR Intraday Market Report Downloader (AUTO)", debug_mode)
-        logger.info("Intraday AUTO mode")
+        logger.info("OTE Intraday AUTO mode")
 
         # Regex pattern to extract date from filename (DD_MM_YYYY)
         date_pattern = r'IM_15MIN_(\d{2})_(\d{2})_(\d{4})_EN\.xlsx'
@@ -161,7 +161,7 @@ def main():
         # Validate date range
         validate_date_range(start_date, end_date)
 
-        logger.info(f"Intraday MANUAL {start_date.strftime('%Y-%m-%d')}..{end_date.strftime('%Y-%m-%d')}")
+        logger.info(f"OTE Intraday MANUAL {start_date.strftime('%Y-%m-%d')}..{end_date.strftime('%Y-%m-%d')}")
 
     dates = list(date_range(start_date, end_date))
 
@@ -185,7 +185,7 @@ def main():
                 time.sleep(wait_time)
 
         # One-line summary
-        summary = f"Intraday: downloaded {successful}/{len(dates)}"
+        summary = f"OTE Intraday: downloaded {successful}/{len(dates)}"
         if failed > 0:
             summary += f" ({failed} failed)"
         logger.info(summary)

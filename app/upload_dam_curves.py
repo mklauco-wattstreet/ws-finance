@@ -586,12 +586,8 @@ def process_directory(directory_path, logger, debug_mode=False):
         logger.warning(f"No MC XML files found in '{directory_path}'")
         return True
 
-    logger.info(f"\nDirectory: {dir_path.absolute()}")
-    logger.info(f"Found {len(xml_files)} XML file(s)\n")
-
     conn = None
     if not debug_mode:
-        logger.info("Connecting to database...")
         try:
             conn = psycopg2.connect(
                 host=DB_HOST,
@@ -603,9 +599,8 @@ def process_directory(directory_path, logger, debug_mode=False):
             )
             with conn.cursor() as cur:
                 cur.execute(f"SET search_path TO {DB_SCHEMA}")
-            logger.info("Database connection established\n")
         except Exception as e:
-            logger.error(f"Database connection failed: {e}")
+            logger.error(f"DB connection failed: {e}")
             return False
 
     total_bids = 0
@@ -616,73 +611,54 @@ def process_directory(directory_path, logger, debug_mode=False):
 
     try:
         for xml_file in xml_files:
-            logger.info(f"{'─' * 60}")
-            logger.info(f"Processing: {xml_file.name}")
-
             delivery_date = parse_date_from_filename(xml_file.name)
 
             if not delivery_date:
-                logger.warning(f"  Failed to extract date from filename")
+                logger.warning(f"Bad filename: {xml_file.name}")
                 files_failed += 1
                 continue
-
-            logger.info(f"  Delivery date: {delivery_date}")
 
             try:
                 records = parse_xml_file(xml_file, delivery_date)
 
                 if not records:
-                    logger.warning(f"  No valid records found")
+                    logger.warning(f"No records: {xml_file.name}")
                     files_failed += 1
                     continue
-
-                logger.info(f"  Parsed {len(records)} bid records")
 
                 if debug_mode:
                     print_debug_info(records, delivery_date)
                     files_processed += 1
                 else:
-                    # Upsert bids
                     bid_count = upsert_da_bid(records, conn, logger)
                     total_bids += bid_count
-                    logger.info(f"  Upserted {bid_count} bid records")
 
-                    # Compute and upsert period summary
                     summary_count = compute_and_upsert_period_summary(delivery_date, conn, logger)
                     total_summaries += summary_count
-                    logger.info(f"  Computed {summary_count} period summaries")
 
-                    # Compute and upsert curve depth
                     depth_count = compute_and_upsert_curve_depth(delivery_date, conn, logger)
                     total_depths += depth_count
-                    logger.info(f"  Computed {depth_count} curve depth records")
 
                     files_processed += 1
 
             except Exception as e:
-                logger.error(f"  Error processing file: {e}")
+                logger.error(f"Error {xml_file.name}: {e}")
                 files_failed += 1
                 continue
 
-        logger.info(f"\n{'═' * 60}")
-        logger.info(f"UPLOAD SUMMARY")
-        logger.info(f"{'═' * 60}")
-        logger.info(f"Files processed successfully: {files_processed}")
-        logger.info(f"Files failed: {files_failed}")
-        if not debug_mode:
-            logger.info(f"Total bid records upserted: {total_bids}")
-            logger.info(f"Total period summaries computed: {total_summaries}")
-            logger.info(f"Total curve depth records computed: {total_depths}")
+        if debug_mode:
+            print(f"OTE DAM Curves upload: {files_processed} files (debug mode)")
         else:
-            logger.info(f"DEBUG MODE - No records upserted to database")
-        logger.info(f"{'═' * 60}\n")
+            summary = f"OTE DAM Curves upload: {files_processed} files, {total_bids} bids, {total_summaries} summaries, {total_depths} depths"
+            if files_failed > 0:
+                summary += f" ({files_failed} failed)"
+            print(summary)
 
         return True
 
     finally:
         if conn:
             conn.close()
-            logger.info("Database connection closed.")
 
 
 def main():

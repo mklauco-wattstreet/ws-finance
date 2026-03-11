@@ -101,11 +101,6 @@ def download_report(date, base_dir, logger):
         logger.debug(f"Already exists: {filename}")
         return True
 
-    date_str = date.strftime('%Y-%m-%d')
-    logger.info(f"\n{'─' * 60}")
-    logger.info(f"Date: {date_str}")
-    logger.info(f"Target directory: {target_dir}")
-
     return download_file(url, target_file, logger)
 
 
@@ -135,7 +130,7 @@ def main():
 
     if auto_mode:
         print_banner("OTE-CR DAM Matching Curve Downloader (AUTO)", debug_mode)
-        logger.info("\nRunning in AUTO mode - determining date range automatically...\n")
+        logger.info("OTE DAM Curves AUTO mode")
 
         date_pattern = r'(\d{2})_(\d{2})_(\d{4})_EN\.xml'
 
@@ -149,8 +144,6 @@ def main():
         )
 
         if start_date is None or end_date is None:
-            logger.info("\nNothing to download.")
-            logger.info("Running upload for existing files...")
             end_date_upload = datetime.now() - timedelta(days=1)
             start_date_upload = end_date_upload - timedelta(days=30)
             run_upload_script(
@@ -167,46 +160,36 @@ def main():
         end_date_str = args[1]
 
         print_banner("OTE-CR DAM Matching Curve Downloader (MANUAL)", debug_mode)
-        logger.info(f"\nRunning in MANUAL mode")
-        logger.info(f"Date range: {start_date_str} to {end_date_str}")
 
         start_date = parse_date(start_date_str)
         end_date = parse_date(end_date_str)
         validate_date_range(start_date, end_date)
 
+        logger.info(f"OTE DAM Curves MANUAL {start_date.strftime('%Y-%m-%d')}..{end_date.strftime('%Y-%m-%d')}")
+
     dates = list(date_range(start_date, end_date))
-    logger.info(f"Total reports to download: {len(dates)}")
-    logger.info(f"Base directory: {script_dir}")
-    logger.info(f"Files will be organized in: YYYY/MM/ structure\n")
 
     successful = 0
     failed = 0
 
     try:
         for i, date in enumerate(dates, 1):
-            logger.info(f"\nProgress: {i}/{len(dates)}")
-
             success = download_report(date, script_dir, logger)
 
             if success:
                 successful += 1
-                logger.info("✓ Download successful")
             else:
                 failed += 1
 
             if i < len(dates) and not no_delay:
                 wait_time = random.randint(1, 3)
-                logger.debug(f"Waiting {wait_time} seconds before next download...")
+                logger.debug(f"Waiting {wait_time}s...")
                 time.sleep(wait_time)
 
-        logger.info(f"\n{'═' * 60}")
-        logger.info("DOWNLOAD SUMMARY")
-        logger.info(f"{'═' * 60}")
-        logger.info(f"Total reports processed: {len(dates)}")
-        logger.info(f"Successful downloads: {successful}")
-        logger.info(f"Failed downloads: {failed}")
-        logger.info(f"Base directory: {script_dir}")
-        logger.info(f"{'═' * 60}\n")
+        summary = f"OTE DAM Curves: downloaded {successful}/{len(dates)}"
+        if failed > 0:
+            summary += f" ({failed} failed)"
+        logger.info(summary)
 
         if successful > 0:
             run_upload_script(
@@ -217,13 +200,13 @@ def main():
                 logger=logger
             )
         else:
-            logger.warning("No files were downloaded successfully. Skipping upload.")
+            logger.warning("No files downloaded. Skipping upload.")
 
     except KeyboardInterrupt:
-        logger.warning("\n\nDownload interrupted by user")
+        logger.warning("Interrupted by user")
         sys.exit(1)
     except Exception as e:
-        logger.error(f"\nFatal error: {str(e)}")
+        logger.error(f"Fatal: {str(e)}")
         sys.exit(1)
 
 

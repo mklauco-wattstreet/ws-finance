@@ -494,7 +494,7 @@ def process_directory(directory_path, logger, debug_mode=False):
         if debug_mode:
             print(f"DayAhead upload: {files_processed} files (debug mode)")
         else:
-            summary = f"DayAhead upload: {files_processed} files, {total_upserted} rows upserted"
+            summary = f"OTE DayAhead upload: {files_processed} files, {total_upserted} rows upserted"
             if files_failed > 0:
                 summary += f" ({files_failed} failed)"
             print(summary)

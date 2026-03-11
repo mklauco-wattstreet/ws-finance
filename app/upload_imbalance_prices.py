@@ -269,7 +269,7 @@ def process_directory(directory_path):
                 continue
 
         # Compact summary
-        summary = f"Imbalance upload: {files_processed} files, {total_inserted} rows inserted"
+        summary = f"OTE Imbalance upload: {files_processed} files, {total_inserted} rows inserted"
         if files_failed > 0:
             summary += f" ({files_failed} failed)"
         print(summary)

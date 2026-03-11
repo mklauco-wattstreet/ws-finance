@@ -265,7 +265,7 @@ def process_directory(directory_path):
                 continue
 
         # Compact summary
-        summary = f"Intraday upload: {files_processed} files, {total_upserted} rows upserted"
+        summary = f"OTE Intraday upload: {files_processed} files, {total_upserted} rows upserted"
         if files_failed > 0:
             summary += f" ({files_failed} failed)"
         print(summary)
