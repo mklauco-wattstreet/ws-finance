@@ -47,7 +47,7 @@ def cleanup_old_screenshots(logger):
                 Path(f).unlink()
             except:
                 pass
-        logger.info(f"Cleaned up {len(screenshot_files)} old screenshot(s)")
+        logger.debug(f"Cleaned up {len(screenshot_files)} old screenshot(s)")
 
 
 def init_browser():
@@ -305,11 +305,11 @@ def switch_to_english(driver, logger):
             lang_button = spans[0].find_element(By.XPATH, "..")
 
             if lang_text == 'EN':
-                logger.info("Switching to English...")
+                logger.debug("Switching to English...")
                 lang_button.click()
                 time.sleep(0.5)
             elif lang_text == 'CZ':
-                logger.info("Already in English")
+                logger.debug("Already in English")
     except Exception as e:
         logger.debug(f"Language switch: {e}")
 
@@ -321,7 +321,7 @@ def login_to_portal(driver, logger):
     try:
         # Check if already logged in
         if "Watt Street, s.r.o." in driver.page_source:
-            logger.info("✓ Already logged in!")
+            logger.debug("Already logged in")
             return True
 
         # Find login button
@@ -370,7 +370,7 @@ def login_to_portal(driver, logger):
         current_url = driver.current_url
 
         if "Watt Street, s.r.o." in driver.page_source or "dashboard" in current_url or "login" not in current_url:
-            logger.info("✓ Login successful")
+            logger.debug("Login successful")
             return True
 
         logger.error("Login failed")
@@ -405,7 +405,7 @@ def download_trade_balance(driver, logger):
     wait = WebDriverWait(driver, 15)
 
     try:
-        logger.info("Navigating to Trade Balance...")
+        logger.debug("Navigating to Trade Balance...")
 
         # Navigate: Settlement > Reports > Trade balance
         settlement = wait.until(
@@ -436,7 +436,7 @@ def download_trade_balance(driver, logger):
         from_date_str = yesterday.strftime("%d/%m/%Y")
         to_date_str = tomorrow.strftime("%d/%m/%Y")
 
-        logger.info(f"Downloading data from {from_date_str} to {to_date_str}")
+        logger.debug(f"Downloading data from {from_date_str} to {to_date_str}")
 
         # Set date fields
         from_field = driver.find_element(By.NAME, "fromDate")
@@ -457,7 +457,7 @@ def download_trade_balance(driver, logger):
             EC.element_to_be_clickable((By.XPATH, "//button[contains(., 'Retrieve')]"))
         )
         retrieve_btn.click()
-        logger.info("Retrieving data...")
+        logger.debug("Retrieving data...")
 
         # Wait for data
         time.sleep(10)
@@ -469,7 +469,7 @@ def download_trade_balance(driver, logger):
             take_screenshot(driver, "no_data_found")
             return None
 
-        logger.info("Data loaded, downloading...")
+        logger.debug("Data loaded, downloading...")
 
         # Click download button
         download_btn = wait.until(EC.element_to_be_clickable(
@@ -480,12 +480,11 @@ def download_trade_balance(driver, logger):
         take_screenshot(driver, "download_dialog")
 
         # Click Export button
-        logger.info("Clicking Export button...")
         export_btn = wait.until(EC.element_to_be_clickable(
             (By.XPATH, "//button[contains(., 'Export')]")
         ))
         export_btn.click()
-        logger.info("Exporting...")
+        logger.debug("Exporting...")
 
         time.sleep(5)
 
@@ -504,7 +503,7 @@ def download_trade_balance(driver, logger):
             dest_file = dest_dir / f"Trade_balance_{timestamp}.xlsx"
             shutil.move(str(latest_file), str(dest_file))
 
-            logger.info(f"✓ File saved: {dest_file}")
+            logger.debug(f"File saved: {dest_file}")
             return str(dest_file)  # Return file path for upload
         else:
             logger.error("No XLSX file found in downloads")
@@ -529,33 +528,19 @@ def upload_to_database(xlsx_file_path, logger):
     Returns:
         bool: True if upload successful, False otherwise
     """
-    logger.info("")
-    logger.info("=" * 60)
-    logger.info("Starting database upload...")
-    logger.info("=" * 60)
-    logger.info("")
-
     try:
-        # Get the directory containing the file (e.g., /app/ote_files/2025/11)
         file_path = Path(xlsx_file_path)
         file_dir = file_path.parent
 
-        # Call the upload script for the directory
         result = subprocess.run(
             ['/usr/local/bin/python3', '/app/scripts/upload_ote_trade_balance.py', str(file_dir)],
-            timeout=300  # 5 minute timeout
+            timeout=300
         )
 
-        logger.info("")
         if result.returncode == 0:
-            logger.info("=" * 60)
-            logger.info("✓ Database upload completed successfully")
-            logger.info("=" * 60)
             return True
         else:
-            logger.error("=" * 60)
-            logger.error("✗ Database upload failed (see details above)")
-            logger.error("=" * 60)
+            logger.error("Upload failed")
             return False
 
     except subprocess.TimeoutExpired:
@@ -585,15 +570,10 @@ def main():
     # Setup logging
     logger = setup_logging(debug='--debug' in sys.argv)
 
-    logger.info("=" * 60)
-    logger.info("OTE Portal Trade Balance Downloader")
-    logger.info(f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    logger.info("=" * 60)
+    logger.info("OTE TradeBalance: started")
 
-    # Clean up old screenshots
     cleanup_old_screenshots(logger)
 
-    # Check configuration
     if not OTE_LOCAL_STORAGE_PASSWORD:
         logger.error("OTE_LOCAL_STORAGE_PASSWORD not configured")
         sys.exit(1)
@@ -602,11 +582,8 @@ def main():
     exit_code = 0
 
     try:
-        # Initialize browser
-        logger.info("Starting browser...")
         driver = init_browser()
 
-        # Handle --setup flag
         if '--setup' in sys.argv:
             logger.info("Certificate setup mode")
             if not OTE_CERT_PATH or not OTE_CERT_PASSWORD:
@@ -614,58 +591,38 @@ def main():
                 sys.exit(1)
 
             if setup_certificate(driver, logger):
-                logger.info("✓ Certificate setup completed successfully")
+                logger.info("Certificate setup completed")
             else:
                 logger.error("Certificate setup failed")
                 exit_code = 1
         else:
-            # Normal download mode
-            logger.info("Navigating to portal...")
             driver.get("https://portal.ote-cr.cz/common/app/login")
             time.sleep(0.5)
-
-            # Switch to English
             switch_to_english(driver, logger)
 
-            # Login
-            logger.info("Logging in...")
             if not login_to_portal(driver, logger):
-                logger.error("Login failed")
-                exit_code = 1
+                raise RuntimeError("OTE TradeBalance: login failed")
             else:
-                # Download
-                logger.info("Starting download...")
                 downloaded_file = download_trade_balance(driver, logger)
 
                 if downloaded_file:
-                    logger.info("✓ SUCCESS - Trade Balance downloaded")
-
-                    # Upload to database
                     if upload_to_database(downloaded_file, logger):
-                        logger.info("=" * 60)
-                        logger.info("✓ COMPLETE - Download and upload successful")
-                        logger.info("=" * 60)
+                        logger.info(f"OTE TradeBalance: downloaded and uploaded {downloaded_file}")
                     else:
-                        logger.error("=" * 60)
-                        logger.error("⚠ PARTIAL SUCCESS - Download OK, Upload FAILED")
-                        logger.error("=" * 60)
-                        exit_code = 1
+                        raise RuntimeError("OTE TradeBalance: download OK, upload failed")
                 else:
-                    logger.error("✗ FAILED - Download unsuccessful")
-                    exit_code = 1
+                    raise RuntimeError("OTE TradeBalance: download failed")
 
     except KeyboardInterrupt:
-        logger.info("\nInterrupted")
         exit_code = 130
     except Exception as e:
-        logger.error(f"Unexpected error: {e}", exc_info=True)
+        logger.error(f"OTE TradeBalance: {e}", exc_info=True)
         exit_code = 1
     finally:
         if driver:
             try:
                 logout(driver)
                 driver.quit()
-                logger.info("Browser closed")
             except:
                 pass
 
