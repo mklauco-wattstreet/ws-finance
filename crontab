@@ -54,8 +54,14 @@
 # ENTSO-E - Unified cross-border flows pipeline every 15 minutes
 */15 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.entsoe_unified_flow_runner >> /var/log/entsoe_flow.log 2>&1
 
-# ENTSO-E - Unified generation forecast pipeline every 15 minutes
+# ENTSO-E - DA generation forecast (A01) every 15 min (checks DB, fetches TOMORROW ~15:00 CET)
 */15 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.entsoe_unified_forecast_runner >> /var/log/entsoe_forecast.log 2>&1
+
+# ENTSO-E - Intraday generation forecast (A40) every 15 min (checks DB, fetches TODAY ~09:00 CET)
+*/15 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.entsoe_unified_forecast_intraday_runner >> /var/log/entsoe_forecast_intraday.log 2>&1
+
+# ENTSO-E - Current generation forecast (A18) every 15 min (continuous)
+*/15 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.entsoe_unified_forecast_current_runner >> /var/log/entsoe_forecast_current.log 2>&1
 
 # ENTSO-E - Unified balancing energy pipeline every 15 minutes
 */15 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.entsoe_unified_balancing_runner >> /var/log/entsoe_balancing.log 2>&1

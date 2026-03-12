@@ -360,6 +360,52 @@ class EntsoeGenerationForecast(Base):
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
 
 
+class EntsoeGenerationForecastIntraday(Base):
+    """ENTSO-E intraday generation forecasts (A69/A40) - renewable sources.
+
+    Partitioned by country_code. Same schema as EntsoeGenerationForecast.
+    """
+    __tablename__ = 'entsoe_generation_forecast_intraday'
+    __table_args__ = (
+        PrimaryKeyConstraint('trade_date', 'period', 'area_id', 'country_code'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(Integer, autoincrement=True)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    period: Mapped[int] = mapped_column(Integer, nullable=False)
+    area_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    country_code: Mapped[str] = mapped_column(String(5), nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    forecast_solar_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    forecast_wind_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    forecast_wind_offshore_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+
+
+class EntsoeGenerationForecastCurrent(Base):
+    """ENTSO-E current generation forecasts (A69/A18) - renewable sources.
+
+    Partitioned by country_code. Same schema as EntsoeGenerationForecast.
+    """
+    __tablename__ = 'entsoe_generation_forecast_current'
+    __table_args__ = (
+        PrimaryKeyConstraint('trade_date', 'period', 'area_id', 'country_code'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(Integer, autoincrement=True)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    period: Mapped[int] = mapped_column(Integer, nullable=False)
+    area_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    country_code: Mapped[str] = mapped_column(String(5), nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    forecast_solar_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    forecast_wind_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    forecast_wind_offshore_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+
+
 class EntsoeBalancingEnergy(Base):
     """ENTSO-E activated balancing energy prices (A84) - TSO intervention.
 

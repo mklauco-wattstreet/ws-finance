@@ -1,31 +1,31 @@
 #!/usr/bin/env python3
 """
-ENTSO-E Day-Ahead Generation Forecast Runner (A69 / A01).
+ENTSO-E Intraday Generation Forecast Runner (A69 / A40).
 
-Fetches day-ahead wind/solar generation forecasts for all active areas.
-Normal mode: checks DB for TOMORROW's data, fetches only if missing.
+Fetches intraday wind/solar generation forecasts for all active areas.
+Normal mode: checks DB for TODAY's data, fetches only if missing.
 Backfill mode: fetches all chunks without availability check.
 
 Usage:
-    python3 -m runners.entsoe_unified_forecast_runner [--debug] [--dry-run]
-    python3 -m runners.entsoe_unified_forecast_runner --start 2024-12-01 --end 2024-12-22
+    python3 -m runners.entsoe_unified_forecast_intraday_runner [--debug] [--dry-run]
+    python3 -m runners.entsoe_unified_forecast_intraday_runner --start 2024-12-01 --end 2024-12-22
 """
 
 import sys
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from runners.forecast_runner_base import BaseForecastRunner, PRAGUE_TZ
 
 
-class DayAheadForecastRunner(BaseForecastRunner):
-    """Day-ahead (A01) generation forecast runner."""
+class IntradayForecastRunner(BaseForecastRunner):
+    """Intraday (A40) generation forecast runner."""
 
-    RUNNER_NAME = "ENTSO-E DA Forecast Runner (A01)"
-    TABLE_NAME = "entsoe_generation_forecast"
-    PROCESS_TYPE = "A01"
+    RUNNER_NAME = "ENTSO-E ID Forecast Runner (A40)"
+    TABLE_NAME = "entsoe_generation_forecast_intraday"
+    PROCESS_TYPE = "A40"
 
     def run(self) -> bool:
         self.print_header()
@@ -37,10 +37,10 @@ class DayAheadForecastRunner(BaseForecastRunner):
             if self.is_backfill:
                 total_records = self._run_backfill()
             else:
-                # Target: tomorrow in Prague timezone
+                # Target: today in Prague timezone
                 now_prague = datetime.now(PRAGUE_TZ)
-                target_date = (now_prague + timedelta(days=1)).date()
-                self.logger.debug(f"Target date: {target_date} (tomorrow)")
+                target_date = now_prague.date()
+                self.logger.debug(f"Target date: {target_date} (today)")
                 total_records = self._run_with_availability_check(target_date)
 
             self.logger.info(self.format_summary(total_records))
@@ -57,4 +57,4 @@ class DayAheadForecastRunner(BaseForecastRunner):
 
 
 if __name__ == '__main__':
-    DayAheadForecastRunner.main()
+    IntradayForecastRunner.main()

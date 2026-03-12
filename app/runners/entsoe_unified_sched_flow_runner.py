@@ -178,7 +178,7 @@ class UnifiedSchedFlowRunner(BaseRunner):
             xml_data = self._fetch_all_borders(period_start, period_end, area_code)
 
             if not xml_data:
-                self.logger.warning(f"    No data fetched for {country_code}")
+                self.logger.info(f"{self.RUNNER_NAME}: no data for {country_code}")
                 return 0
 
             # Save XML files

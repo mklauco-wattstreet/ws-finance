@@ -274,7 +274,7 @@ def auto_determine_date_range(base_dir, file_pattern, date_pattern, logger, mini
 
         end_date = target_end_date
         days = (end_date - start_date).days + 1
-        logger.info(f"Range: {start_date.strftime('%Y-%m-%d')}..{end_date.strftime('%Y-%m-%d')} ({days} days)")
+        logger.debug(f"Range: {start_date.strftime('%Y-%m-%d')}..{end_date.strftime('%Y-%m-%d')} ({days} days)")
 
     else:
         # No files exist - download from minimum date to target end date

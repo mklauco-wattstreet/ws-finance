@@ -52,6 +52,7 @@ class EntsoeClient:
     PROCESS_TYPE_REALISED = "A16"  # Actual load
     PROCESS_TYPE_DAY_AHEAD = "A01"  # Day-ahead forecast
     PROCESS_TYPE_INTRADAY_TOTAL = "A18"  # Intraday total
+    PROCESS_TYPE_INTRADAY = "A40"  # Intraday forecast
 
     # Maximum date range allowed by API
     MAX_DATE_RANGE_DAYS = 7
@@ -714,16 +715,18 @@ class EntsoeClient:
         period_start: datetime,
         period_end: datetime,
         in_domain: str,
-        psr_type: Optional[str] = None
+        psr_type: Optional[str] = None,
+        process_type: Optional[str] = None
     ) -> str:
         """
-        Fetch day-ahead generation forecast for a specific domain.
+        Fetch generation forecast for a specific domain.
 
         Args:
             period_start: Start datetime
             period_end: End datetime
             in_domain: The domain EIC code
             psr_type: Optional PSR type (B16, B18, B19)
+            process_type: Optional process type (A01, A18, A40). Defaults to A01.
 
         Returns:
             str: XML content
@@ -734,7 +737,7 @@ class EntsoeClient:
             "securityToken": self.security_token,
             "documentType": self.DOC_TYPE_GENERATION_FORECAST,
             "in_Domain": in_domain,
-            "processType": self.PROCESS_TYPE_DAY_AHEAD,
+            "processType": process_type or self.PROCESS_TYPE_DAY_AHEAD,
             "periodStart": self._format_timestamp(period_start),
             "periodEnd": self._format_timestamp(period_end)
         }

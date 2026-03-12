@@ -73,6 +73,9 @@ DE_TSO_AREAS = [
     (8, DE_TRANSNETBW, "DE-TransnetBW"),
 ]
 
+# Forecast process type labels (for logging)
+FORECAST_PROCESS_TYPES = {"A01": "Day-Ahead", "A18": "Current", "A40": "Intraday"}
+
 # Active areas for day-ahead prices fetching
 # Tuple format: (area_id, eic_code, display_label, country_code)
 # Day-ahead prices are per bidding zone (not per TSO like generation)
