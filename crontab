@@ -76,6 +76,13 @@
 0 14 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.entsoe_unified_day_ahead_prices_runner >> /var/log/entsoe_day_ahead.log 2>&1
 
 # ============================================================================
+# CNB - Czech National Bank Exchange Rate
+# ============================================================================
+
+# CNB - CZK/EUR exchange rate daily at 15:00 CET (CNB publishes ~14:30)
+0 15 * * 1-5 export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.cnb_exchange_rate_runner >> /var/log/cnb_fx.log 2>&1
+
+# ============================================================================
 # Cleanup - Delete old downloaded files daily at 02:00
 # ============================================================================
 
@@ -93,6 +100,6 @@
 # ============================================================================
 
 # Rotate all logs daily at 03:00 - keep last 10000 lines (~4 days of logs)
-0 03 * * * for f in /var/log/ote.log /var/log/ceps.log /var/log/entsoe_*.log; do [ -f "$f" ] && tail -10000 "$f" > "$f.tmp" && mv "$f.tmp" "$f"; done 2>/dev/null
+0 03 * * * for f in /var/log/ote.log /var/log/ceps.log /var/log/entsoe_*.log /var/log/cnb_fx.log; do [ -f "$f" ] && tail -10000 "$f" > "$f.tmp" && mv "$f.tmp" "$f"; done 2>/dev/null
 
 # Empty line required at end of crontab file

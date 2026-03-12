@@ -671,6 +671,24 @@ class CepsDerivedFeatures15Min(Base):
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
 
 
+class CnbExchangeRate(Base):
+    """CNB daily CZK/EUR exchange rate (Czech National Bank fixing).
+
+    One rate per business day. CNB quotes as "CZK per 1 EUR" (e.g., 24.415).
+    No weekend/holiday rows — CNB only publishes on business days.
+    """
+    __tablename__ = 'cnb_exchange_rate'
+    __table_args__ = (
+        PrimaryKeyConstraint('rate_date'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(Integer, autoincrement=True)
+    rate_date: Mapped[date] = mapped_column(Date, nullable=False)
+    czk_eur: Mapped[Decimal] = mapped_column(Numeric(10, 6), nullable=False)
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+
+
 class DaBid(Base):
     """OTE Day-Ahead Market matching curve bid stacks.
 
