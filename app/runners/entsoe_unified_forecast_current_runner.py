@@ -18,6 +18,7 @@ from datetime import datetime, timezone, timedelta
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from runners.forecast_runner_base import BaseForecastRunner, PRAGUE_TZ
+from entsoe.constants import ACTIVE_CURRENT_FORECAST_AREAS
 
 
 class CurrentForecastRunner(BaseForecastRunner):
@@ -26,6 +27,7 @@ class CurrentForecastRunner(BaseForecastRunner):
     RUNNER_NAME = "ENTSO-E Current Forecast Runner (A18)"
     TABLE_NAME = "entsoe_generation_forecast_current"
     PROCESS_TYPE = "A18"
+    ACTIVE_AREAS = ACTIVE_CURRENT_FORECAST_AREAS
 
     def run(self) -> bool:
         self.print_header()

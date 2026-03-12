@@ -76,6 +76,17 @@ DE_TSO_AREAS = [
 # Forecast process type labels (for logging)
 FORECAST_PROCESS_TYPES = {"A01": "Day-Ahead", "A18": "Current", "A40": "Intraday"}
 
+# Active areas for current (A18) generation forecast
+# CZ and SK do not publish A18 forecasts via ENTSO-E
+ACTIVE_CURRENT_FORECAST_AREAS = [
+    (2, DE_TENNET, "DE-TenneT", "DE"),
+    (3, AT_BZN, "AT", "AT"),
+    (4, PL_BZN, "PL", "PL"),
+    (6, DE_50HERTZ, "DE-50Hertz", "DE"),
+    (7, DE_AMPRION, "DE-Amprion", "DE"),
+    (8, DE_TRANSNETBW, "DE-TransnetBW", "DE"),
+]
+
 # Active areas for day-ahead prices fetching
 # Tuple format: (area_id, eic_code, display_label, country_code)
 # Day-ahead prices are per bidding zone (not per TSO like generation)

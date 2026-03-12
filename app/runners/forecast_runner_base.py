@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from runners.base_runner import BaseRunner, PRAGUE_TZ
 from entsoe.client import EntsoeClient
 from entsoe.parsers import GenerationForecastParser
-from entsoe.constants import ACTIVE_GENERATION_AREAS, FORECAST_PROCESS_TYPES
+from entsoe.constants import ACTIVE_GENERATION_AREAS, ACTIVE_CURRENT_FORECAST_AREAS, FORECAST_PROCESS_TYPES
 
 
 class BaseForecastRunner(BaseRunner):
@@ -28,6 +28,7 @@ class BaseForecastRunner(BaseRunner):
     RUNNER_NAME = "BaseForecastRunner"
     TABLE_NAME = ""
     PROCESS_TYPE = ""
+    ACTIVE_AREAS = ACTIVE_GENERATION_AREAS
 
     COLUMNS = [
         "trade_date", "period", "area_id", "country_code", "time_interval",
@@ -132,7 +133,7 @@ class BaseForecastRunner(BaseRunner):
             f"to {period_end.strftime('%Y-%m-%d %H:%M')} UTC"
         )
         total_records = 0
-        for area_id, area_code, display_label, country_code in ACTIVE_GENERATION_AREAS:
+        for area_id, area_code, display_label, country_code in self.ACTIVE_AREAS:
             records = self._process_area(
                 period_start, period_end,
                 area_id, area_code, display_label, country_code, conn
@@ -155,8 +156,8 @@ class BaseForecastRunner(BaseRunner):
 
     def _run_backfill(self) -> bool:
         """Standard chunked backfill through all areas."""
-        self.logger.debug(f"Processing {len(ACTIVE_GENERATION_AREAS)} areas: "
-                          f"{', '.join(label for _, _, label, _ in ACTIVE_GENERATION_AREAS)}")
+        self.logger.debug(f"Processing {len(self.ACTIVE_AREAS)} areas: "
+                          f"{', '.join(label for _, _, label, _ in self.ACTIVE_AREAS)}")
         total_records = 0
         with self.database_connection() as conn:
             for period_start, period_end in self.get_backfill_chunks():
@@ -181,7 +182,7 @@ class BaseForecastRunner(BaseRunner):
 
         total_records = 0
         with self.database_connection() as conn:
-            for area_id, area_code, display_label, country_code in ACTIVE_GENERATION_AREAS:
+            for area_id, area_code, display_label, country_code in self.ACTIVE_AREAS:
                 if self._data_exists_for_date(conn, target_date, area_id, country_code):
                     self.logger.debug(f"  {display_label}: data exists for {target_date}, skipping")
                     continue
