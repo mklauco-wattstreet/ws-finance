@@ -230,9 +230,12 @@ def process_directory(directory_path):
             password=DB_PASSWORD,
             database=DB_NAME,
             port=DB_PORT,
-            connect_timeout=10,
-            options=f"-c search_path={DB_SCHEMA}"
+            connect_timeout=10
         )
+        conn.autocommit = True
+        with conn.cursor() as cur:
+            cur.execute(f"SET search_path TO {DB_SCHEMA}")
+        conn.autocommit = False
     except Exception as e:
         print(f"DB connection failed: {e}")
         return False
