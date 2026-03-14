@@ -486,8 +486,10 @@ def process_directory(directory_path, logger, debug_mode=False):
                 port=DB_PORT,
                 connect_timeout=10
             )
+            conn.autocommit = True
             with conn.cursor() as cur:
                 cur.execute(f"SET search_path TO {DB_SCHEMA}")
+            conn.autocommit = False
             logger.info("✓ Database connection established\n")
         except Exception as e:
             logger.error(f"✗ Database connection failed: {e}")

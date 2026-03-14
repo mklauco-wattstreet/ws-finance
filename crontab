@@ -11,8 +11,8 @@
 # OTE-CR - Czech Market Data
 # ============================================================================
 
-# OTE-CR - Download day-ahead prices daily at 16:00
-0 16 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 download_day_ahead_prices.py >> /var/log/ote.log 2>&1
+# OTE-CR - Download day-ahead prices every 2h from 16:00-22:00 (published ~14:00, retry on failure)
+0 16,18,20,22 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 download_day_ahead_prices.py >> /var/log/ote.log 2>&1
 
 # OTE-CR - Download imbalance prices every 2 hours
 0 */2 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 download_imbalance_prices.py >> /var/log/ote.log 2>&1
@@ -26,8 +26,8 @@
 # OTE-CR - Download OTE trade balance reports every 2 hours
 0 */2 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 ote_trade_balance_downloader.py >> /var/log/ote.log 2>&1
 
-# OTE-CR - Download DAM matching curves daily at 14:30 (auction results publish ~14:00)
-30 14 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 download_dam_curves.py >> /var/log/ote.log 2>&1
+# OTE-CR - Download DAM matching curves every 2h from 14:30-20:30 (published ~14:00, retry on failure)
+30 14,16,18,20 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 download_dam_curves.py >> /var/log/ote.log 2>&1
 
 # ============================================================================
 # CEPS - Czech Grid Imbalance Data (via SOAP API)
@@ -72,15 +72,15 @@
 # ENTSO-E - Unified scheduled cross-border flows pipeline every 15 minutes
 */15 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.entsoe_unified_sched_flow_runner >> /var/log/entsoe_sched_flow.log 2>&1
 
-# ENTSO-E - Unified day-ahead prices pipeline daily at 14:00 CET (published ~13:00)
-0 14 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.entsoe_unified_day_ahead_prices_runner >> /var/log/entsoe_day_ahead.log 2>&1
+# ENTSO-E - Unified day-ahead prices every 2h from 14:00-20:00 (published ~13:00, retry on failure)
+0 14,16,18,20 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.entsoe_unified_day_ahead_prices_runner >> /var/log/entsoe_day_ahead.log 2>&1
 
 # ============================================================================
 # CNB - Czech National Bank Exchange Rate
 # ============================================================================
 
-# CNB - CZK/EUR exchange rate daily at 15:00 CET (CNB publishes ~14:30)
-0 15 * * 1-5 export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.cnb_exchange_rate_runner >> /var/log/cnb_fx.log 2>&1
+# CNB - CZK/EUR exchange rate every 2h from 15:00-21:00 weekdays (published ~14:30, retry on failure)
+0 15,17,19,21 * * 1-5 export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.cnb_exchange_rate_runner >> /var/log/cnb_fx.log 2>&1
 
 # ============================================================================
 # Cleanup - Delete old downloaded files daily at 02:00

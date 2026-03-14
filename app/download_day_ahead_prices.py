@@ -148,7 +148,6 @@ def main():
 
     if auto_mode:
         print_banner("OTE-CR Day-Ahead Price Report Downloader (AUTO)", debug_mode)
-        logger.info("OTE DayAhead AUTO mode")
 
         # Regex pattern to extract date from filename (DD_MM_YYYY)
         # Matches both DM_DD_MM_YYYY_EN.xlsx and DM_15MIN_DD_MM_YYYY_EN.xlsx
@@ -166,13 +165,15 @@ def main():
             # Still run upload to process any existing files
             end_date_upload = datetime.now() - timedelta(days=1)
             start_date_upload = end_date_upload - timedelta(days=30)
-            run_upload_script(
+            _, upload_lines = run_upload_script(
                 upload_script_name='upload_day_ahead_prices.py',
                 base_dir=script_dir,
                 start_date=start_date_upload,
                 end_date=end_date_upload,
                 logger=logger
             )
+            for line in upload_lines:
+                logger.info(line)
             sys.exit(0)
 
     else:
@@ -213,23 +214,25 @@ def main():
                 logger.debug(f"Waiting {wait_time}s...")
                 time.sleep(wait_time)
 
-        # One-line summary
+        # One-line summary combining download + upload
         summary = f"OTE DayAhead: downloaded {successful}/{len(dates)}"
         if failed > 0:
             summary += f" ({failed} failed)"
-        logger.info(summary)
 
-        # Upload downloaded files to database (runs even if some downloads failed)
         if successful > 0:
-            run_upload_script(
+            _, upload_lines = run_upload_script(
                 upload_script_name='upload_day_ahead_prices.py',
                 base_dir=script_dir,
                 start_date=start_date,
                 end_date=end_date,
                 logger=logger
             )
+            upload_summary = next((l for l in upload_lines if 'upload:' in l.lower()), None)
+            if upload_summary:
+                summary += f" | {upload_summary}"
         else:
-            logger.warning("No files downloaded. Skipping upload.")
+            summary += " | skipped upload"
+        logger.info(summary)
 
     except KeyboardInterrupt:
         logger.warning("Interrupted by user")

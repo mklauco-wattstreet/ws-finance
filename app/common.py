@@ -315,6 +315,7 @@ def run_upload_script(upload_script_name, base_dir, start_date, end_date, logger
 
     # Run upload for each year/month directory
     all_success = True
+    upload_lines = []
     for year_month in sorted(year_months):
         dir_path = base_dir / year_month
 
@@ -334,11 +335,11 @@ def run_upload_script(upload_script_name, base_dir, start_date, end_date, logger
                 env=os.environ.copy()  # Pass environment variables to subprocess
             )
 
-            # Log output from upload script (already compact)
+            # Collect upload output lines
             if result.stdout:
                 for line in result.stdout.strip().split('\n'):
                     if line.strip():
-                        logger.info(f"  {line}")
+                        upload_lines.append(line.strip())
 
             if result.returncode != 0:
                 logger.error(f"Upload failed for {year_month}")
@@ -353,4 +354,4 @@ def run_upload_script(upload_script_name, base_dir, start_date, end_date, logger
             logger.error(f"Upload error for {year_month}: {e}")
             all_success = False
 
-    return all_success
+    return all_success, upload_lines
