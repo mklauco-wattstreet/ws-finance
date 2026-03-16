@@ -637,14 +637,35 @@ def upsert_estimated_imbalance_price_data(records: List[Dict], conn, logger) -> 
 
     This dataset uses trade_date and time_interval directly from the parser
     (unique structure compared to other datasets).
+
+    CEPS publishes the last period's price as 0.00 as a temporary placeholder.
+    This disrupts statistics, so we replace the trailing 0.00 per day with NULL.
+    The real value will overwrite NULL on the next fetch cycle.
+    Two consecutive zeros at the end: only the very last is temporary.
     """
     if not records:
         return 0
 
     values = []
     for r in records:
-        # This dataset already has trade_date and time_interval from the parser
         values.append((r['trade_date'], r['time_interval'], r['estimated_price_czk_mwh']))
+
+    # Null-out the last period's 0.00 per trade_date (temporary placeholder from CEPS)
+    # Group by trade_date, find the last record, replace 0.00 with None
+    from collections import OrderedDict
+    by_date = OrderedDict()
+    for i, (td, ti, price) in enumerate(values):
+        by_date.setdefault(td, []).append(i)
+
+    nullified = 0
+    for td, indices in by_date.items():
+        last_idx = indices[-1]
+        if values[last_idx][2] == 0.0:
+            values[last_idx] = (values[last_idx][0], values[last_idx][1], None)
+            nullified += 1
+
+    if nullified:
+        logger.debug(f" Nullified trailing 0.00 placeholder for {nullified} day(s)")
 
     query = """
         INSERT INTO finance.ceps_estimated_imbalance_price_15min
