@@ -22,6 +22,7 @@ Supervised by a Senior Architect. Do not implement complex logic or structural c
 * [cite_start]**Timezone:** All operations must respect `TZ=Europe/Prague`.
 * always provide single line commands to avoid indentation issues
 * if we need to completely rebuild in production environment: `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build entsoe-ote-data-uploader`
+* **`.env` changes require container recreation:** `docker compose restart` does NOT reload `.env`. Use `docker compose up -d --force-recreate entsoe-ote-data-uploader` to pick up new env vars (e.g., ENTSOE_SECURITY_TOKEN).
 
 ---
 
