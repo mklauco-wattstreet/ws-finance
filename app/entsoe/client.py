@@ -95,6 +95,8 @@ class EntsoeClient:
         self.session = requests.Session()
         retry_strategy = Retry(
             total=max_retries,
+            read=max_retries,
+            connect=max_retries,
             backoff_factor=backoff_factor,
             status_forcelist=[429, 500, 502, 503, 504],
             allowed_methods=["GET"],
