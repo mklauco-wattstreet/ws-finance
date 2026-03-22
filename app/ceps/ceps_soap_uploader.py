@@ -682,7 +682,62 @@ def upsert_estimated_imbalance_price_data(records: List[Dict], conn, logger) -> 
         conn.commit()
 
     logger.debug(f" Upserted {len(records):,} records to ceps_estimated_imbalance_price_15min")
+
+    # Compute 60-min averages for affected hours
+    affected_hours = set()
+    for td, ti, _ in values:
+        hour = ti[:2]  # extract "HH" from "HH:MM-HH:MM"
+        affected_hours.add((td, hour))
+
+    if affected_hours:
+        updated = _update_estimated_price_60min(affected_hours, conn, logger)
+        if updated:
+            logger.debug(f" Updated {updated} intervals with 60min avg price")
+
     return len(records)
+
+
+def _update_estimated_price_60min(affected_hours: set, conn, logger) -> int:
+    """
+    Compute estimated_price_czk_mwh_60min as average of available 15-min
+    prices within each affected hour and update the rows.
+
+    Each hour has 4 intervals (xx:00, xx:15, xx:30, xx:45).
+    If the hour is incomplete, averages from existing non-NULL data points.
+    """
+    updated = 0
+    with conn.cursor() as cur:
+        for trade_date, hour in affected_hours:
+            hour_start = f"{hour}:00"
+            hour_patterns = [f"{hour}:{m:02d}-" for m in (0, 15, 30, 45)]
+
+            cur.execute("""
+                SELECT AVG(estimated_price_czk_mwh)
+                FROM finance.ceps_estimated_imbalance_price_15min
+                WHERE trade_date = %s
+                  AND (time_interval LIKE %s OR time_interval LIKE %s
+                       OR time_interval LIKE %s OR time_interval LIKE %s)
+                  AND estimated_price_czk_mwh IS NOT NULL
+            """, (trade_date, hour_patterns[0] + '%', hour_patterns[1] + '%',
+                  hour_patterns[2] + '%', hour_patterns[3] + '%'))
+
+            row = cur.fetchone()
+            avg_price = row[0] if row else None
+
+            if avg_price is not None:
+                cur.execute("""
+                    UPDATE finance.ceps_estimated_imbalance_price_15min
+                    SET estimated_price_czk_mwh_60min = %s
+                    WHERE trade_date = %s
+                      AND (time_interval LIKE %s OR time_interval LIKE %s
+                           OR time_interval LIKE %s OR time_interval LIKE %s)
+                """, (avg_price, trade_date,
+                      hour_patterns[0] + '%', hour_patterns[1] + '%',
+                      hour_patterns[2] + '%', hour_patterns[3] + '%'))
+                updated += cur.rowcount
+
+        conn.commit()
+    return updated
 
 
 def upsert_data(dataset: str, records: List[Dict], conn, logger) -> int:
