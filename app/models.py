@@ -140,6 +140,32 @@ class OtePricesDayAhead(Base):
     is_15min: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default='true')
 
 
+class OtePricesDayAhead60min(Base):
+    """OTE day-ahead electricity market prices (60-minute contracts)."""
+    __tablename__ = 'ote_prices_day_ahead_60min'
+    __table_args__ = (
+        PrimaryKeyConstraint('id', name='ote_prices_day_ahead_60min_pkey'),
+        UniqueConstraint('trade_date', 'period_60', name='ote_prices_day_ahead_60min_trade_date_period_60_key'),
+        UniqueConstraint('trade_date', 'time_interval', name='ote_prices_day_ahead_60min_trade_date_time_interval_key'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(Integer, autoincrement=True)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    period_60: Mapped[int] = mapped_column(Integer, nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    price_60min_eur_mwh: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    volume_mwh: Mapped[Decimal] = mapped_column(Numeric(12, 3), nullable=False)
+    purchase_15min_products_mwh: Mapped[Decimal] = mapped_column(Numeric(12, 3), nullable=False)
+    purchase_60min_products_mwh: Mapped[Decimal] = mapped_column(Numeric(12, 3), nullable=False)
+    sale_15min_products_mwh: Mapped[Decimal] = mapped_column(Numeric(12, 3), nullable=False)
+    sale_60min_products_mwh: Mapped[Decimal] = mapped_column(Numeric(12, 3), nullable=False)
+    saldo_dm_mwh: Mapped[Decimal] = mapped_column(Numeric(12, 3), nullable=False)
+    export_mwh: Mapped[Decimal] = mapped_column(Numeric(12, 3), nullable=False)
+    import_mwh: Mapped[Decimal] = mapped_column(Numeric(12, 3), nullable=False)
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+
+
 class OtePricesImbalance(Base):
     """OTE imbalance prices and costs (15-minute intervals)."""
     __tablename__ = 'ote_prices_imbalance'

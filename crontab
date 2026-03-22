@@ -14,6 +14,9 @@
 # OTE-CR - Download day-ahead prices every 2h from 16:00-22:00 (published ~14:00, retry on failure)
 0 16,18,20,22 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 download_day_ahead_prices.py >> /var/log/ote.log 2>&1
 
+# OTE-CR - Download day-ahead 60min prices every 2h from 16:00-22:00 (published ~14:00, retry on failure)
+0 16,18,20,22 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 download_day_ahead_60min_prices.py >> /var/log/ote.log 2>&1
+
 # OTE-CR - Download imbalance prices every 2 hours
 0 */2 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 download_imbalance_prices.py >> /var/log/ote.log 2>&1
 
