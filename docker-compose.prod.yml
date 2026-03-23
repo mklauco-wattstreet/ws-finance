@@ -3,6 +3,7 @@
 
 services:
   entsoe-ote-data-uploader:
+    shm_size: '512m'
     # Remove extra_hosts in production (override to empty)
     extra_hosts: []
     environment:
