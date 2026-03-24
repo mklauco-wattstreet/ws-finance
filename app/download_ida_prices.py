@@ -24,7 +24,6 @@ Notes:
 import sentry_init  # noqa: F401 - must be first to capture errors
 sentry_init.set_module("ote")
 import sys
-import random
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -225,9 +224,7 @@ def main():
                 failed += 1
 
             if i < len(dates):
-                wait_time = random.randint(1, 4)
-                logger.debug(f"Waiting {wait_time}s...")
-                time.sleep(wait_time)
+                time.sleep(0.1)
 
         summary = f"OTE IDA{ida_idx}: downloaded {successful}/{len(dates)}"
         if failed > 0:
