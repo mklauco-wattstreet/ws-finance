@@ -6,6 +6,7 @@ Common utilities shared across download scripts.
 import sys
 import os
 import logging
+import http.client
 import urllib.request
 import urllib.error
 import re
@@ -135,8 +136,33 @@ def download_file(url, target_path, logger, timeout=30):
         logger.warning(f"Timeout: {target_path.name}")
         return False
 
+    except http.client.RemoteDisconnected:
+        logger.warning(f"Remote disconnected: {target_path.name}")
+        return False
+
     except Exception as e:
         logger.error(f"Error downloading {target_path.name}: {str(e)}")
+        return False
+
+
+def check_site_available(url, logger, timeout=10):
+    """
+    Check if a site is reachable before attempting downloads.
+
+    Args:
+        url: URL to check
+        logger: Logger instance
+        timeout: Request timeout in seconds
+
+    Returns:
+        bool: True if site responds, False otherwise
+    """
+    try:
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=timeout) as response:
+            return response.status == 200
+    except Exception as e:
+        logger.warning(f"Site unavailable ({url}): {e}")
         return False
 
 

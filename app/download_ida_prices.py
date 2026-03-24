@@ -28,6 +28,8 @@ import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
+import psycopg2
+from config import DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT, DB_SCHEMA
 from common import (
     setup_logging,
     parse_date,
@@ -35,9 +37,38 @@ from common import (
     download_file,
     validate_date_range,
     print_banner,
+    check_site_available,
     auto_determine_date_range,
     run_upload_script
 )
+
+
+OTE_BASE_URL = "https://www.ote-cr.cz/pubweb/attachments/431"
+
+
+def get_last_ida_date_from_db(ida_idx, logger):
+    """
+    Get the last trade_date for a given IDA index from the database.
+
+    Returns:
+        datetime object or None if no data or DB error
+    """
+    try:
+        conn = psycopg2.connect(host=DB_HOST, user=DB_USER, password=DB_PASSWORD, database=DB_NAME, port=DB_PORT, connect_timeout=10)
+        with conn.cursor() as cur:
+            cur.execute(f"SET search_path TO {DB_SCHEMA}")
+            cur.execute("SELECT MAX(trade_date) FROM ote_prices_ida WHERE ida_idx = %s", (ida_idx,))
+            result = cur.fetchone()
+        conn.close()
+        if result and result[0]:
+            last_date = datetime.combine(result[0], datetime.min.time())
+            logger.debug(f"DB last IDA{ida_idx} date: {last_date.strftime('%Y-%m-%d')}")
+            return last_date
+        logger.debug(f"No IDA{ida_idx} data in DB")
+        return None
+    except Exception as e:
+        logger.warning(f"DB query failed, falling back to filesystem: {e}")
+        return None
 
 
 def build_download_url(date, ida_idx):
@@ -50,11 +81,10 @@ def build_download_url(date, ida_idx):
     month = date.strftime('%m')
     day = date.strftime('%d')
 
-    base_url = "https://www.ote-cr.cz/pubweb/attachments/431"
     url_path = f"{year}/month{month}/day{day}"
     filename = f"IDA{ida_idx}_{day}_{month}_{year}_EN.xlsx"
 
-    return f"{base_url}/{url_path}/{filename}"
+    return f"{OTE_BASE_URL}/{url_path}/{filename}"
 
 
 def download_report(date, base_dir, ida_idx, logger):
@@ -184,18 +214,31 @@ def main():
     if auto_mode:
         print_banner(f"OTE-CR IDA{ida_idx} Downloader (AUTO)", debug_mode)
 
-        date_pattern = rf'IDA{ida_idx}_(\d{{2}})_(\d{{2}})_(\d{{4}})_EN\.xlsx'
-        file_pattern = f"IDA{ida_idx}_*.xlsx"
+        minimum_date = datetime(2026, 3, 1)
+        target_end_date = datetime.now()
 
-        start_date, end_date = auto_determine_date_range(
-            base_dir=ida_base_dir,
-            file_pattern=file_pattern,
-            date_pattern=date_pattern,
-            logger=logger,
-            minimum_date=datetime(2026, 3, 1),
-            end_date_offset=0,
-            redownload_latest=False
-        )
+        # Try DB-based date range first
+        last_date = get_last_ida_date_from_db(ida_idx, logger)
+        if last_date is not None:
+            start_date = last_date + timedelta(days=1)
+            if start_date > target_end_date:
+                logger.info(f"Up to date (last: {last_date.strftime('%Y-%m-%d')})")
+                sys.exit(0)
+            end_date = target_end_date
+        else:
+            # No DB data — empty table or DB error (already logged)
+            # Fall back to filesystem
+            date_pattern = rf'IDA{ida_idx}_(\d{{2}})_(\d{{2}})_(\d{{4}})_EN\.xlsx'
+            file_pattern = f"IDA{ida_idx}_*.xlsx"
+            start_date, end_date = auto_determine_date_range(
+                base_dir=ida_base_dir,
+                file_pattern=file_pattern,
+                date_pattern=date_pattern,
+                logger=logger,
+                minimum_date=minimum_date,
+                end_date_offset=0,
+                redownload_latest=False
+            )
 
         if start_date is None or end_date is None:
             sys.exit(0)
@@ -208,6 +251,11 @@ def main():
         validate_date_range(start_date, end_date)
 
         logger.info(f"OTE IDA{ida_idx} MANUAL {start_date.strftime('%Y-%m-%d')}..{end_date.strftime('%Y-%m-%d')}")
+
+    # Check site availability before attempting downloads
+    if not check_site_available(OTE_BASE_URL + "/", logger):
+        logger.warning(f"OTE IDA{ida_idx}: site unavailable, skipping download")
+        sys.exit(0)
 
     dates = list(date_range(start_date, end_date))
 
