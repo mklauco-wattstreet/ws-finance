@@ -332,7 +332,7 @@ def login_to_portal(driver, logger):
             try:
                 login_btn = driver.find_element(By.XPATH, "//button[contains(., 'Přihlásit')]")
             except:
-                logger.error("Login button not found")
+                logger.warning("Login button not found")
                 return False
 
         login_btn.click()
@@ -598,6 +598,12 @@ def main():
         else:
             driver.get("https://portal.ote-cr.cz/common/app/login")
             time.sleep(0.5)
+
+            # Check if portal is in maintenance mode
+            if "portal is not available" in driver.page_source or "je nedostupný" in driver.page_source:
+                logger.warning("OTE portal is in maintenance mode, skipping")
+                sys.exit(0)
+
             switch_to_english(driver, logger)
 
             if not login_to_portal(driver, logger):
