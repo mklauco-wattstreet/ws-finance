@@ -8,7 +8,7 @@ from decimal import Decimal
 from typing import Optional
 
 from sqlalchemy import (
-    Boolean, Date, DateTime, Integer, Numeric, SmallInteger, String,
+    Boolean, CheckConstraint, Date, DateTime, Integer, Numeric, SmallInteger, String,
     UniqueConstraint, PrimaryKeyConstraint
 )
 from sqlalchemy.dialects.postgresql import TIMESTAMP
@@ -786,4 +786,27 @@ class DaCurveDepth(Base):
     offset_mw: Mapped[int] = mapped_column(Integer, nullable=False)
     price_at_offset: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2))
     volume_available: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+
+
+class OtePricesIda(Base):
+    """OTE Intraday Auction (IDA1/IDA2/IDA3) prices (15-minute intervals)."""
+    __tablename__ = 'ote_prices_ida'
+    __table_args__ = (
+        PrimaryKeyConstraint('id', name='ote_prices_ida_pkey'),
+        UniqueConstraint('trade_date', 'period', 'ida_idx', name='ote_prices_ida_trade_date_period_ida_idx_key'),
+        CheckConstraint('ida_idx IN (1, 2, 3)', name='ote_prices_ida_ida_idx_check'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(Integer, autoincrement=True)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    period: Mapped[int] = mapped_column(Integer, nullable=False)
+    ida_idx: Mapped[int] = mapped_column(Integer, nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    price_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2))
+    volume_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    saldo_dm_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    export_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    import_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')

@@ -32,6 +32,15 @@
 # OTE-CR - Download DAM matching curves every 2h from 14:30-20:30 (published ~14:00, retry on failure)
 30 14,16,18,20 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 download_dam_curves.py >> /var/log/ote.log 2>&1
 
+# OTE-CR - Download IDA1 intraday auction prices (placeholder schedule)
+0 11,13,15 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 download_ida_prices.py --ida 1 >> /var/log/ote.log 2>&1
+
+# OTE-CR - Download IDA2 intraday auction prices (placeholder schedule)
+0 15,17,19 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 download_ida_prices.py --ida 2 >> /var/log/ote.log 2>&1
+
+# OTE-CR - Download IDA3 intraday auction prices (placeholder schedule)
+0 19,21,23 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 download_ida_prices.py --ida 3 >> /var/log/ote.log 2>&1
+
 # ============================================================================
 # CEPS - Czech Grid Imbalance Data (via SOAP API)
 # ============================================================================

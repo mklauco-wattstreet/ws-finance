@@ -28,7 +28,8 @@ Supervised by a Senior Architect. Do not implement complex logic or structural c
 ---
 
 ## ⚠️ DATABASE & MIGRATIONS
-* **Alembic Only:** All schema changes must be performed via Alembic migrations. 
+* **Alembic Only:** All schema changes must be performed via Alembic migrations.
+* **Running Migrations:** `docker compose exec entsoe-ote-data-uploader python3 -m alembic -c /app/alembic.ini upgrade head` — the ini is mounted at `/app/alembic.ini` (not `/app/scripts/`).
 * [cite_start]**Legacy Warning:** Do not use or copy the `create_tables_if_not_exist` logic found in `app/entsoe/entsoe_pipeline.py` for any new modules.
 * [cite_start]**Persistence:** Use the mounted volumes (`./ote_files`, `./downloads`) for persistent file storage.
 * **No Individual Inserts:** Use `execute_values` for all batch operations.
