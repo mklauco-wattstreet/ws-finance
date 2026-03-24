@@ -107,6 +107,9 @@
 # OTE files - keep 7 days
 10 02 * * * find /app/ote_files -type f -mtime +7 -delete 2>/dev/null
 
+# OTE IDA Excel files - keep 7 days
+15 02 * * * find /app/scripts/IDA1 /app/scripts/IDA2 /app/scripts/IDA3 -type f -name "*.xlsx" -mtime +7 -delete 2>/dev/null
+
 # ============================================================================
 # Log rotation - Keep only last 96 hours (4 days) of logs
 # ============================================================================

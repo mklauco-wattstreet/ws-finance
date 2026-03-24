@@ -45,6 +45,9 @@ ote_files/
 downloads/
 app/entsoe/data/
 app/pblctradeconf/
+app/IDA1/
+app/IDA2/
+app/IDA3/
 
 # CEPS
 app/ceps/_2025/
