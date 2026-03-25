@@ -106,6 +106,10 @@ class EntsoeClient:
         self.session.mount("https://", adapter)
         self.session.mount("http://", adapter)
 
+    def _sanitize_error(self, error: Exception) -> str:
+        """Remove security token from error messages."""
+        return str(error).replace(self.security_token, "***")
+
     def _format_timestamp(self, dt: datetime) -> str:
         """
         Format datetime to ENTSO-E API format (yyyyMMddHHmm).
@@ -285,7 +289,7 @@ class EntsoeClient:
 
         except requests.RequestException as e:
             raise requests.RequestException(
-                f"Failed to fetch data from ENTSO-E API after retries: {e}"
+                f"Failed to fetch data from ENTSO-E API after retries: {self._sanitize_error(e)}"
             )
 
     def _is_zip_content(self, content: bytes) -> bool:
@@ -483,7 +487,7 @@ class EntsoeClient:
 
         except requests.RequestException as e:
             raise requests.RequestException(
-                f"Failed to fetch generation data for domain {in_domain}: {e}"
+                f"Failed to fetch generation data for domain {in_domain}: {self._sanitize_error(e)}"
             )
 
     def fetch_cross_border_flows(
@@ -663,7 +667,7 @@ class EntsoeClient:
 
         except requests.RequestException as e:
             raise requests.RequestException(
-                f"Failed to fetch actual load for domain {out_bidding_zone}: {e}"
+                f"Failed to fetch actual load for domain {out_bidding_zone}: {self._sanitize_error(e)}"
             )
 
     def fetch_load_forecast_for_domain(
@@ -709,7 +713,7 @@ class EntsoeClient:
 
         except requests.RequestException as e:
             raise requests.RequestException(
-                f"Failed to fetch load forecast for domain {out_bidding_zone}: {e}"
+                f"Failed to fetch load forecast for domain {out_bidding_zone}: {self._sanitize_error(e)}"
             )
 
     def fetch_generation_forecast_for_domain(
@@ -762,7 +766,7 @@ class EntsoeClient:
 
         except requests.RequestException as e:
             raise requests.RequestException(
-                f"Failed to fetch generation forecast for domain {in_domain}: {e}"
+                f"Failed to fetch generation forecast for domain {in_domain}: {self._sanitize_error(e)}"
             )
 
     def fetch_activated_balancing_energy_for_domain(
@@ -807,7 +811,7 @@ class EntsoeClient:
 
         except requests.RequestException as e:
             raise requests.RequestException(
-                f"Failed to fetch balancing energy for domain {control_area}: {e}"
+                f"Failed to fetch balancing energy for domain {control_area}: {self._sanitize_error(e)}"
             )
 
     def fetch_balancing_bids_for_domain(
@@ -855,7 +859,7 @@ class EntsoeClient:
 
         except requests.RequestException as e:
             raise requests.RequestException(
-                f"Failed to fetch balancing bids for domain {control_area}: {e}"
+                f"Failed to fetch balancing bids for domain {control_area}: {self._sanitize_error(e)}"
             )
 
     def fetch_activated_balancing_volumes_for_domain(
@@ -903,7 +907,7 @@ class EntsoeClient:
 
         except requests.RequestException as e:
             raise requests.RequestException(
-                f"Failed to fetch activated balancing volumes for domain {control_area}: {e}"
+                f"Failed to fetch activated balancing volumes for domain {control_area}: {self._sanitize_error(e)}"
             )
 
     def fetch_cbmp_for_domain(
@@ -949,7 +953,7 @@ class EntsoeClient:
 
         except requests.RequestException as e:
             raise requests.RequestException(
-                f"Failed to fetch CBMP for domain {control_area}: {e}"
+                f"Failed to fetch CBMP for domain {control_area}: {self._sanitize_error(e)}"
             )
 
     def fetch_scheduled_generation_for_domain(
@@ -995,7 +999,7 @@ class EntsoeClient:
 
         except requests.RequestException as e:
             raise requests.RequestException(
-                f"Failed to fetch scheduled generation for domain {in_domain}: {e}"
+                f"Failed to fetch scheduled generation for domain {in_domain}: {self._sanitize_error(e)}"
             )
 
     def fetch_imbalance_prices_for_domain(
@@ -1040,7 +1044,7 @@ class EntsoeClient:
 
         except requests.RequestException as e:
             raise requests.RequestException(
-                f"Failed to fetch imbalance prices for domain {control_area}: {e}"
+                f"Failed to fetch imbalance prices for domain {control_area}: {self._sanitize_error(e)}"
             )
 
     def fetch_imbalance_volumes_for_domain(
@@ -1085,7 +1089,7 @@ class EntsoeClient:
 
         except requests.RequestException as e:
             raise requests.RequestException(
-                f"Failed to fetch imbalance volumes for domain {control_area}: {e}"
+                f"Failed to fetch imbalance volumes for domain {control_area}: {self._sanitize_error(e)}"
             )
 
     def fetch_day_ahead_prices_for_domain(
@@ -1131,7 +1135,7 @@ class EntsoeClient:
 
         except requests.RequestException as e:
             raise requests.RequestException(
-                f"Failed to fetch day-ahead prices for domain {in_domain}: {e}"
+                f"Failed to fetch day-ahead prices for domain {in_domain}: {self._sanitize_error(e)}"
             )
 
     @staticmethod

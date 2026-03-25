@@ -82,7 +82,7 @@ class BaseRunner(ABC):
     def is_data_unavailable_error(self, error: Exception) -> bool:
         """Check if an exception indicates data is temporarily unavailable (not a real error)."""
         error_str = str(error)
-        unavailable_codes = ['503', '404', '409', 'No matching data']
+        unavailable_codes = ['503', '404', '409', 'No matching data', 'Max retries exceeded', 'Read timed out', 'timed out']
         return any(code in error_str for code in unavailable_codes)
 
     def track_country(self, country_code: str, count: int):
