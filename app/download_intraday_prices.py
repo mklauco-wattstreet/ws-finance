@@ -23,7 +23,9 @@ Notes:
 import sentry_init  # noqa: F401 - must be first to capture errors
 sentry_init.set_module("ote")
 import sys
+import os
 import random
+import subprocess
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -36,7 +38,6 @@ from common import (
     validate_date_range,
     print_banner,
     auto_determine_date_range,
-    run_upload_script
 )
 
 
@@ -73,7 +74,7 @@ def download_report(date, base_dir, logger):
         logger: Logger instance
 
     Returns:
-        bool: True if successful, False otherwise
+        Path to downloaded file on success, None on failure
     """
     # Create year/month directory structure
     year = date.strftime('%Y')
@@ -86,7 +87,9 @@ def download_report(date, base_dir, logger):
     filename = f"IM_15MIN_{date.strftime('%d_%m_%Y')}_EN.xlsx"
     target_file = target_dir / filename
 
-    return download_file(url, target_file, logger)
+    if download_file(url, target_file, logger):
+        return target_file
+    return None
 
 
 def main():
@@ -134,18 +137,6 @@ def main():
         )
 
         if start_date is None or end_date is None:
-            # Still run upload to process any existing files
-            end_date_upload = datetime.now() - timedelta(days=1)
-            start_date_upload = end_date_upload - timedelta(days=30)
-            _, upload_lines = run_upload_script(
-                upload_script_name='upload_intraday_prices.py',
-                base_dir=script_dir,
-                start_date=start_date_upload,
-                end_date=end_date_upload,
-                logger=logger
-            )
-            for line in upload_lines:
-                logger.info(line)
             sys.exit(0)
 
     else:
@@ -168,14 +159,16 @@ def main():
 
     successful = 0
     failed = 0
+    downloaded_files = []
 
     try:
         # Download reports for each date
         for i, date in enumerate(dates, 1):
-            success = download_report(date, script_dir, logger)
+            result = download_report(date, script_dir, logger)
 
-            if success:
+            if result:
                 successful += 1
+                downloaded_files.append(result)
             else:
                 failed += 1
 
@@ -190,17 +183,23 @@ def main():
         if failed > 0:
             summary += f" ({failed} failed)"
 
-        if successful > 0:
-            _, upload_lines = run_upload_script(
-                upload_script_name='upload_intraday_prices.py',
-                base_dir=script_dir,
-                start_date=start_date,
-                end_date=end_date,
-                logger=logger
-            )
-            upload_summary = next((l for l in upload_lines if 'upload:' in l.lower()), None)
-            if upload_summary:
-                summary += f" | {upload_summary}"
+        if downloaded_files:
+            # Upload only the files we just downloaded
+            total_uploaded = 0
+            for file_path in downloaded_files:
+                result = subprocess.run(
+                    ['/usr/local/bin/python3', str(script_dir / 'upload_intraday_prices.py'), str(file_path)],
+                    cwd=script_dir,
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                    env=os.environ.copy()
+                )
+                if result.returncode == 0:
+                    total_uploaded += 1
+                else:
+                    logger.warning(f"Upload failed: {file_path.name}")
+            summary += f" | uploaded {total_uploaded}/{len(downloaded_files)}"
         else:
             summary += " | skipped upload"
         logger.info(summary)

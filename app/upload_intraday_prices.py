@@ -196,26 +196,27 @@ def upload_to_database(records, conn, trade_date):
 
 def process_directory(directory_path):
     """
-    Process all Excel files in a directory.
+    Process Excel files in a directory or a single file.
 
     Args:
-        directory_path: Path to directory containing Excel files
+        directory_path: Path to directory containing Excel files, or path to a single .xlsx file
     """
     dir_path = Path(directory_path)
 
     if not dir_path.exists():
-        print(f"Error: Directory '{directory_path}' does not exist")
+        print(f"Error: '{directory_path}' does not exist")
         return False
 
-    if not dir_path.is_dir():
-        print(f"Error: '{directory_path}' is not a directory")
-        return False
-
-    # Find all Excel files
-    excel_files = list(dir_path.glob("IM_15MIN_*.xlsx"))
-
-    if not excel_files:
-        print(f"No intraday market Excel files in '{directory_path}'")
+    # Single file mode
+    if dir_path.is_file() and dir_path.name.startswith("IM_15MIN_") and dir_path.suffix == ".xlsx":
+        excel_files = [dir_path]
+    elif dir_path.is_dir():
+        excel_files = list(dir_path.glob("IM_15MIN_*.xlsx"))
+        if not excel_files:
+            print(f"No intraday market Excel files in '{directory_path}'")
+            return False
+    else:
+        print(f"Error: '{directory_path}' is not a directory or valid IM_15MIN file")
         return False
 
     # Connect to database
