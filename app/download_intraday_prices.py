@@ -192,7 +192,7 @@ def main():
                     cwd=script_dir,
                     capture_output=True,
                     text=True,
-                    timeout=60,
+                    timeout=120,
                     env=os.environ.copy()
                 )
                 if result.returncode == 0:

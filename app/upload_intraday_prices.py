@@ -232,6 +232,7 @@ def process_directory(directory_path):
         conn.autocommit = True
         with conn.cursor() as cur:
             cur.execute(f"SET search_path TO {DB_SCHEMA}")
+            cur.execute("SET statement_timeout TO '30s'")
         conn.autocommit = False
     except Exception as e:
         print(f"DB connection failed: {e}")
