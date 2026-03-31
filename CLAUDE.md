@@ -24,6 +24,8 @@ Supervised by a Senior Architect. Do not implement complex logic or structural c
 * if we need to completely rebuild in production environment: `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build entsoe-ote-data-uploader`
 * to recreate container in production (pick up new files/cron/env without rebuilding image): `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --force-recreate entsoe-ote-data-uploader`
 * **`.env` changes require container recreation:** `docker compose restart` does NOT reload `.env`. Use `docker compose up -d --force-recreate entsoe-ote-data-uploader` to pick up new env vars (e.g., ENTSOE_SECURITY_TOKEN).
+* **Cron changes require `git pull` + recreate on production:** The crontab is a mounted volume. After pushing changes, run `git pull && docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --force-recreate entsoe-ote-data-uploader` on the production server. Do NOT try to reload crontab manually inside the container.
+* **Cron staggering:** Jobs are deliberately staggered to avoid resource contention. OTE intraday at `*/15`, ENTSO-E group 1 at `1,16,31,46`, group 2 at `3,18,33,48`, group 3 at `5,20,35,50`, CEPS at `12,27,42,57`. Do NOT move all jobs back to `*/15`.
 
 ---
 

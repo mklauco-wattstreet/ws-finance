@@ -31,8 +31,7 @@ def upgrade() -> None:
             import_mwh NUMERIC(12, 3),
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
-            UNIQUE (trade_date, period, ida_idx),
-            CHECK (ida_idx IN (1, 2, 3))
+            UNIQUE (trade_date, period, ida_idx)
         );
     """)
 

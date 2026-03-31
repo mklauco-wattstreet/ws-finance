@@ -141,19 +141,6 @@ class BaseForecastRunner(BaseRunner):
             total_records += records
         return total_records
 
-    def _data_exists_for_date(self, conn, target_date, area_id: int, country_code: str) -> bool:
-        """Check if data already exists for a given date/area. Uses PK index + partition pruning."""
-        cur = conn.cursor()
-        try:
-            cur.execute(
-                f"SELECT 1 FROM {self.TABLE_NAME} "
-                f"WHERE trade_date = %s AND area_id = %s AND country_code = %s LIMIT 1",
-                (target_date, area_id, country_code)
-            )
-            return cur.fetchone() is not None
-        finally:
-            cur.close()
-
     def _run_backfill(self) -> bool:
         """Standard chunked backfill through all areas."""
         self.logger.debug(f"Processing {len(self.ACTIVE_AREAS)} areas: "
@@ -174,26 +161,7 @@ class BaseForecastRunner(BaseRunner):
 
     def _run_with_availability_check(self, target_date) -> int:
         """For A01/A40: check DB per area, fetch only if missing."""
-        # Convert target_date to UTC range (midnight-to-midnight Prague → UTC)
-        start_prague = datetime.combine(target_date, datetime.min.time()).replace(tzinfo=PRAGUE_TZ)
-        end_prague = start_prague + timedelta(days=1)
-        period_start = start_prague.astimezone(timezone.utc)
-        period_end = end_prague.astimezone(timezone.utc)
-
-        total_records = 0
-        with self.database_connection() as conn:
-            for area_id, area_code, display_label, country_code in self.ACTIVE_AREAS:
-                if self._data_exists_for_date(conn, target_date, area_id, country_code):
-                    self.logger.debug(f"  {display_label}: data exists for {target_date}, skipping")
-                    continue
-
-                records = self._process_area(
-                    period_start, period_end,
-                    area_id, area_code, display_label, country_code, conn
-                )
-                total_records += records
-
-        return total_records
+        return super()._run_with_availability_check(target_date, self.ACTIVE_AREAS)
 
     def _run_continuous(self, period_start, period_end) -> int:
         """For A18: always fetch, no DB check."""

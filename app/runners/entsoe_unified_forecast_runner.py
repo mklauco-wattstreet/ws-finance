@@ -3,7 +3,7 @@
 ENTSO-E Day-Ahead Generation Forecast Runner (A69 / A01).
 
 Fetches day-ahead wind/solar generation forecasts for all active areas.
-Normal mode: checks DB for TOMORROW's data, fetches only if missing.
+Normal mode: checks today + tomorrow + backfills up to 7 days if service was down.
 Backfill mode: fetches all chunks without availability check.
 
 Usage:
@@ -37,11 +37,12 @@ class DayAheadForecastRunner(BaseForecastRunner):
             if self.is_backfill:
                 total_records = self._run_backfill()
             else:
-                # Target: tomorrow in Prague timezone
-                now_prague = datetime.now(PRAGUE_TZ)
-                target_date = (now_prague + timedelta(days=1)).date()
-                self.logger.debug(f"Target date: {target_date} (tomorrow)")
-                total_records = self._run_with_availability_check(target_date)
+                # Check today + tomorrow, and backfill up to 7 days if service was down
+                total_records = 0
+                today = datetime.now(PRAGUE_TZ).date()
+                for day_offset in range(-7, 2):
+                    target_date = today + timedelta(days=day_offset)
+                    total_records += self._run_with_availability_check(target_date)
 
             self.logger.info(self.format_summary(total_records))
             self.print_footer(success=True)

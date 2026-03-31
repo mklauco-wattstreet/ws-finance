@@ -20,12 +20,13 @@ Usage:
 
 import sys
 from pathlib import Path
+from datetime import datetime, timedelta
 from typing import List, Tuple
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from runners.base_runner import BaseRunner
+from runners.base_runner import BaseRunner, PRAGUE_TZ
 from entsoe.client import EntsoeClient
 from entsoe.parsers import ScheduledGenerationParser
 from entsoe.constants import ACTIVE_GENERATION_AREAS
@@ -195,20 +196,13 @@ class UnifiedScheduledRunner(BaseRunner):
                                 traceback.print_exc()
                             continue
             else:
-                period_start, period_end = self.get_time_range(hours=3)
-                self.logger.debug(
-            f"Period (UTC): {period_start.strftime('%Y-%m-%d %H:%M')} "
-                    f"to {period_end.strftime('%Y-%m-%d %H:%M')}"
-                )
-                self.logger.debug(f"Processing {len(ACTIVE_GENERATION_AREAS)} areas: "
-                               f"{', '.join(label for _, _, label, _ in ACTIVE_GENERATION_AREAS)}")
-                self.logger.debug("")
-
-                if not self.dry_run:
-                    with self.database_connection() as conn:
-                        total_records = self._process_chunk(period_start, period_end, conn)
-                else:
-                    total_records = self._process_chunk(period_start, period_end)
+                # D-1 data: check today + backfill up to 7 days if service was down
+                today = datetime.now(PRAGUE_TZ).date()
+                for day_offset in range(-7, 1):
+                    target_date = today + timedelta(days=day_offset)
+                    total_records += self._run_with_availability_check(
+                        target_date, ACTIVE_GENERATION_AREAS
+                    )
 
             self.logger.debug("")
             self.logger.info(self.format_summary(total_records))

@@ -795,7 +795,6 @@ class OtePricesIda(Base):
     __table_args__ = (
         PrimaryKeyConstraint('id', name='ote_prices_ida_pkey'),
         UniqueConstraint('trade_date', 'period', 'ida_idx', name='ote_prices_ida_trade_date_period_ida_idx_key'),
-        CheckConstraint('ida_idx IN (1, 2, 3)', name='ote_prices_ida_ida_idx_check'),
         {'schema': DB_SCHEMA}
     )
 
