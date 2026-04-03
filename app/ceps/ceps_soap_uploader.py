@@ -46,6 +46,9 @@ def aggregate_imbalance_15min(affected_intervals: Set[tuple], conn, logger) -> i
     if not affected_intervals:
         return 0
 
+    dates = sorted(set(d for d, _ in affected_intervals))
+    min_date, max_date = dates[0], dates[-1]
+
     query = """
         WITH interval_data AS (
             SELECT
@@ -54,6 +57,7 @@ def aggregate_imbalance_15min(affected_intervals: Set[tuple], conn, logger) -> i
                     INTERVAL '15 minutes' * FLOOR(EXTRACT(MINUTE FROM delivery_timestamp) / 15) AS interval_start,
                 load_mw
             FROM finance.ceps_actual_imbalance_1min
+            WHERE delivery_timestamp >= %s AND delivery_timestamp < %s::date + INTERVAL '1 day'
         )
         INSERT INTO finance.ceps_actual_imbalance_15min
             (trade_date, time_interval, load_mean_mw, load_median_mw, last_load_at_interval_mw)
@@ -74,7 +78,7 @@ def aggregate_imbalance_15min(affected_intervals: Set[tuple], conn, logger) -> i
     """
 
     with conn.cursor() as cur:
-        cur.execute(query, (tuple(affected_intervals),))
+        cur.execute(query, (min_date, max_date, tuple(affected_intervals)))
         rows = cur.rowcount
         conn.commit()
 
@@ -86,6 +90,9 @@ def aggregate_re_price_15min(affected_intervals: Set[tuple], conn, logger) -> in
     if not affected_intervals:
         return 0
 
+    dates = sorted(set(d for d, _ in affected_intervals))
+    min_date, max_date = dates[0], dates[-1]
+
     query = """
         WITH interval_data AS (
             SELECT
@@ -96,6 +103,7 @@ def aggregate_re_price_15min(affected_intervals: Set[tuple], conn, logger) -> in
                 price_afrr_plus_eur_mwh, price_afrr_minus_eur_mwh,
                 price_mfrr_plus_eur_mwh, price_mfrr_minus_eur_mwh, price_mfrr_5_eur_mwh
             FROM finance.ceps_actual_re_price_1min
+            WHERE delivery_timestamp >= %s AND delivery_timestamp < %s::date + INTERVAL '1 day'
         )
         INSERT INTO finance.ceps_actual_re_price_15min
             (trade_date, time_interval,
@@ -143,7 +151,7 @@ def aggregate_re_price_15min(affected_intervals: Set[tuple], conn, logger) -> in
     """
 
     with conn.cursor() as cur:
-        cur.execute(query, (tuple(affected_intervals),))
+        cur.execute(query, (min_date, max_date, tuple(affected_intervals)))
         rows = cur.rowcount
         conn.commit()
 
@@ -155,6 +163,9 @@ def aggregate_svr_activation_15min(affected_intervals: Set[tuple], conn, logger)
     if not affected_intervals:
         return 0
 
+    dates = sorted(set(d for d, _ in affected_intervals))
+    min_date, max_date = dates[0], dates[-1]
+
     query = """
         WITH interval_data AS (
             SELECT
@@ -164,6 +175,7 @@ def aggregate_svr_activation_15min(affected_intervals: Set[tuple], conn, logger)
                 delivery_timestamp,
                 afrr_plus_mw, afrr_minus_mw, mfrr_plus_mw, mfrr_minus_mw, mfrr_5_mw
             FROM finance.ceps_svr_activation_1min
+            WHERE delivery_timestamp >= %s AND delivery_timestamp < %s::date + INTERVAL '1 day'
         )
         INSERT INTO finance.ceps_svr_activation_15min
             (trade_date, time_interval,
@@ -207,7 +219,7 @@ def aggregate_svr_activation_15min(affected_intervals: Set[tuple], conn, logger)
     """
 
     with conn.cursor() as cur:
-        cur.execute(query, (tuple(affected_intervals),))
+        cur.execute(query, (min_date, max_date, tuple(affected_intervals)))
         rows = cur.rowcount
         conn.commit()
 
@@ -219,6 +231,9 @@ def aggregate_export_import_svr_15min(affected_intervals: Set[tuple], conn, logg
     if not affected_intervals:
         return 0
 
+    dates = sorted(set(d for d, _ in affected_intervals))
+    min_date, max_date = dates[0], dates[-1]
+
     query = """
         WITH interval_data AS (
             SELECT
@@ -228,6 +243,7 @@ def aggregate_export_import_svr_15min(affected_intervals: Set[tuple], conn, logg
                 delivery_timestamp,
                 imbalance_netting_mw, mari_mfrr_mw, picasso_afrr_mw, sum_exchange_european_platforms_mw
             FROM finance.ceps_export_import_svr_1min
+            WHERE delivery_timestamp >= %s AND delivery_timestamp < %s::date + INTERVAL '1 day'
         )
         INSERT INTO finance.ceps_export_import_svr_15min
             (trade_date, time_interval,
@@ -266,7 +282,7 @@ def aggregate_export_import_svr_15min(affected_intervals: Set[tuple], conn, logg
     """
 
     with conn.cursor() as cur:
-        cur.execute(query, (tuple(affected_intervals),))
+        cur.execute(query, (min_date, max_date, tuple(affected_intervals)))
         rows = cur.rowcount
         conn.commit()
 
@@ -447,6 +463,9 @@ def aggregate_generation_res_15min(affected_intervals: Set[tuple], conn, logger)
     if not affected_intervals:
         return 0
 
+    dates = sorted(set(d for d, _ in affected_intervals))
+    min_date, max_date = dates[0], dates[-1]
+
     query = """
         WITH interval_data AS (
             SELECT
@@ -456,6 +475,7 @@ def aggregate_generation_res_15min(affected_intervals: Set[tuple], conn, logger)
                 delivery_timestamp,
                 wind_mw, solar_mw
             FROM finance.ceps_generation_res_1min
+            WHERE delivery_timestamp >= %s AND delivery_timestamp < %s::date + INTERVAL '1 day'
         )
         INSERT INTO finance.ceps_generation_res_15min
             (trade_date, time_interval,
@@ -482,7 +502,7 @@ def aggregate_generation_res_15min(affected_intervals: Set[tuple], conn, logger)
     """
 
     with conn.cursor() as cur:
-        cur.execute(query, (tuple(affected_intervals),))
+        cur.execute(query, (min_date, max_date, tuple(affected_intervals)))
         rows = cur.rowcount
         conn.commit()
 

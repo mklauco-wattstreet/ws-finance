@@ -44,7 +44,9 @@ def aggregate_1min_features(affected_intervals: Set[tuple], conn, logger) -> int
     if not affected_intervals:
         return 0
 
-    affected_dates = tuple(set(d for d, _ in affected_intervals))
+    dates = sorted(set(d for d, _ in affected_intervals))
+    min_date, max_date = dates[0], dates[-1]
+    affected_dates = tuple(dates)
 
     query = f"""
         WITH daily_sat AS (
@@ -82,6 +84,7 @@ def aggregate_1min_features(affected_intervals: Set[tuple], conn, logger) -> int
                 ON act.delivery_timestamp = re.delivery_timestamp
             LEFT JOIN daily_sat ds
                 ON ds.td = re.delivery_timestamp::date
+            WHERE re.delivery_timestamp >= %s AND re.delivery_timestamp < %s::date + INTERVAL '1 day'
         ),
         agg AS (
             SELECT
@@ -276,7 +279,7 @@ def aggregate_1min_features(affected_intervals: Set[tuple], conn, logger) -> int
     """
 
     with conn.cursor() as cur:
-        cur.execute(query, (affected_dates, tuple(affected_intervals)))
+        cur.execute(query, (affected_dates, min_date, max_date, tuple(affected_intervals)))
         rows = cur.rowcount
         conn.commit()
 
