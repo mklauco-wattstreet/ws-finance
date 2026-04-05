@@ -45,6 +45,15 @@ class CnbExchangeRateRunner(BaseRunner):
             )
             return cur.fetchone() is not None
 
+    def _existing_dates_in_range(self, conn, start, end) -> set:
+        """Return set of dates that already have rates in the given range."""
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT rate_date FROM cnb_exchange_rate WHERE rate_date BETWEEN %s AND %s",
+                (start, end)
+            )
+            return {row[0] for row in cur.fetchall()}
+
     def run(self) -> bool:
         """Execute the CNB exchange rate pipeline."""
         self._init_client()
@@ -61,8 +70,9 @@ class CnbExchangeRateRunner(BaseRunner):
                     return True
 
                 with self.database_connection() as conn:
-                    # Filter out existing dates
-                    new_rates = [r for r in rates if not self._rate_exists(conn, r["rate_date"])]
+                    # Filter out existing dates (single query instead of per-date)
+                    existing_dates = self._existing_dates_in_range(conn, start, end)
+                    new_rates = [r for r in rates if r["rate_date"] not in existing_dates]
                     if not new_rates:
                         self.logger.info(f"{self.RUNNER_NAME}: all {len(rates)} dates already exist")
                         return True

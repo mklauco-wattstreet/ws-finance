@@ -218,7 +218,7 @@ def compute_and_upsert_period_summary(delivery_date, conn, logger):
     """
     cursor = conn.cursor()
 
-    # CTE-based query to compute all summary metrics in one pass
+    # CTE-based query: 2 scans of da_bid (sell + buy) instead of 5
     summary_query = """
         WITH clearing AS (
             SELECT
@@ -232,83 +232,95 @@ def compute_and_upsert_period_summary(delivery_date, conn, logger):
               AND volume_matched > 0
             GROUP BY period
         ),
-        supply_next AS (
-            SELECT DISTINCT ON (b.period)
+        sell_unmatched AS (
+            SELECT
                 b.period,
-                b.price AS supply_next_price,
-                b.volume_bid AS supply_next_volume
+                b.price,
+                b.volume_bid,
+                ROW_NUMBER() OVER (PARTITION BY b.period ORDER BY b.price ASC) AS rn
             FROM da_bid b
             JOIN clearing c ON c.period = b.period
             WHERE b.delivery_date = %s
               AND b.side = 'sell'
               AND b.volume_matched = 0
               AND b.price > c.clearing_price
-            ORDER BY b.period, b.price ASC
         ),
-        demand_next AS (
-            SELECT DISTINCT ON (b.period)
+        supply_result AS (
+            SELECT
+                su.period,
+                MIN(CASE WHEN su.rn = 1 THEN su.price END) AS supply_next_price,
+                MIN(CASE WHEN su.rn = 1 THEN su.volume_bid END) AS supply_next_volume,
+                SUM(CASE WHEN su.rn > 1 THEN NULL
+                    WHEN su.rn = 1 THEN 0 END) AS supply_volume_gap
+            FROM sell_unmatched su
+            GROUP BY su.period
+        ),
+        supply_gap_calc AS (
+            SELECT
+                su.period,
+                COALESCE(SUM(su.volume_bid) FILTER (
+                    WHERE su.price < sr.supply_next_price
+                ), 0) AS supply_volume_gap
+            FROM sell_unmatched su
+            JOIN supply_result sr ON sr.period = su.period
+            WHERE su.rn > 0
+            GROUP BY su.period
+        ),
+        buy_unmatched AS (
+            SELECT
                 b.period,
-                b.price AS demand_next_price,
-                b.volume_bid AS demand_next_volume
+                b.price,
+                b.volume_bid,
+                ROW_NUMBER() OVER (PARTITION BY b.period ORDER BY b.price DESC) AS rn
             FROM da_bid b
             JOIN clearing c ON c.period = b.period
             WHERE b.delivery_date = %s
               AND b.side = 'buy'
               AND b.volume_matched = 0
               AND b.price < c.clearing_price
-            ORDER BY b.period, b.price DESC
         ),
-        supply_gap AS (
+        demand_result AS (
             SELECT
-                b.period,
-                SUM(b.volume_bid) AS supply_volume_gap
-            FROM da_bid b
-            JOIN clearing c ON c.period = b.period
-            JOIN supply_next sn ON sn.period = b.period
-            WHERE b.delivery_date = %s
-              AND b.side = 'sell'
-              AND b.volume_matched = 0
-              AND b.price > c.clearing_price
-              AND b.price < sn.supply_next_price
-            GROUP BY b.period
+                bu.period,
+                MAX(CASE WHEN bu.rn = 1 THEN bu.price END) AS demand_next_price,
+                MIN(CASE WHEN bu.rn = 1 THEN bu.volume_bid END) AS demand_next_volume
+            FROM buy_unmatched bu
+            GROUP BY bu.period
         ),
-        demand_gap AS (
+        demand_gap_calc AS (
             SELECT
-                b.period,
-                SUM(b.volume_bid) AS demand_volume_gap
-            FROM da_bid b
-            JOIN clearing c ON c.period = b.period
-            JOIN demand_next dn ON dn.period = b.period
-            WHERE b.delivery_date = %s
-              AND b.side = 'buy'
-              AND b.volume_matched = 0
-              AND b.price < c.clearing_price
-              AND b.price > dn.demand_next_price
-            GROUP BY b.period
+                bu.period,
+                COALESCE(SUM(bu.volume_bid) FILTER (
+                    WHERE bu.price > dr.demand_next_price
+                ), 0) AS demand_volume_gap
+            FROM buy_unmatched bu
+            JOIN demand_result dr ON dr.period = bu.period
+            WHERE bu.rn > 0
+            GROUP BY bu.period
         )
         SELECT
             c.period,
             c.time_interval,
             c.clearing_price,
             c.clearing_volume,
-            sn.supply_next_price,
-            sn.supply_next_volume,
-            sn.supply_next_price - c.clearing_price AS supply_price_gap,
-            COALESCE(sg.supply_volume_gap, 0) AS supply_volume_gap,
-            dn.demand_next_price,
-            dn.demand_next_volume,
-            c.clearing_price - dn.demand_next_price AS demand_price_gap,
-            COALESCE(dg.demand_volume_gap, 0) AS demand_volume_gap
+            sr.supply_next_price,
+            sr.supply_next_volume,
+            sr.supply_next_price - c.clearing_price AS supply_price_gap,
+            COALESCE(sgc.supply_volume_gap, 0) AS supply_volume_gap,
+            dr.demand_next_price,
+            dr.demand_next_volume,
+            c.clearing_price - dr.demand_next_price AS demand_price_gap,
+            COALESCE(dgc.demand_volume_gap, 0) AS demand_volume_gap
         FROM clearing c
-        LEFT JOIN supply_next sn ON sn.period = c.period
-        LEFT JOIN demand_next dn ON dn.period = c.period
-        LEFT JOIN supply_gap sg ON sg.period = c.period
-        LEFT JOIN demand_gap dg ON dg.period = c.period
+        LEFT JOIN supply_result sr ON sr.period = c.period
+        LEFT JOIN demand_result dr ON dr.period = c.period
+        LEFT JOIN supply_gap_calc sgc ON sgc.period = c.period
+        LEFT JOIN demand_gap_calc dgc ON dgc.period = c.period
         ORDER BY c.period
     """
 
     try:
-        cursor.execute(summary_query, (delivery_date, delivery_date, delivery_date, delivery_date, delivery_date))
+        cursor.execute(summary_query, (delivery_date, delivery_date, delivery_date))
         rows = cursor.fetchall()
 
         if not rows:
@@ -405,7 +417,8 @@ def compute_and_upsert_curve_depth(delivery_date, conn, logger):
                 b.period,
                 b.price,
                 b.volume_bid,
-                SUM(b.volume_bid) OVER (PARTITION BY b.period ORDER BY b.price ASC) AS cum_vol
+                SUM(b.volume_bid) OVER (PARTITION BY b.period ORDER BY b.price ASC) AS cum_vol,
+                SUM(b.volume_bid) OVER (PARTITION BY b.period) AS total_vol
             FROM da_bid b
             JOIN clearing c ON c.period = b.period
             WHERE b.delivery_date = %s
@@ -418,7 +431,8 @@ def compute_and_upsert_curve_depth(delivery_date, conn, logger):
                 b.period,
                 b.price,
                 b.volume_bid,
-                SUM(b.volume_bid) OVER (PARTITION BY b.period ORDER BY b.price DESC) AS cum_vol
+                SUM(b.volume_bid) OVER (PARTITION BY b.period ORDER BY b.price DESC) AS cum_vol,
+                SUM(b.volume_bid) OVER (PARTITION BY b.period) AS total_vol
             FROM da_bid b
             JOIN clearing c ON c.period = b.period
             WHERE b.delivery_date = %s
@@ -427,16 +441,12 @@ def compute_and_upsert_curve_depth(delivery_date, conn, logger):
               AND b.price < c.clearing_price
         ),
         sell_total AS (
-            SELECT period, SUM(volume_bid) AS total_vol
-            FROM da_bid
-            WHERE delivery_date = %s AND side = 'sell' AND volume_matched = 0
-            GROUP BY period
+            SELECT DISTINCT period, total_vol
+            FROM unmatched_sell
         ),
         buy_total AS (
-            SELECT period, SUM(volume_bid) AS total_vol
-            FROM da_bid
-            WHERE delivery_date = %s AND side = 'buy' AND volume_matched = 0
-            GROUP BY period
+            SELECT DISTINCT period, total_vol
+            FROM unmatched_buy
         ),
         offsets(offset_mw) AS (VALUES {offset_values}),
         sell_crossing AS (
@@ -484,7 +494,7 @@ def compute_and_upsert_curve_depth(delivery_date, conn, logger):
     """
 
     try:
-        cursor.execute(depth_query, (delivery_date,) * 5)
+        cursor.execute(depth_query, (delivery_date,) * 3)
         rows = cursor.fetchall()
 
         if not rows:

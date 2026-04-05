@@ -155,6 +155,22 @@ def upload_to_database(records, conn, trade_date):
             price_be_component_czk_mwh, price_im_component_czk_mwh,
             price_si_component_czk_mwh, price_not_performed_activation_czk_mwh
         ) VALUES %s
+        ON CONFLICT (trade_date, period) DO UPDATE SET
+            time_interval = EXCLUDED.time_interval,
+            system_imbalance_mwh = EXCLUDED.system_imbalance_mwh,
+            absolute_imbalance_sum_mwh = EXCLUDED.absolute_imbalance_sum_mwh,
+            positive_imbalance_mwh = EXCLUDED.positive_imbalance_mwh,
+            negative_imbalance_mwh = EXCLUDED.negative_imbalance_mwh,
+            rounded_imbalance_mwh = EXCLUDED.rounded_imbalance_mwh,
+            cost_of_be_czk = EXCLUDED.cost_of_be_czk,
+            cost_of_imbalance_czk = EXCLUDED.cost_of_imbalance_czk,
+            settlement_price_imbalance_czk_mwh = EXCLUDED.settlement_price_imbalance_czk_mwh,
+            settlement_price_counter_imbalance_czk_mwh = EXCLUDED.settlement_price_counter_imbalance_czk_mwh,
+            price_protective_be_component_czk_mwh = EXCLUDED.price_protective_be_component_czk_mwh,
+            price_be_component_czk_mwh = EXCLUDED.price_be_component_czk_mwh,
+            price_im_component_czk_mwh = EXCLUDED.price_im_component_czk_mwh,
+            price_si_component_czk_mwh = EXCLUDED.price_si_component_czk_mwh,
+            price_not_performed_activation_czk_mwh = EXCLUDED.price_not_performed_activation_czk_mwh
     """
 
     # Prepare data as tuples for bulk insert
@@ -181,17 +197,11 @@ def upload_to_database(records, conn, trade_date):
         ))
 
     try:
-        # Use execute_values for efficient bulk insert
         extras.execute_values(cursor, insert_query, values)
         conn.commit()
         inserted = len(values)
         cursor.close()
         return inserted
-
-    except psycopg2.IntegrityError as e:
-        conn.rollback()
-        cursor.close()
-        raise Exception(f"Conflict - data for {trade_date} already exists: {e}")
     except Exception as e:
         conn.rollback()
         cursor.close()

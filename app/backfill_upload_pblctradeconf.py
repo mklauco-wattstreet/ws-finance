@@ -149,7 +149,8 @@ INSERT_QUERY = """
 DELETE_QUERY = """
     DELETE FROM public.pblctradeconf
     WHERE "ws_marketID" = 'xlsx_backfill'
-      AND contract_start::date = %s
+      AND contract_start >= %s::date
+      AND contract_start < %s::date + INTERVAL '1 day'
 """
 
 
@@ -159,7 +160,7 @@ def upload_day(records, conn, trade_date):
         return 0
     cursor = conn.cursor()
     try:
-        cursor.execute(DELETE_QUERY, (trade_date,))
+        cursor.execute(DELETE_QUERY, (trade_date, trade_date))
         deleted = cursor.rowcount
         extras.execute_values(cursor, INSERT_QUERY, records)
         conn.commit()

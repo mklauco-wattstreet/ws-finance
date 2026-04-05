@@ -74,7 +74,7 @@ def aggregate_imbalance_15min(affected_intervals: Set[tuple], conn, logger) -> i
             load_mean_mw = EXCLUDED.load_mean_mw,
             load_median_mw = EXCLUDED.load_median_mw,
             last_load_at_interval_mw = EXCLUDED.last_load_at_interval_mw,
-            created_at = CURRENT_TIMESTAMP
+            updated_at = CURRENT_TIMESTAMP
     """
 
     with conn.cursor() as cur:
@@ -147,7 +147,7 @@ def aggregate_re_price_15min(affected_intervals: Set[tuple], conn, logger) -> in
             price_mfrr_plus_last_at_interval_eur_mwh = EXCLUDED.price_mfrr_plus_last_at_interval_eur_mwh,
             price_mfrr_minus_last_at_interval_eur_mwh = EXCLUDED.price_mfrr_minus_last_at_interval_eur_mwh,
             price_mfrr_5_last_at_interval_eur_mwh = EXCLUDED.price_mfrr_5_last_at_interval_eur_mwh,
-            created_at = CURRENT_TIMESTAMP
+            updated_at = CURRENT_TIMESTAMP
     """
 
     with conn.cursor() as cur:
@@ -215,7 +215,7 @@ def aggregate_svr_activation_15min(affected_intervals: Set[tuple], conn, logger)
             mfrr_plus_last_at_interval_mw = EXCLUDED.mfrr_plus_last_at_interval_mw,
             mfrr_minus_last_at_interval_mw = EXCLUDED.mfrr_minus_last_at_interval_mw,
             mfrr_5_last_at_interval_mw = EXCLUDED.mfrr_5_last_at_interval_mw,
-            created_at = CURRENT_TIMESTAMP
+            updated_at = CURRENT_TIMESTAMP
     """
 
     with conn.cursor() as cur:
@@ -278,7 +278,7 @@ def aggregate_export_import_svr_15min(affected_intervals: Set[tuple], conn, logg
             mari_mfrr_last_at_interval_mw = EXCLUDED.mari_mfrr_last_at_interval_mw,
             picasso_afrr_last_at_interval_mw = EXCLUDED.picasso_afrr_last_at_interval_mw,
             sum_exchange_last_at_interval_mw = EXCLUDED.sum_exchange_last_at_interval_mw,
-            created_at = CURRENT_TIMESTAMP
+            updated_at = CURRENT_TIMESTAMP
     """
 
     with conn.cursor() as cur:
@@ -304,7 +304,7 @@ def upsert_imbalance_data(records: List[Dict], conn, logger) -> int:
         INSERT INTO finance.ceps_actual_imbalance_1min (delivery_timestamp, load_mw)
         VALUES %s
         ON CONFLICT (delivery_timestamp)
-        DO UPDATE SET load_mw = EXCLUDED.load_mw, created_at = CURRENT_TIMESTAMP
+        DO UPDATE SET load_mw = EXCLUDED.load_mw, updated_at = CURRENT_TIMESTAMP
     """
 
     with conn.cursor() as cur:
@@ -353,7 +353,7 @@ def upsert_re_price_data(records: List[Dict], conn, logger) -> int:
             price_mfrr_plus_eur_mwh = EXCLUDED.price_mfrr_plus_eur_mwh,
             price_mfrr_minus_eur_mwh = EXCLUDED.price_mfrr_minus_eur_mwh,
             price_mfrr_5_eur_mwh = EXCLUDED.price_mfrr_5_eur_mwh,
-            created_at = CURRENT_TIMESTAMP
+            updated_at = CURRENT_TIMESTAMP
     """
 
     with conn.cursor() as cur:
@@ -396,7 +396,7 @@ def upsert_svr_activation_data(records: List[Dict], conn, logger) -> int:
             mfrr_plus_mw = EXCLUDED.mfrr_plus_mw,
             mfrr_minus_mw = EXCLUDED.mfrr_minus_mw,
             mfrr_5_mw = EXCLUDED.mfrr_5_mw,
-            created_at = CURRENT_TIMESTAMP
+            updated_at = CURRENT_TIMESTAMP
     """
 
     with conn.cursor() as cur:
@@ -439,7 +439,7 @@ def upsert_export_import_svr_data(records: List[Dict], conn, logger) -> int:
             mari_mfrr_mw = EXCLUDED.mari_mfrr_mw,
             picasso_afrr_mw = EXCLUDED.picasso_afrr_mw,
             sum_exchange_european_platforms_mw = EXCLUDED.sum_exchange_european_platforms_mw,
-            created_at = CURRENT_TIMESTAMP
+            updated_at = CURRENT_TIMESTAMP
     """
 
     with conn.cursor() as cur:
@@ -498,7 +498,7 @@ def aggregate_generation_res_15min(affected_intervals: Set[tuple], conn, logger)
             solar_mean_mw = EXCLUDED.solar_mean_mw,
             solar_median_mw = EXCLUDED.solar_median_mw,
             solar_last_at_interval_mw = EXCLUDED.solar_last_at_interval_mw,
-            created_at = CURRENT_TIMESTAMP
+            updated_at = CURRENT_TIMESTAMP
     """
 
     with conn.cursor() as cur:
@@ -529,7 +529,7 @@ def upsert_generation_res_data(records: List[Dict], conn, logger) -> int:
         DO UPDATE SET
             wind_mw = EXCLUDED.wind_mw,
             solar_mw = EXCLUDED.solar_mw,
-            created_at = CURRENT_TIMESTAMP
+            updated_at = CURRENT_TIMESTAMP
     """
 
     with conn.cursor() as cur:
@@ -596,7 +596,7 @@ def upsert_generation_data(records: List[Dict], conn, logger) -> int:
             appp_mw = EXCLUDED.appp_mw,
             wpp_mw = EXCLUDED.wpp_mw,
             pvpp_mw = EXCLUDED.pvpp_mw,
-            created_at = CURRENT_TIMESTAMP
+            updated_at = CURRENT_TIMESTAMP
     """
 
     with conn.cursor() as cur:
@@ -633,7 +633,7 @@ def upsert_generation_plan_data(records: List[Dict], conn, logger) -> int:
         ON CONFLICT (trade_date, time_interval)
         DO UPDATE SET
             total_mw = EXCLUDED.total_mw,
-            created_at = CURRENT_TIMESTAMP
+            updated_at = CURRENT_TIMESTAMP
     """
 
     with conn.cursor() as cur:
@@ -694,7 +694,7 @@ def upsert_estimated_imbalance_price_data(records: List[Dict], conn, logger) -> 
         ON CONFLICT (trade_date, time_interval)
         DO UPDATE SET
             estimated_price_czk_mwh = EXCLUDED.estimated_price_czk_mwh,
-            created_at = CURRENT_TIMESTAMP
+            updated_at = CURRENT_TIMESTAMP
     """
 
     with conn.cursor() as cur:

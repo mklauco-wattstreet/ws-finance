@@ -568,6 +568,7 @@ class CepsActualRePrice1Min(Base):
     price_mfrr_minus_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
     price_mfrr_5_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
 
 
 class CepsActualRePrice15Min(Base):
@@ -604,6 +605,7 @@ class CepsActualRePrice15Min(Base):
     price_mfrr_minus_last_at_interval_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
     price_mfrr_5_last_at_interval_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
 
 
 class Ceps1MinFeatures15Min(Base):
@@ -663,6 +665,7 @@ class Ceps1MinFeatures15Min(Base):
     afrr_mfrr_minus_spread_mean_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
     afrr_mfrr_minus_spread_std_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
 
 
 class CepsDerivedFeatures15Min(Base):
@@ -695,6 +698,7 @@ class CepsDerivedFeatures15Min(Base):
     wind_error_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     gen_total_error_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
 
 
 class CnbExchangeRate(Base):

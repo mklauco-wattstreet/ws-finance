@@ -310,18 +310,16 @@ class BaseRunner(ABC):
         """Print runner footer (no-op, kept for API compatibility)."""
         pass
 
-    def _data_exists_for_date(self, conn, target_date, area_id: int, country_code: str) -> bool:
-        """Check if data already exists for a given date/area. Uses PK index + partition pruning."""
-        cur = conn.cursor()
-        try:
+    def _areas_with_data(self, conn, target_date, areas) -> set:
+        """Return set of area_ids that already have data for target_date."""
+        area_ids = [a[0] for a in areas]
+        with conn.cursor() as cur:
             cur.execute(
-                f"SELECT 1 FROM {self.TABLE_NAME} "
-                f"WHERE trade_date = %s AND area_id = %s AND country_code = %s LIMIT 1",
-                (target_date, area_id, country_code)
+                f"SELECT DISTINCT area_id FROM {self.TABLE_NAME} "
+                f"WHERE trade_date = %s AND area_id = ANY(%s)",
+                (target_date, area_ids)
             )
-            return cur.fetchone() is not None
-        finally:
-            cur.close()
+            return {row[0] for row in cur.fetchall()}
 
     def _run_with_availability_check(self, target_date, areas) -> int:
         """Check DB per area for target_date, fetch full day from API if missing.
@@ -340,8 +338,9 @@ class BaseRunner(ABC):
 
         total_records = 0
         with self.database_connection() as conn:
+            existing = self._areas_with_data(conn, target_date, areas)
             for area_id, area_code, display_label, country_code in areas:
-                if self._data_exists_for_date(conn, target_date, area_id, country_code):
+                if area_id in existing:
                     self.logger.debug(f"  {display_label}: data exists for {target_date}, skipping")
                     continue
 

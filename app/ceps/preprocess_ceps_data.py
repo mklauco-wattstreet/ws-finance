@@ -275,7 +275,7 @@ def aggregate_1min_features(affected_intervals: Set[tuple], conn, logger) -> int
             afrr_mfrr_plus_spread_std_eur = EXCLUDED.afrr_mfrr_plus_spread_std_eur,
             afrr_mfrr_minus_spread_mean_eur = EXCLUDED.afrr_mfrr_minus_spread_mean_eur,
             afrr_mfrr_minus_spread_std_eur = EXCLUDED.afrr_mfrr_minus_spread_std_eur,
-            created_at = CURRENT_TIMESTAMP
+            updated_at = CURRENT_TIMESTAMP
     """
 
     with conn.cursor() as cur:
@@ -365,7 +365,7 @@ def aggregate_derived_features(affected_intervals: Set[tuple], conn, logger) -> 
             solar_error_mw = EXCLUDED.solar_error_mw,
             wind_error_mw = EXCLUDED.wind_error_mw,
             gen_total_error_mw = EXCLUDED.gen_total_error_mw,
-            created_at = CURRENT_TIMESTAMP
+            updated_at = CURRENT_TIMESTAMP
     """
 
     # affected_dates used for both rolling and forecast CTEs

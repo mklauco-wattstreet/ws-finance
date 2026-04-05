@@ -292,7 +292,8 @@ def main():
             {'name': 'Est. Imbalance Price', 'table': 'ceps_estimated_imbalance_price_15min', 'type': '15min', 'key': 'estimated_imbalance_price'},
         ]
 
-        # Check each dataset
+        # Check each dataset (cache results for summary reuse)
+        dataset_results = {}
         for dataset in datasets:
             is_1min = dataset['type'] == '1min'
             expected_total = expected_1min if is_1min else expected_15min
@@ -332,6 +333,8 @@ def main():
                 missing = get_missing_dates_1min(dataset['table'], start_date, end_date, current_time, conn)
             else:
                 missing = get_missing_dates_15min(dataset['table'], start_date, end_date, current_time, conn)
+
+            dataset_results[dataset['key']] = (stats, missing)
 
             if missing:
                 print(f"MISSING OR INCOMPLETE DATA: {len(missing)} days")
@@ -407,12 +410,7 @@ def main():
             is_1min = dataset['type'] == '1min'
             expected_total = expected_1min if is_1min else expected_15min
 
-            if is_1min:
-                stats = get_summary_stats_1min(dataset['table'], start_date, end_date, conn)
-                missing = get_missing_dates_1min(dataset['table'], start_date, end_date, current_time, conn)
-            else:
-                stats = get_summary_stats_15min(dataset['table'], start_date, end_date, conn)
-                missing = get_missing_dates_15min(dataset['table'], start_date, end_date, current_time, conn)
+            stats, missing = dataset_results[dataset['key']]
 
             completeness = (stats['total_records'] / expected_total * 100) if expected_total > 0 else 0
 
