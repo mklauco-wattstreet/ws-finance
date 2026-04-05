@@ -72,7 +72,7 @@ python3 -m runners.<runner_name> [--debug] [--dry-run] [--start YYYY-MM-DD --end
 * Always provide single line commands to avoid indentation issues.
 * **`.env` changes require container recreation:** `docker compose restart` does NOT reload `.env`. Use `docker compose up -d --force-recreate entsoe-ote-data-uploader`.
 * **Cron changes require `git pull` + recreate on production.** The crontab is a mounted volume. Do NOT try to reload crontab manually inside the container.
-* **Cron staggering:** Jobs are deliberately staggered to avoid resource contention. OTE intraday at `*/15`, ENTSO-E group 1 at `1,16,31,46`, group 2 at `3,18,33,48`, group 3 at `5,20,35,50`, CEPS at `12,27,42,57`. Do NOT move all jobs back to `*/15`.
+* **Cron schedule:** All CEPS and ENTSO-E pipelines run at `14,29,44,59` so data is ready before a downstream consumer at `1,16,31,46`. OTE intraday runs at `*/15`. Do NOT change these offsets without checking the consumer dependency.
 
 ---
 

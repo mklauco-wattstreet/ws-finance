@@ -46,46 +46,46 @@
 # ============================================================================
 
 # CEPS - Download and upload ALL datasets (imbalance, RE price, SVR activation, export/import SVR, generation)
-# Runs at minutes 12, 27, 42, 57 every hour (every 15 minutes offset)
+# Runs at minutes 14, 29, 44, 59 every hour — data ready before consumer at :01,:16,:31,:46
 # Uses SOAP API - completes in ~7 seconds (50-100x faster than Selenium)
-12,27,42,57 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m ceps.ceps_soap_pipeline --dataset all >> /var/log/ceps.log 2>&1
+14,29,44,59 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m ceps.ceps_soap_pipeline --dataset all >> /var/log/ceps.log 2>&1
 
 # ============================================================================
 # ENTSO-E - Pan-European Data Pipelines (separate logs per runner)
 # ============================================================================
 
-# ENTSO-E Group 1 - minutes 1,16,31,46 (core real-time data)
+# ENTSO-E Group 1 - minutes 14,29,44,59 (core real-time data)
 # ENTSO-E - Unified imbalance data pipeline every 15 minutes
-1,16,31,46 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.entsoe_unified_imbalance_runner >> /var/log/entsoe_imbalance.log 2>&1
+14,29,44,59 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.entsoe_unified_imbalance_runner >> /var/log/entsoe_imbalance.log 2>&1
 
 # ENTSO-E - Unified load data pipeline every 15 minutes
-1,16,31,46 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.entsoe_unified_load_runner >> /var/log/entsoe_load.log 2>&1
+14,29,44,59 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.entsoe_unified_load_runner >> /var/log/entsoe_load.log 2>&1
 
 # ENTSO-E - Unified generation data pipeline every 15 minutes
-1,16,31,46 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.entsoe_unified_gen_runner >> /var/log/entsoe_gen.log 2>&1
+14,29,44,59 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.entsoe_unified_gen_runner >> /var/log/entsoe_gen.log 2>&1
 
-# ENTSO-E Group 2 - minutes 3,18,33,48 (flows and forecasts)
+# ENTSO-E Group 2 - minutes 14,29,44,59 (flows and forecasts)
 # ENTSO-E - Unified cross-border flows pipeline every 15 minutes
-3,18,33,48 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.entsoe_unified_flow_runner >> /var/log/entsoe_flow.log 2>&1
+14,29,44,59 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.entsoe_unified_flow_runner >> /var/log/entsoe_flow.log 2>&1
 
 # ENTSO-E - DA generation forecast (A01) every 15 min (checks DB, fetches TOMORROW ~15:00 CET)
-3,18,33,48 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.entsoe_unified_forecast_runner >> /var/log/entsoe_forecast.log 2>&1
+14,29,44,59 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.entsoe_unified_forecast_runner >> /var/log/entsoe_forecast.log 2>&1
 
 # ENTSO-E - Intraday generation forecast (A40) every 15 min (checks DB, fetches TODAY ~09:00 CET)
-3,18,33,48 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.entsoe_unified_forecast_intraday_runner >> /var/log/entsoe_forecast_intraday.log 2>&1
+14,29,44,59 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.entsoe_unified_forecast_intraday_runner >> /var/log/entsoe_forecast_intraday.log 2>&1
 
-# ENTSO-E Group 3 - minutes 5,20,35,50 (forecasts, balancing, scheduled)
+# ENTSO-E Group 3 - minutes 14,29,44,59 (forecasts, balancing, scheduled)
 # ENTSO-E - Current generation forecast (A18) every 15 min (continuous)
-5,20,35,50 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.entsoe_unified_forecast_current_runner >> /var/log/entsoe_forecast_current.log 2>&1
+14,29,44,59 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.entsoe_unified_forecast_current_runner >> /var/log/entsoe_forecast_current.log 2>&1
 
 # ENTSO-E - Unified balancing energy pipeline every 15 minutes
-5,20,35,50 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.entsoe_unified_balancing_runner >> /var/log/entsoe_balancing.log 2>&1
+14,29,44,59 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.entsoe_unified_balancing_runner >> /var/log/entsoe_balancing.log 2>&1
 
 # ENTSO-E - Unified scheduled generation pipeline every 15 minutes
-5,20,35,50 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.entsoe_unified_scheduled_runner >> /var/log/entsoe_scheduled.log 2>&1
+14,29,44,59 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.entsoe_unified_scheduled_runner >> /var/log/entsoe_scheduled.log 2>&1
 
 # ENTSO-E - Unified scheduled cross-border flows pipeline every 15 minutes
-5,20,35,50 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.entsoe_unified_sched_flow_runner >> /var/log/entsoe_sched_flow.log 2>&1
+14,29,44,59 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.entsoe_unified_sched_flow_runner >> /var/log/entsoe_sched_flow.log 2>&1
 
 # ENTSO-E - Unified day-ahead prices every 2h from 14:00-20:00 (published ~13:00, retry on failure)
 0 14,16,18,20 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.entsoe_unified_day_ahead_prices_runner >> /var/log/entsoe_day_ahead.log 2>&1
