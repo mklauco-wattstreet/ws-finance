@@ -248,10 +248,8 @@ def compute_and_upsert_period_summary(delivery_date, conn, logger):
         supply_result AS (
             SELECT
                 su.period,
-                MIN(CASE WHEN su.rn = 1 THEN su.price END) AS supply_next_price,
-                MIN(CASE WHEN su.rn = 1 THEN su.volume_bid END) AS supply_next_volume,
-                SUM(CASE WHEN su.rn > 1 THEN NULL
-                    WHEN su.rn = 1 THEN 0 END) AS supply_volume_gap
+                MIN(su.price) AS supply_next_price,
+                MIN(CASE WHEN su.rn = 1 THEN su.volume_bid END) AS supply_next_volume
             FROM sell_unmatched su
             GROUP BY su.period
         ),
@@ -259,11 +257,10 @@ def compute_and_upsert_period_summary(delivery_date, conn, logger):
             SELECT
                 su.period,
                 COALESCE(SUM(su.volume_bid) FILTER (
-                    WHERE su.price < sr.supply_next_price
+                    WHERE su.price = sr.supply_next_price
                 ), 0) AS supply_volume_gap
             FROM sell_unmatched su
             JOIN supply_result sr ON sr.period = su.period
-            WHERE su.rn > 0
             GROUP BY su.period
         ),
         buy_unmatched AS (
@@ -291,11 +288,10 @@ def compute_and_upsert_period_summary(delivery_date, conn, logger):
             SELECT
                 bu.period,
                 COALESCE(SUM(bu.volume_bid) FILTER (
-                    WHERE bu.price > dr.demand_next_price
+                    WHERE bu.price = dr.demand_next_price
                 ), 0) AS demand_volume_gap
             FROM buy_unmatched bu
             JOIN demand_result dr ON dr.period = bu.period
-            WHERE bu.rn > 0
             GROUP BY bu.period
         )
         SELECT
