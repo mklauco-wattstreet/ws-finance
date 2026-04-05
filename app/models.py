@@ -86,6 +86,7 @@ class EntsoeImbalancePrices(Base):
     status: Mapped[Optional[str]] = mapped_column(String)
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
     delivery_datetime: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True))
 
 
@@ -277,6 +278,7 @@ class EntsoeLoad(Base):
     actual_load_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     forecast_load_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
 
 
 class EntsoeGenerationActual(Base):
@@ -324,6 +326,7 @@ class EntsoeGenerationActual(Base):
     gen_biomass_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     gen_hydro_other_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
 
 
 class EntsoeCrossBorderFlows(Base):
@@ -358,6 +361,7 @@ class EntsoeCrossBorderFlows(Base):
     flow_sk_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     flow_total_net_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
 
 
 class EntsoeGenerationForecast(Base):
@@ -384,6 +388,7 @@ class EntsoeGenerationForecast(Base):
     forecast_wind_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     forecast_wind_offshore_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
 
 
 class EntsoeGenerationForecastIntraday(Base):
@@ -407,6 +412,7 @@ class EntsoeGenerationForecastIntraday(Base):
     forecast_wind_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     forecast_wind_offshore_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
 
 
 class EntsoeGenerationForecastCurrent(Base):
@@ -430,6 +436,7 @@ class EntsoeGenerationForecastCurrent(Base):
     forecast_wind_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     forecast_wind_offshore_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
 
 
 class EntsoeBalancingEnergy(Base):
@@ -461,6 +468,7 @@ class EntsoeBalancingEnergy(Base):
     rr_up_price_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
     rr_down_price_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
 
 
 class EntsoeGenerationScheduled(Base):
@@ -483,6 +491,7 @@ class EntsoeGenerationScheduled(Base):
     time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
     scheduled_total_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
 
 
 class EntsoeScheduledCrossBorderFlows(Base):
@@ -515,6 +524,7 @@ class EntsoeScheduledCrossBorderFlows(Base):
     scheduled_sk_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     scheduled_total_net_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
 
 
 class EntsoeDayAheadPrices(Base):
@@ -543,6 +553,7 @@ class EntsoeDayAheadPrices(Base):
     time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
     price_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
 
 
 class CepsActualRePrice1Min(Base):
@@ -717,6 +728,7 @@ class CnbExchangeRate(Base):
     rate_date: Mapped[date] = mapped_column(Date, nullable=False)
     czk_eur: Mapped[Decimal] = mapped_column(Numeric(10, 6), nullable=False)
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
 
 
 class DaBid(Base):

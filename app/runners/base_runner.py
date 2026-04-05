@@ -183,6 +183,7 @@ class BaseRunner(ABC):
         columns_str = ", ".join(columns)
         conflict_str = ", ".join(conflict_columns)
         update_str = ", ".join([f"{c} = EXCLUDED.{c}" for c in update_columns])
+        update_str += ", updated_at = CURRENT_TIMESTAMP"
 
         query = f"""
             INSERT INTO {table} ({columns_str})
