@@ -373,7 +373,8 @@ def upload_to_database(records, conn, trade_date):
             export_mwh = EXCLUDED.export_mwh,
             import_mwh = EXCLUDED.import_mwh,
             price_60min_ref_eur_mwh = EXCLUDED.price_60min_ref_eur_mwh,
-            is_15min = EXCLUDED.is_15min
+            is_15min = EXCLUDED.is_15min,
+            updated_at = CURRENT_TIMESTAMP
     """
 
     # Prepare data as tuples for bulk upsert

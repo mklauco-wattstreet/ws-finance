@@ -138,6 +138,7 @@ class OtePricesDayAhead(Base):
     import_mwh: Mapped[Decimal] = mapped_column(Numeric(12, 3), nullable=False)
     price_60min_ref_eur_mwh: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
     is_15min: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default='true')
 
 
@@ -165,6 +166,7 @@ class OtePricesDayAhead60min(Base):
     export_mwh: Mapped[Decimal] = mapped_column(Numeric(12, 3), nullable=False)
     import_mwh: Mapped[Decimal] = mapped_column(Numeric(12, 3), nullable=False)
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
 
 
 class OtePricesImbalance(Base):
@@ -196,6 +198,7 @@ class OtePricesImbalance(Base):
     price_si_component_czk_mwh: Mapped[Decimal] = mapped_column(Numeric(15, 3), nullable=False)
     price_not_performed_activation_czk_mwh: Mapped[Decimal] = mapped_column(Numeric(15, 3), nullable=False)
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
 
 
 class OtePricesIntradayMarket(Base):
@@ -223,6 +226,7 @@ class OtePricesIntradayMarket(Base):
     max_price_eur_mwh: Mapped[Decimal] = mapped_column(Numeric(15, 3), nullable=False)
     last_price_eur_mwh: Mapped[Decimal] = mapped_column(Numeric(15, 3), nullable=False)
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
 
 
 class OteTradeBalance(Base):
@@ -825,3 +829,4 @@ class OtePricesIda(Base):
     export_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     import_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')

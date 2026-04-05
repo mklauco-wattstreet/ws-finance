@@ -161,7 +161,8 @@ def upload_to_database(records, conn, trade_date):
             weighted_avg_price_eur_mwh = EXCLUDED.weighted_avg_price_eur_mwh,
             min_price_eur_mwh = EXCLUDED.min_price_eur_mwh,
             max_price_eur_mwh = EXCLUDED.max_price_eur_mwh,
-            last_price_eur_mwh = EXCLUDED.last_price_eur_mwh
+            last_price_eur_mwh = EXCLUDED.last_price_eur_mwh,
+            updated_at = CURRENT_TIMESTAMP
     """
 
     # Prepare data as tuples for bulk upsert

@@ -170,7 +170,8 @@ def upload_to_database(records, conn, trade_date):
             price_be_component_czk_mwh = EXCLUDED.price_be_component_czk_mwh,
             price_im_component_czk_mwh = EXCLUDED.price_im_component_czk_mwh,
             price_si_component_czk_mwh = EXCLUDED.price_si_component_czk_mwh,
-            price_not_performed_activation_czk_mwh = EXCLUDED.price_not_performed_activation_czk_mwh
+            price_not_performed_activation_czk_mwh = EXCLUDED.price_not_performed_activation_czk_mwh,
+            updated_at = CURRENT_TIMESTAMP
     """
 
     # Prepare data as tuples for bulk insert

@@ -169,7 +169,8 @@ def upload_to_database(records, conn, trade_date):
             sale_60min_products_mwh = EXCLUDED.sale_60min_products_mwh,
             saldo_dm_mwh = EXCLUDED.saldo_dm_mwh,
             export_mwh = EXCLUDED.export_mwh,
-            import_mwh = EXCLUDED.import_mwh
+            import_mwh = EXCLUDED.import_mwh,
+            updated_at = CURRENT_TIMESTAMP
     """
 
     values = []
