@@ -257,12 +257,22 @@ class UnifiedLoadRunner(BaseRunner):
                         target_date, ACTIVE_GENERATION_AREAS
                     )
 
+                # D+1: always fetch tomorrow's full day for forecast_load_mw
+                # No availability check — upsert is idempotent, ensures all 96 periods
+                tomorrow = today + timedelta(days=1)
+                start_prague = datetime.combine(tomorrow, datetime.min.time()).replace(tzinfo=PRAGUE_TZ)
+                end_prague = start_prague + timedelta(days=1)
+                d1_start = start_prague.astimezone(timezone.utc)
+                d1_end = end_prague.astimezone(timezone.utc)
+
                 # Today: rolling 3h window for fresh data
                 period_start, period_end = self.get_time_range(hours=3)
                 if not self.dry_run:
                     with self.database_connection() as conn:
+                        total_records += self._process_chunk(d1_start, d1_end, conn)
                         total_records += self._process_chunk(period_start, period_end, conn)
                 else:
+                    total_records += self._process_chunk(d1_start, d1_end)
                     total_records += self._process_chunk(period_start, period_end)
 
             self.logger.debug("")
