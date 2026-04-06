@@ -93,7 +93,7 @@ python3 -m runners.<runner_name> [--debug] [--dry-run] [--start YYYY-MM-DD --end
 **ENTSO-E** (`app/entsoe/` + `app/runners/`): European grid data (imbalance, generation, load, flows, prices) for 6 countries (CZ, DE, AT, PL, SK, HU).
 - `client.py` — HTTP client with retry/backoff, fetches XML from ENTSO-E Transparency Platform
 - `parsers.py` — XML parsers per document type
-- `constants.py` — EIC codes, `AREA_IDS` dict, `ACTIVE_*_AREAS` lists controlling which areas each runner fetches
+- `constants.py` — EIC codes, `AREA_IDS` dict, `ACTIVE_*_AREAS` lists controlling which areas each runner fetches. **CZ must always be first** in these lists — a downstream prediction service depends on CZ data arriving before other countries.
 - All runners inherit from `BaseRunner` (`app/runners/base_runner.py`) which provides DB connection, bulk upsert, time windowing, backfill chunking, and the standard CLI
 - ENTSO-E API enforces 7-day max per request; `get_backfill_chunks()` handles this automatically
 - Tables are LIST-partitioned by `country_code`. Always include `country_code` in queries for partition pruning.

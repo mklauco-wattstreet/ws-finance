@@ -19,7 +19,7 @@ Usage:
 
 import sys
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Tuple
 
 # Add parent directory to path for imports
