@@ -830,3 +830,50 @@ class OtePricesIda(Base):
     import_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
     updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+
+
+class WeatherForecast(Base):
+    """Open-Meteo weather forecast data (15-min live, hourly backfill).
+
+    D+1 forecasts for central Czechia (lat=49.80, lon=15.47).
+    Variables: temperature_2m, shortwave/direct radiation, cloud_cover, wind_speed_10m.
+    """
+    __tablename__ = 'weather_forecast'
+    __table_args__ = (
+        PrimaryKeyConstraint('trade_date', 'time_interval', 'forecast_made_at'),
+        {'schema': DB_SCHEMA}
+    )
+
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    forecast_made_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    temperature_2m_degc: Mapped[Optional[Decimal]] = mapped_column(Numeric(6, 2))
+    shortwave_radiation_wm2: Mapped[Optional[Decimal]] = mapped_column(Numeric(8, 2))
+    direct_radiation_wm2: Mapped[Optional[Decimal]] = mapped_column(Numeric(8, 2))
+    cloud_cover_pct: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2))
+    wind_speed_10m_kmh: Mapped[Optional[Decimal]] = mapped_column(Numeric(6, 2))
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+
+
+class WeatherCurrent(Base):
+    """Open-Meteo current weather conditions (15-min snapshots).
+
+    Observed conditions at central Czechia (lat=49.80, lon=15.47).
+    Variables: temperature, shortwave/direct radiation, cloud cover, wind speed.
+    """
+    __tablename__ = 'weather_current'
+    __table_args__ = (
+        PrimaryKeyConstraint('trade_date', 'time_interval'),
+        {'schema': DB_SCHEMA}
+    )
+
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    temperature_2m_degc: Mapped[Optional[Decimal]] = mapped_column(Numeric(6, 2))
+    shortwave_radiation_wm2: Mapped[Optional[Decimal]] = mapped_column(Numeric(8, 2))
+    direct_radiation_wm2: Mapped[Optional[Decimal]] = mapped_column(Numeric(8, 2))
+    cloud_cover_pct: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2))
+    wind_speed_10m_kmh: Mapped[Optional[Decimal]] = mapped_column(Numeric(6, 2))
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')

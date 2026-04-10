@@ -98,6 +98,16 @@
 0 15,17,19,21 * * 1-5 export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.cnb_exchange_rate_runner >> /var/log/cnb_fx.log 2>&1
 
 # ============================================================================
+# Weather - Open-Meteo (Central Czechia lat=49.80, lon=15.47)
+# ============================================================================
+
+# Weather: D+1 forecast — once daily at 15:14 Prague time (after 12z model run ~14:00 CEST)
+14 15 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.weather_forecast_runner >> /var/log/weather_forecast.log 2>&1
+
+# Weather: current conditions snapshot — every 15 min at :14,:29,:44,:59 (aligned with other pipelines)
+14,29,44,59 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.weather_current_runner >> /var/log/weather_current.log 2>&1
+
+# ============================================================================
 # Cleanup - Delete old downloaded files daily at 02:00
 # ============================================================================
 
@@ -118,6 +128,6 @@
 # ============================================================================
 
 # Rotate all logs daily at 03:00 - keep last 10000 lines (~4 days of logs)
-0 03 * * * for f in /var/log/ote.log /var/log/ceps.log /var/log/entsoe_*.log /var/log/cnb_fx.log; do [ -f "$f" ] && tail -10000 "$f" > "$f.tmp" && mv "$f.tmp" "$f"; done 2>/dev/null
+0 03 * * * for f in /var/log/ote.log /var/log/ceps.log /var/log/entsoe_*.log /var/log/cnb_fx.log /var/log/weather_*.log; do [ -f "$f" ] && tail -10000 "$f" > "$f.tmp" && mv "$f.tmp" "$f"; done 2>/dev/null
 
 # Empty line required at end of crontab file
