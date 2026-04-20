@@ -6,8 +6,7 @@ services:
     shm_size: '512m'
     # Remove extra_hosts in production (override to empty)
     extra_hosts: []
-    environment:
-      - SENTRY_DSN=https://cd4fe0c0bd2b15283870e65cb8767b64@o55091.ingest.us.sentry.io/4510815645925376
+    # SENTRY_DSN is loaded from .env on the production host (see .env.production.example)
     # Join the same network as your database container
     networks:
       - shared_network
