@@ -36,7 +36,7 @@ Price                            Price
 ```
 da_bid              raw data       every bid step (~17,000 rows/day)
 da_period_summary   summary        what cleared, what is next (96 rows/day)
-da_curve_depth      shape          how steep is the curve beyond clearing (960 rows/day)
+da_curve_depth      shape          largest price-jump (wall) per direction (96 rows/day)
 ```
 
 ---
@@ -91,58 +91,50 @@ That is what `da_curve_depth` solves.
 
 ---
 
-## 5. `da_curve_depth` — Curve Shape at Fixed MW Offsets
+## 5. `da_curve_depth` — Largest Price-Jump (Wall) per Direction
 
-One row per period × side × offset_mw (960/day = 96 periods × 2 sides × 5 offsets).
+One row per period (96/day), keyed on `(delivery_date, period)`. For each contract, the curve is walked outward from clearing in four directions, and the single largest price jump in each direction is recorded.
+
+| Direction | Curve walked | Walk order |
+|-----------|--------------|------------|
+| `sell_up`   | sell bids with price > clearing | ASC |
+| `sell_down` | sell bids with price < clearing | DESC |
+| `buy_down`  | buy bids with price < clearing  | DESC |
+| `buy_up`    | buy bids with price > clearing  | ASC |
+
+Per direction, three columns (`<dir>_mw_from_clearing`, `<dir>_price_from_clearing`, `<dir>_slope`):
 
 | Column | Meaning |
 |--------|---------|
-| `side` | `sell` = supply curve above MCP / `buy` = demand curve below MCP |
-| `offset_mw` | How many MW beyond clearing we are asking about |
-| `price_at_offset` | Price of the bid where cumulative unmatched volume first reaches `offset_mw`. NULL if curve exhausted. |
-| `volume_available` | Total unmatched volume on this side — tells you when curve runs out |
+| `<dir>_mw_from_clearing`    | Cumulative MW from clearing to the foot of the jump (>= 0) |
+| `<dir>_price_from_clearing` | Signed price distance to top of jump: `price_top - clearing_price`. Positive for `sell_up` / `buy_up`, negative for `sell_down` / `buy_down`. |
+| `<dir>_slope`               | `price_from_clearing / mw_from_clearing` (€/MWh per MW). Same sign as `price_from_clearing`. |
 
-### Offsets
+Plus `clearing_price` (NUMERIC(10, 2), NOT NULL).
 
-Defined in `CURVE_DEPTH_OFFSETS_MW = [50, 100, 200, 500, 1000]` in `upload_dam_curves.py`.
-Adding new offsets requires only changing this constant — no schema migration needed.
+### Tie-break
 
-| Offset | Represents |
-|--------|-----------|
-| 50 MW | Small aFRR activation |
-| 100 MW | Moderate aFRR / small mFRR |
-| 200 MW | Large mFRR activation |
-| 500 MW | Major grid event |
-| 1000 MW | Extreme scenario (large plant outage) |
+When two consecutive pairs share the same |jump|, the one closest to clearing (smallest `mw_from_clearing`) is taken.
 
 ### NULL semantics
 
-`price_at_offset IS NULL` means total `volume_available` is less than `offset_mw`.
-The curve runs out before reaching that depth. Use `volume_available` to understand how
-much supply actually exists regardless of offset.
+A direction's three fields are NULL together when that side has < 2 bids in the relevant range:
+- `sell_down_*` and `buy_up_*` are NULL in normal regimes (supply/demand curves typically start at clearing).
+- `sell_up_*` NULL is rare — extreme oversupply with thin sell curve above clearing.
+- `buy_down_*` NULL is rare — extreme scarcity with thin buy curve below clearing.
 
-### Example: Jan 12 2026, period 73 (18:00–18:15)
+NULLs are valid output. Do not substitute zero.
 
-Clearing price: 241.27 EUR. `supply_price_gap` = 28.65 EUR — looks modest.
-But `da_curve_depth` reveals the cliff:
+### Legacy table
 
-```
-Price (EUR)
-  1000 |                  ████████████████████  (1718 MW available)
-       |                  |
-   270 |           █      |
-   241 |───────────┤ MCP  |
-       |           |      |
-       +-----------+------+----> Cumulative unmatched volume (MW)
-                  +50    +100
-```
-
-At just +50 MW, price jumps to 1000 EUR. `da_period_summary` alone missed this entirely.
-Imbalance price for this period: **301,455 CZK/MWh**.
+The previous offset-sampled table is preserved as `da_curve_depth_legacy_offset_mw` until the wall-detection backfill is verified. Drop after sign-off.
 
 ---
 
 ## 6. Analysis Results (2026-01-01 to 2026-03-04)
+
+> **Note:** Sections 6 and 7 below were produced against the legacy MW-offset schema (`sell_50mw`, `sell_100mw`, etc.). They are kept for historical reference. The new wall-detection schema requires fresh feature engineering and re-analysis.
+
 
 ### 6.1 Correlation with imbalance price (deficit periods, n=4,154)
 

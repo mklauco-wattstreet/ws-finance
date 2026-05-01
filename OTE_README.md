@@ -63,16 +63,26 @@ Downloads OTE matching curve XMLs and computes three tables at increasing abstra
 
 Critical flag: **`supply_volume_gap = 0`** means the first unmatched sell bid sits immediately above clearing. Present in 100% of top-30 extreme imbalance price events (Jan-Mar 2026).
 
-**`da_curve_depth`** — Curve steepness at fixed MW offsets (960 rows/day = 96 x 2 sides x 5 offsets).
+**`da_curve_depth`** — Largest price-jump (wall) anchored to clearing, in four directions (96 rows/day, one per period).
+
+For each period the curve is walked outward from clearing in four directions, and the single largest price jump in each direction is recorded.
+
+| Direction | Curve walked | Walk order |
+|-----------|--------------|------------|
+| `sell_up`   | sell bids with price > clearing | ASC |
+| `sell_down` | sell bids with price < clearing | DESC |
+| `buy_down`  | buy bids with price < clearing  | DESC |
+| `buy_up`    | buy bids with price > clearing  | ASC |
+
+Per direction, three columns (e.g. `sell_up_*`):
 
 | Column | Description |
 |--------|-------------|
-| `side` | `sell` (above MCP) or `buy` (below MCP) |
-| `offset_mw` | 50, 100, 200, 500, or 1000 MW beyond clearing |
-| `price_at_offset` | Price where cumulative unmatched volume reaches offset_mw (NULL if curve exhausted) |
-| `volume_available` | Total unmatched volume on this side |
+| `<dir>_mw_from_clearing`    | Cumulative MW from clearing to the foot of the jump |
+| `<dir>_price_from_clearing` | Signed price distance to top of jump (`price_top - clearing_price`); negative for `*_down` |
+| `<dir>_slope`               | `price_from_clearing / mw_from_clearing` (€/MWh per MW) |
 
-Offsets defined in `CURVE_DEPTH_OFFSETS_MW` constant. Adding new offsets = Python change only, no migration.
+NULL across a direction's three fields when that side has < 2 bids in that range (common: `sell_down` and `buy_up` are NULL in normal regimes).
 
 See `DA_MARKET_TABLES.md` for full analysis, correlation results, and ML feature recommendations.
 

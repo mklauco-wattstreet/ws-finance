@@ -28,9 +28,6 @@ from common import setup_logging, print_banner
 # Fixed jump threshold for future filtering/flagging
 JUMP_THRESHOLD_EUR = Decimal('20.00')
 
-# MW offsets for curve depth analysis (extend here, no schema change needed)
-CURVE_DEPTH_OFFSETS_MW = [50, 100, 200, 500, 1000]
-
 # Mapping from XML trade_type to DB side
 TRADE_TYPE_MAP = {
     'B': 'buy',
@@ -377,11 +374,23 @@ def compute_and_upsert_period_summary(delivery_date, conn, logger):
 
 def compute_and_upsert_curve_depth(delivery_date, conn, logger):
     """
-    Compute da_curve_depth from da_bid data and upsert results.
+    Compute da_curve_depth wall metrics from da_bid data and upsert.
 
-    For each period and side, walks the unmatched bid stack in price order
-    (ascending for sell, descending for buy) and finds the price where
-    cumulative unmatched volume first reaches each offset in CURVE_DEPTH_OFFSETS_MW.
+    For each period, walks the DAM curve outward from the clearing price in
+    four directions and records the single largest price jump per direction:
+      sell_up   - sell bids above clearing, ASC
+      sell_down - sell bids below clearing, DESC
+      buy_down  - buy bids below clearing, DESC
+      buy_up    - buy bids above clearing, ASC
+
+    For each direction stores:
+      mw_from_clearing    - cumulative MW from clearing to foot of jump (>= 0)
+      price_from_clearing - signed price distance to top of jump
+                            (price_top - clearing_price; negative for *_down)
+      slope               - price_from_clearing / mw_from_clearing
+
+    Tie-break: largest |jump| first, then closest to clearing.
+    NULL across all three fields when a direction has < 2 bids.
 
     Args:
         delivery_date: Date to compute depth for
@@ -393,10 +402,7 @@ def compute_and_upsert_curve_depth(delivery_date, conn, logger):
     """
     cursor = conn.cursor()
 
-    # Build VALUES list for offsets: (50),(100),(200),(500),(1000)
-    offset_values = ','.join(f'({o})' for o in CURVE_DEPTH_OFFSETS_MW)
-
-    depth_query = f"""
+    depth_query = """
         WITH clearing AS (
             SELECT
                 period,
@@ -408,89 +414,128 @@ def compute_and_upsert_curve_depth(delivery_date, conn, logger):
               AND volume_matched > 0
             GROUP BY period
         ),
-        unmatched_sell AS (
+        sell_up_walk AS (
             SELECT
-                b.period,
-                b.price,
-                b.volume_bid,
-                SUM(b.volume_bid) OVER (PARTITION BY b.period ORDER BY b.price ASC) AS cum_vol,
-                SUM(b.volume_bid) OVER (PARTITION BY b.period) AS total_vol
+                b.period, b.price, c.clearing_price,
+                SUM(b.volume_bid) OVER (PARTITION BY b.period ORDER BY b.price ASC
+                                        ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS cum_vol_before,
+                LAG(b.price) OVER (PARTITION BY b.period ORDER BY b.price ASC) AS prev_price
             FROM da_bid b
             JOIN clearing c ON c.period = b.period
             WHERE b.delivery_date = %s
               AND b.side = 'sell'
-              AND b.volume_matched = 0
               AND b.price > c.clearing_price
         ),
-        unmatched_buy AS (
+        sell_up_wall AS (
+            SELECT DISTINCT ON (period)
+                period,
+                COALESCE(cum_vol_before, 0) AS mw_from_clearing,
+                price - clearing_price       AS price_from_clearing
+            FROM sell_up_walk
+            WHERE prev_price IS NOT NULL
+            ORDER BY period, ABS(price - prev_price) DESC, COALESCE(cum_vol_before, 0) ASC
+        ),
+        sell_down_walk AS (
             SELECT
-                b.period,
-                b.price,
-                b.volume_bid,
-                SUM(b.volume_bid) OVER (PARTITION BY b.period ORDER BY b.price DESC) AS cum_vol,
-                SUM(b.volume_bid) OVER (PARTITION BY b.period) AS total_vol
+                b.period, b.price, c.clearing_price,
+                SUM(b.volume_bid) OVER (PARTITION BY b.period ORDER BY b.price DESC
+                                        ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS cum_vol_before,
+                LAG(b.price) OVER (PARTITION BY b.period ORDER BY b.price DESC) AS prev_price
+            FROM da_bid b
+            JOIN clearing c ON c.period = b.period
+            WHERE b.delivery_date = %s
+              AND b.side = 'sell'
+              AND b.price < c.clearing_price
+        ),
+        sell_down_wall AS (
+            SELECT DISTINCT ON (period)
+                period,
+                COALESCE(cum_vol_before, 0) AS mw_from_clearing,
+                price - clearing_price       AS price_from_clearing
+            FROM sell_down_walk
+            WHERE prev_price IS NOT NULL
+            ORDER BY period, ABS(price - prev_price) DESC, COALESCE(cum_vol_before, 0) ASC
+        ),
+        buy_down_walk AS (
+            SELECT
+                b.period, b.price, c.clearing_price,
+                SUM(b.volume_bid) OVER (PARTITION BY b.period ORDER BY b.price DESC
+                                        ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS cum_vol_before,
+                LAG(b.price) OVER (PARTITION BY b.period ORDER BY b.price DESC) AS prev_price
             FROM da_bid b
             JOIN clearing c ON c.period = b.period
             WHERE b.delivery_date = %s
               AND b.side = 'buy'
-              AND b.volume_matched = 0
               AND b.price < c.clearing_price
         ),
-        sell_total AS (
-            SELECT DISTINCT period, total_vol
-            FROM unmatched_sell
+        buy_down_wall AS (
+            SELECT DISTINCT ON (period)
+                period,
+                COALESCE(cum_vol_before, 0) AS mw_from_clearing,
+                price - clearing_price       AS price_from_clearing
+            FROM buy_down_walk
+            WHERE prev_price IS NOT NULL
+            ORDER BY period, ABS(price - prev_price) DESC, COALESCE(cum_vol_before, 0) ASC
         ),
-        buy_total AS (
-            SELECT DISTINCT period, total_vol
-            FROM unmatched_buy
+        buy_up_walk AS (
+            SELECT
+                b.period, b.price, c.clearing_price,
+                SUM(b.volume_bid) OVER (PARTITION BY b.period ORDER BY b.price ASC
+                                        ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS cum_vol_before,
+                LAG(b.price) OVER (PARTITION BY b.period ORDER BY b.price ASC) AS prev_price
+            FROM da_bid b
+            JOIN clearing c ON c.period = b.period
+            WHERE b.delivery_date = %s
+              AND b.side = 'buy'
+              AND b.price > c.clearing_price
         ),
-        offsets(offset_mw) AS (VALUES {offset_values}),
-        sell_crossing AS (
-            SELECT DISTINCT ON (us.period, o.offset_mw)
-                us.period, o.offset_mw, us.price AS price_at_offset
-            FROM unmatched_sell us
-            CROSS JOIN offsets o
-            WHERE us.cum_vol >= o.offset_mw
-            ORDER BY us.period, o.offset_mw, us.price ASC
-        ),
-        buy_crossing AS (
-            SELECT DISTINCT ON (ub.period, o.offset_mw)
-                ub.period, o.offset_mw, ub.price AS price_at_offset
-            FROM unmatched_buy ub
-            CROSS JOIN offsets o
-            WHERE ub.cum_vol >= o.offset_mw
-            ORDER BY ub.period, o.offset_mw, ub.price DESC
-        ),
-        all_combos AS (
-            SELECT c.period, c.time_interval, 'sell' AS side, o.offset_mw
-            FROM clearing c CROSS JOIN offsets o
-            UNION ALL
-            SELECT c.period, c.time_interval, 'buy' AS side, o.offset_mw
-            FROM clearing c CROSS JOIN offsets o
+        buy_up_wall AS (
+            SELECT DISTINCT ON (period)
+                period,
+                COALESCE(cum_vol_before, 0) AS mw_from_clearing,
+                price - clearing_price       AS price_from_clearing
+            FROM buy_up_walk
+            WHERE prev_price IS NOT NULL
+            ORDER BY period, ABS(price - prev_price) DESC, COALESCE(cum_vol_before, 0) ASC
         )
         SELECT
-            ac.period,
-            ac.time_interval,
-            ac.side,
-            ac.offset_mw,
-            CASE ac.side
-                WHEN 'sell' THEN sc.price_at_offset
-                WHEN 'buy' THEN bc.price_at_offset
-            END AS price_at_offset,
-            CASE ac.side
-                WHEN 'sell' THEN st.total_vol
-                WHEN 'buy' THEN bt.total_vol
-            END AS volume_available
-        FROM all_combos ac
-        LEFT JOIN sell_crossing sc ON sc.period = ac.period AND sc.offset_mw = ac.offset_mw AND ac.side = 'sell'
-        LEFT JOIN buy_crossing bc ON bc.period = ac.period AND bc.offset_mw = ac.offset_mw AND ac.side = 'buy'
-        LEFT JOIN sell_total st ON st.period = ac.period AND ac.side = 'sell'
-        LEFT JOIN buy_total bt ON bt.period = ac.period AND ac.side = 'buy'
-        ORDER BY ac.period, ac.side, ac.offset_mw
+            c.period,
+            c.time_interval,
+            c.clearing_price,
+
+            su.mw_from_clearing,
+            su.price_from_clearing,
+            CASE WHEN su.mw_from_clearing > 0
+                 THEN su.price_from_clearing / su.mw_from_clearing
+                 ELSE NULL END AS sell_up_slope,
+
+            sd.mw_from_clearing,
+            sd.price_from_clearing,
+            CASE WHEN sd.mw_from_clearing > 0
+                 THEN sd.price_from_clearing / sd.mw_from_clearing
+                 ELSE NULL END AS sell_down_slope,
+
+            bd.mw_from_clearing,
+            bd.price_from_clearing,
+            CASE WHEN bd.mw_from_clearing > 0
+                 THEN bd.price_from_clearing / bd.mw_from_clearing
+                 ELSE NULL END AS buy_down_slope,
+
+            bu.mw_from_clearing,
+            bu.price_from_clearing,
+            CASE WHEN bu.mw_from_clearing > 0
+                 THEN bu.price_from_clearing / bu.mw_from_clearing
+                 ELSE NULL END AS buy_up_slope
+        FROM clearing c
+        LEFT JOIN sell_up_wall   su ON su.period = c.period
+        LEFT JOIN sell_down_wall sd ON sd.period = c.period
+        LEFT JOIN buy_down_wall  bd ON bd.period = c.period
+        LEFT JOIN buy_up_wall    bu ON bu.period = c.period
+        ORDER BY c.period
     """
 
     try:
-        cursor.execute(depth_query, (delivery_date,) * 3)
+        cursor.execute(depth_query, (delivery_date,) * 5)
         rows = cursor.fetchall()
 
         if not rows:
@@ -501,23 +546,38 @@ def compute_and_upsert_curve_depth(delivery_date, conn, logger):
         for row in rows:
             records.append((
                 delivery_date,
-                row[0],  # period
-                row[1],  # time_interval
-                row[2],  # side
-                row[3],  # offset_mw
-                row[4],  # price_at_offset (NULL if exhausted)
-                row[5],  # volume_available
+                row[0],   # period
+                row[1],   # time_interval
+                row[2],   # clearing_price
+                row[3],  row[4],  row[5],   # sell_up
+                row[6],  row[7],  row[8],   # sell_down
+                row[9],  row[10], row[11],  # buy_down
+                row[12], row[13], row[14],  # buy_up
             ))
 
         upsert_depth = """
             INSERT INTO da_curve_depth (
-                delivery_date, period, time_interval, side,
-                offset_mw, price_at_offset, volume_available
+                delivery_date, period, time_interval, clearing_price,
+                sell_up_mw_from_clearing,   sell_up_price_from_clearing,   sell_up_slope,
+                sell_down_mw_from_clearing, sell_down_price_from_clearing, sell_down_slope,
+                buy_down_mw_from_clearing,  buy_down_price_from_clearing,  buy_down_slope,
+                buy_up_mw_from_clearing,    buy_up_price_from_clearing,    buy_up_slope
             ) VALUES %s
-            ON CONFLICT (delivery_date, period, side, offset_mw) DO UPDATE SET
+            ON CONFLICT (delivery_date, period) DO UPDATE SET
                 time_interval = EXCLUDED.time_interval,
-                price_at_offset = EXCLUDED.price_at_offset,
-                volume_available = EXCLUDED.volume_available
+                clearing_price = EXCLUDED.clearing_price,
+                sell_up_mw_from_clearing      = EXCLUDED.sell_up_mw_from_clearing,
+                sell_up_price_from_clearing   = EXCLUDED.sell_up_price_from_clearing,
+                sell_up_slope                 = EXCLUDED.sell_up_slope,
+                sell_down_mw_from_clearing    = EXCLUDED.sell_down_mw_from_clearing,
+                sell_down_price_from_clearing = EXCLUDED.sell_down_price_from_clearing,
+                sell_down_slope               = EXCLUDED.sell_down_slope,
+                buy_down_mw_from_clearing     = EXCLUDED.buy_down_mw_from_clearing,
+                buy_down_price_from_clearing  = EXCLUDED.buy_down_price_from_clearing,
+                buy_down_slope                = EXCLUDED.buy_down_slope,
+                buy_up_mw_from_clearing       = EXCLUDED.buy_up_mw_from_clearing,
+                buy_up_price_from_clearing    = EXCLUDED.buy_up_price_from_clearing,
+                buy_up_slope                  = EXCLUDED.buy_up_slope
         """
 
         extras.execute_values(cursor, upsert_depth, records)

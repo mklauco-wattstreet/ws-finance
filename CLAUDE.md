@@ -136,13 +136,15 @@ Three tables store OTE day-ahead auction data at increasing abstraction levels:
 - Key flag: `supply_volume_gap = 0` means the first unmatched sell bid sits immediately above clearing — present in ALL extreme imbalance price events
 - Limitation: describes only the *first* step, not the full curve shape
 
-### `da_curve_depth` — Curve steepness at fixed MW offsets
-- One row per period x side x offset_mw (960/day = 96 x 2 x 5)
-- Offsets: 50, 100, 200, 500, 1000 MW (defined in `CURVE_DEPTH_OFFSETS_MW` constant)
-- `price_at_offset`: price where cumulative unmatched volume first reaches offset_mw
-- `NULL price_at_offset`: curve exhausted before that offset
-- `volume_available`: total unmatched volume on this side
-- Adding new offsets = Python constant change only, no migration needed
+### `da_curve_depth` — Largest price-jump (wall) per direction
+- One row per period (96/day), keyed on `(delivery_date, period)`
+- Four directions walked outward from clearing: `sell_up`, `sell_down`, `buy_down`, `buy_up`
+- Per direction, three columns: `<dir>_mw_from_clearing`, `<dir>_price_from_clearing`, `<dir>_slope`
+- `mw_from_clearing`: cumulative MW from clearing to the foot of the jump (>= 0)
+- `price_from_clearing`: signed price distance to the top of the jump (`price_top - clearing_price`); negative for `*_down`
+- `slope = price_from_clearing / mw_from_clearing`
+- NULL across a direction's three fields when that side has < 2 bids (common: `sell_down`/`buy_up` in normal regimes)
+- Legacy MW-offset table preserved as `da_curve_depth_legacy_offset_mw` (drop after backfill is verified)
 
 ### Key findings from analysis (2026-03-04)
 - DA curve steepness alone has weak linear correlation (0.13) with imbalance prices
