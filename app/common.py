@@ -350,32 +350,30 @@ def run_upload_script(upload_script_name, base_dir, start_date, end_date, logger
             continue
 
         try:
-            # Execute upload script as subprocess
             script_path = base_dir / upload_script_name
-            result = subprocess.run(
-                ['/usr/local/bin/python3', str(script_path), year_month],
+            proc = subprocess.Popen(
+                ['/usr/local/bin/python3', '-u', str(script_path), year_month],
                 cwd=base_dir,
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
                 text=True,
-                timeout=300,  # 5 minute timeout
-                env=os.environ.copy()  # Pass environment variables to subprocess
+                bufsize=1,
+                env=os.environ.copy(),
             )
 
-            # Collect upload output lines
-            if result.stdout:
-                for line in result.stdout.strip().split('\n'):
-                    if line.strip():
-                        upload_lines.append(line.strip())
+            for line in proc.stdout:
+                line = line.rstrip()
+                if not line:
+                    continue
+                logger.info(f"[{year_month}] {line}")
+                upload_lines.append(line)
 
-            if result.returncode != 0:
-                logger.error(f"Upload failed for {year_month}")
-                if result.stderr:
-                    logger.error(f"  stderr: {result.stderr.strip()}")
+            proc.wait()
+
+            if proc.returncode != 0:
+                logger.error(f"Upload failed for {year_month} (exit {proc.returncode})")
                 all_success = False
 
-        except subprocess.TimeoutExpired:
-            logger.error(f"Upload timeout for {year_month}")
-            all_success = False
         except Exception as e:
             logger.error(f"Upload error for {year_month}: {e}")
             all_success = False
