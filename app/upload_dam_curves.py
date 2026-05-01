@@ -698,16 +698,26 @@ def process_directory(directory_path, logger, debug_mode=False):
                     print_debug_info(records, delivery_date)
                     files_processed += 1
                 else:
+                    t0 = datetime.now()
                     bid_count = upsert_da_bid(records, conn, logger)
                     total_bids += bid_count
+                    t1 = datetime.now()
 
                     summary_count = compute_and_upsert_period_summary(delivery_date, conn, logger)
                     total_summaries += summary_count
+                    t2 = datetime.now()
 
                     depth_count = compute_and_upsert_curve_depth(delivery_date, conn, logger)
                     total_depths += depth_count
+                    t3 = datetime.now()
 
                     files_processed += 1
+                    logger.info(
+                        f"{delivery_date} ok | bids={bid_count} ({(t1 - t0).total_seconds():.1f}s) "
+                        f"summary={summary_count} ({(t2 - t1).total_seconds():.1f}s) "
+                        f"depth={depth_count} ({(t3 - t2).total_seconds():.1f}s)"
+                    )
+                    sys.stdout.flush()
 
             except Exception as e:
                 logger.error(f"Error {xml_file.name}: {e}")
