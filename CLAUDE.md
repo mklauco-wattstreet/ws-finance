@@ -138,12 +138,12 @@ Three tables store OTE day-ahead auction data at increasing abstraction levels:
 
 ### `da_curve_depth` — Largest price-jump (wall) per direction
 - One row per period (96/day), keyed on `(delivery_date, period)`
-- Four directions walked outward from clearing: `sell_up`, `sell_down`, `buy_down`, `buy_up`
+- Four directions walked outward from clearing: `supply` (sell, unmatched, above clearing), `supply_matched` (sell, matched, below clearing), `demand` (buy, unmatched, below clearing), `demand_matched` (buy, matched, above clearing)
 - Per direction, three columns: `<dir>_mw_from_clearing`, `<dir>_price_from_clearing`, `<dir>_slope`
 - `mw_from_clearing`: cumulative MW from clearing to the foot of the jump (>= 0)
-- `price_from_clearing`: signed price distance to the top of the jump (`price_top - clearing_price`); negative for `*_down`
+- `price_from_clearing`: signed price distance to the top of the jump (`price_top - clearing_price`); negative for `supply_matched` and `demand`
 - `slope = price_from_clearing / mw_from_clearing`
-- NULL across a direction's three fields when that side has < 2 bids (common: `sell_down`/`buy_up` in normal regimes)
+- NULL across a direction's three fields when that side has < 2 bids (common: `supply_matched`/`demand_matched` in normal regimes)
 - Legacy MW-offset table preserved as `da_curve_depth_legacy_offset_mw` (drop after backfill is verified)
 
 ### Key findings from analysis (2026-03-04)

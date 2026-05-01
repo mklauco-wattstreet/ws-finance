@@ -378,15 +378,16 @@ def compute_and_upsert_curve_depth(delivery_date, conn, logger):
 
     For each period, walks the DAM curve outward from the clearing price in
     four directions and records the single largest price jump per direction:
-      sell_up   - sell bids above clearing, ASC
-      sell_down - sell bids below clearing, DESC
-      buy_down  - buy bids below clearing, DESC
-      buy_up    - buy bids above clearing, ASC
+      supply         - sell bids above clearing (unmatched), ASC
+      supply_matched - sell bids below clearing (matched), DESC
+      demand         - buy bids below clearing (unmatched), DESC
+      demand_matched - buy bids above clearing (matched), ASC
 
     For each direction stores:
       mw_from_clearing    - cumulative MW from clearing to foot of jump (>= 0)
       price_from_clearing - signed price distance to top of jump
-                            (price_top - clearing_price; negative for *_down)
+                            (price_top - clearing_price; negative for
+                            supply_matched / demand)
       slope               - price_from_clearing / mw_from_clearing
 
     Tie-break: largest |jump| first, then closest to clearing.
@@ -414,7 +415,7 @@ def compute_and_upsert_curve_depth(delivery_date, conn, logger):
               AND volume_matched > 0
             GROUP BY period
         ),
-        sell_up_walk AS (
+        supply_walk AS (
             SELECT
                 b.period, b.price, c.clearing_price,
                 SUM(b.volume_bid) OVER (PARTITION BY b.period ORDER BY b.price ASC
@@ -426,16 +427,16 @@ def compute_and_upsert_curve_depth(delivery_date, conn, logger):
               AND b.side = 'sell'
               AND b.price > c.clearing_price
         ),
-        sell_up_wall AS (
+        supply_wall AS (
             SELECT DISTINCT ON (period)
                 period,
                 COALESCE(cum_vol_before, 0) AS mw_from_clearing,
                 price - clearing_price       AS price_from_clearing
-            FROM sell_up_walk
+            FROM supply_walk
             WHERE prev_price IS NOT NULL
             ORDER BY period, ABS(price - prev_price) DESC, COALESCE(cum_vol_before, 0) ASC
         ),
-        sell_down_walk AS (
+        supply_matched_walk AS (
             SELECT
                 b.period, b.price, c.clearing_price,
                 SUM(b.volume_bid) OVER (PARTITION BY b.period ORDER BY b.price DESC
@@ -447,16 +448,16 @@ def compute_and_upsert_curve_depth(delivery_date, conn, logger):
               AND b.side = 'sell'
               AND b.price < c.clearing_price
         ),
-        sell_down_wall AS (
+        supply_matched_wall AS (
             SELECT DISTINCT ON (period)
                 period,
                 COALESCE(cum_vol_before, 0) AS mw_from_clearing,
                 price - clearing_price       AS price_from_clearing
-            FROM sell_down_walk
+            FROM supply_matched_walk
             WHERE prev_price IS NOT NULL
             ORDER BY period, ABS(price - prev_price) DESC, COALESCE(cum_vol_before, 0) ASC
         ),
-        buy_down_walk AS (
+        demand_walk AS (
             SELECT
                 b.period, b.price, c.clearing_price,
                 SUM(b.volume_bid) OVER (PARTITION BY b.period ORDER BY b.price DESC
@@ -468,16 +469,16 @@ def compute_and_upsert_curve_depth(delivery_date, conn, logger):
               AND b.side = 'buy'
               AND b.price < c.clearing_price
         ),
-        buy_down_wall AS (
+        demand_wall AS (
             SELECT DISTINCT ON (period)
                 period,
                 COALESCE(cum_vol_before, 0) AS mw_from_clearing,
                 price - clearing_price       AS price_from_clearing
-            FROM buy_down_walk
+            FROM demand_walk
             WHERE prev_price IS NOT NULL
             ORDER BY period, ABS(price - prev_price) DESC, COALESCE(cum_vol_before, 0) ASC
         ),
-        buy_up_walk AS (
+        demand_matched_walk AS (
             SELECT
                 b.period, b.price, c.clearing_price,
                 SUM(b.volume_bid) OVER (PARTITION BY b.period ORDER BY b.price ASC
@@ -489,12 +490,12 @@ def compute_and_upsert_curve_depth(delivery_date, conn, logger):
               AND b.side = 'buy'
               AND b.price > c.clearing_price
         ),
-        buy_up_wall AS (
+        demand_matched_wall AS (
             SELECT DISTINCT ON (period)
                 period,
                 COALESCE(cum_vol_before, 0) AS mw_from_clearing,
                 price - clearing_price       AS price_from_clearing
-            FROM buy_up_walk
+            FROM demand_matched_walk
             WHERE prev_price IS NOT NULL
             ORDER BY period, ABS(price - prev_price) DESC, COALESCE(cum_vol_before, 0) ASC
         )
@@ -507,30 +508,30 @@ def compute_and_upsert_curve_depth(delivery_date, conn, logger):
             su.price_from_clearing,
             CASE WHEN su.mw_from_clearing > 0
                  THEN su.price_from_clearing / su.mw_from_clearing
-                 ELSE NULL END AS sell_up_slope,
+                 ELSE NULL END AS supply_slope,
 
-            sd.mw_from_clearing,
-            sd.price_from_clearing,
-            CASE WHEN sd.mw_from_clearing > 0
-                 THEN sd.price_from_clearing / sd.mw_from_clearing
-                 ELSE NULL END AS sell_down_slope,
+            sm.mw_from_clearing,
+            sm.price_from_clearing,
+            CASE WHEN sm.mw_from_clearing > 0
+                 THEN sm.price_from_clearing / sm.mw_from_clearing
+                 ELSE NULL END AS supply_matched_slope,
 
-            bd.mw_from_clearing,
-            bd.price_from_clearing,
-            CASE WHEN bd.mw_from_clearing > 0
-                 THEN bd.price_from_clearing / bd.mw_from_clearing
-                 ELSE NULL END AS buy_down_slope,
+            dm.mw_from_clearing,
+            dm.price_from_clearing,
+            CASE WHEN dm.mw_from_clearing > 0
+                 THEN dm.price_from_clearing / dm.mw_from_clearing
+                 ELSE NULL END AS demand_slope,
 
-            bu.mw_from_clearing,
-            bu.price_from_clearing,
-            CASE WHEN bu.mw_from_clearing > 0
-                 THEN bu.price_from_clearing / bu.mw_from_clearing
-                 ELSE NULL END AS buy_up_slope
+            dmm.mw_from_clearing,
+            dmm.price_from_clearing,
+            CASE WHEN dmm.mw_from_clearing > 0
+                 THEN dmm.price_from_clearing / dmm.mw_from_clearing
+                 ELSE NULL END AS demand_matched_slope
         FROM clearing c
-        LEFT JOIN sell_up_wall   su ON su.period = c.period
-        LEFT JOIN sell_down_wall sd ON sd.period = c.period
-        LEFT JOIN buy_down_wall  bd ON bd.period = c.period
-        LEFT JOIN buy_up_wall    bu ON bu.period = c.period
+        LEFT JOIN supply_wall          su  ON su.period  = c.period
+        LEFT JOIN supply_matched_wall  sm  ON sm.period  = c.period
+        LEFT JOIN demand_wall          dm  ON dm.period  = c.period
+        LEFT JOIN demand_matched_wall  dmm ON dmm.period = c.period
         ORDER BY c.period
     """
 
@@ -549,35 +550,35 @@ def compute_and_upsert_curve_depth(delivery_date, conn, logger):
                 row[0],   # period
                 row[1],   # time_interval
                 row[2],   # clearing_price
-                row[3],  row[4],  row[5],   # sell_up
-                row[6],  row[7],  row[8],   # sell_down
-                row[9],  row[10], row[11],  # buy_down
-                row[12], row[13], row[14],  # buy_up
+                row[3],  row[4],  row[5],   # supply
+                row[6],  row[7],  row[8],   # supply_matched
+                row[9],  row[10], row[11],  # demand
+                row[12], row[13], row[14],  # demand_matched
             ))
 
         upsert_depth = """
             INSERT INTO da_curve_depth (
                 delivery_date, period, time_interval, clearing_price,
-                sell_up_mw_from_clearing,   sell_up_price_from_clearing,   sell_up_slope,
-                sell_down_mw_from_clearing, sell_down_price_from_clearing, sell_down_slope,
-                buy_down_mw_from_clearing,  buy_down_price_from_clearing,  buy_down_slope,
-                buy_up_mw_from_clearing,    buy_up_price_from_clearing,    buy_up_slope
+                supply_mw_from_clearing,         supply_price_from_clearing,         supply_slope,
+                supply_matched_mw_from_clearing, supply_matched_price_from_clearing, supply_matched_slope,
+                demand_mw_from_clearing,         demand_price_from_clearing,         demand_slope,
+                demand_matched_mw_from_clearing, demand_matched_price_from_clearing, demand_matched_slope
             ) VALUES %s
             ON CONFLICT (delivery_date, period) DO UPDATE SET
                 time_interval = EXCLUDED.time_interval,
                 clearing_price = EXCLUDED.clearing_price,
-                sell_up_mw_from_clearing      = EXCLUDED.sell_up_mw_from_clearing,
-                sell_up_price_from_clearing   = EXCLUDED.sell_up_price_from_clearing,
-                sell_up_slope                 = EXCLUDED.sell_up_slope,
-                sell_down_mw_from_clearing    = EXCLUDED.sell_down_mw_from_clearing,
-                sell_down_price_from_clearing = EXCLUDED.sell_down_price_from_clearing,
-                sell_down_slope               = EXCLUDED.sell_down_slope,
-                buy_down_mw_from_clearing     = EXCLUDED.buy_down_mw_from_clearing,
-                buy_down_price_from_clearing  = EXCLUDED.buy_down_price_from_clearing,
-                buy_down_slope                = EXCLUDED.buy_down_slope,
-                buy_up_mw_from_clearing       = EXCLUDED.buy_up_mw_from_clearing,
-                buy_up_price_from_clearing    = EXCLUDED.buy_up_price_from_clearing,
-                buy_up_slope                  = EXCLUDED.buy_up_slope
+                supply_mw_from_clearing            = EXCLUDED.supply_mw_from_clearing,
+                supply_price_from_clearing         = EXCLUDED.supply_price_from_clearing,
+                supply_slope                       = EXCLUDED.supply_slope,
+                supply_matched_mw_from_clearing    = EXCLUDED.supply_matched_mw_from_clearing,
+                supply_matched_price_from_clearing = EXCLUDED.supply_matched_price_from_clearing,
+                supply_matched_slope               = EXCLUDED.supply_matched_slope,
+                demand_mw_from_clearing            = EXCLUDED.demand_mw_from_clearing,
+                demand_price_from_clearing         = EXCLUDED.demand_price_from_clearing,
+                demand_slope                       = EXCLUDED.demand_slope,
+                demand_matched_mw_from_clearing    = EXCLUDED.demand_matched_mw_from_clearing,
+                demand_matched_price_from_clearing = EXCLUDED.demand_matched_price_from_clearing,
+                demand_matched_slope               = EXCLUDED.demand_matched_slope
         """
 
         extras.execute_values(cursor, upsert_depth, records)

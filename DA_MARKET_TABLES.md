@@ -95,19 +95,19 @@ That is what `da_curve_depth` solves.
 
 One row per period (96/day), keyed on `(delivery_date, period)`. For each contract, the curve is walked outward from clearing in four directions, and the single largest price jump in each direction is recorded.
 
-| Direction | Curve walked | Walk order |
-|-----------|--------------|------------|
-| `sell_up`   | sell bids with price > clearing | ASC |
-| `sell_down` | sell bids with price < clearing | DESC |
-| `buy_down`  | buy bids with price < clearing  | DESC |
-| `buy_up`    | buy bids with price > clearing  | ASC |
+| Direction        | Curve walked                                | Walk order |
+|------------------|---------------------------------------------|------------|
+| `supply`         | sell bids with price > clearing (unmatched) | ASC |
+| `supply_matched` | sell bids with price < clearing (matched)   | DESC |
+| `demand`         | buy bids with price < clearing (unmatched)  | DESC |
+| `demand_matched` | buy bids with price > clearing (matched)    | ASC |
 
 Per direction, three columns (`<dir>_mw_from_clearing`, `<dir>_price_from_clearing`, `<dir>_slope`):
 
 | Column | Meaning |
 |--------|---------|
 | `<dir>_mw_from_clearing`    | Cumulative MW from clearing to the foot of the jump (>= 0) |
-| `<dir>_price_from_clearing` | Signed price distance to top of jump: `price_top - clearing_price`. Positive for `sell_up` / `buy_up`, negative for `sell_down` / `buy_down`. |
+| `<dir>_price_from_clearing` | Signed price distance to top of jump: `price_top - clearing_price`. Positive for `supply` / `demand_matched`, negative for `supply_matched` / `demand`. |
 | `<dir>_slope`               | `price_from_clearing / mw_from_clearing` (€/MWh per MW). Same sign as `price_from_clearing`. |
 
 Plus `clearing_price` (NUMERIC(10, 2), NOT NULL).
@@ -119,9 +119,9 @@ When two consecutive pairs share the same |jump|, the one closest to clearing (s
 ### NULL semantics
 
 A direction's three fields are NULL together when that side has < 2 bids in the relevant range:
-- `sell_down_*` and `buy_up_*` are NULL in normal regimes (supply/demand curves typically start at clearing).
-- `sell_up_*` NULL is rare — extreme oversupply with thin sell curve above clearing.
-- `buy_down_*` NULL is rare — extreme scarcity with thin buy curve below clearing.
+- `supply_matched_*` and `demand_matched_*` are NULL in normal regimes (supply/demand curves typically start at clearing — no inframarginal step pair to score).
+- `supply_*` NULL is rare — extreme oversupply with thin sell curve above clearing.
+- `demand_*` NULL is rare — extreme scarcity with thin buy curve below clearing.
 
 NULLs are valid output. Do not substitute zero.
 

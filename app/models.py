@@ -790,10 +790,10 @@ class DaCurveDepth(Base):
     """OTE Day-Ahead Market curve walls anchored to clearing.
 
     For each period, stores the largest price jump (wall) found by walking
-    the DAM curve outward from clearing in four directions: sell_up,
-    sell_down, buy_down, buy_up. price_from_clearing is signed
-    (negative for *_down). NULL across a direction's three fields when
-    that side has < 2 bids in that range.
+    the DAM curve outward from clearing in four directions: supply,
+    supply_matched, demand, demand_matched. price_from_clearing is signed
+    (negative for supply_matched and demand). NULL across a direction's
+    three fields when that side has < 2 bids in that range.
     """
     __tablename__ = 'da_curve_depth'
     __table_args__ = (
@@ -806,21 +806,21 @@ class DaCurveDepth(Base):
     time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
     clearing_price: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
 
-    sell_up_mw_from_clearing: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
-    sell_up_price_from_clearing: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2))
-    sell_up_slope: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 4))
+    supply_mw_from_clearing: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    supply_price_from_clearing: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2))
+    supply_slope: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 4))
 
-    sell_down_mw_from_clearing: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
-    sell_down_price_from_clearing: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2))
-    sell_down_slope: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 4))
+    supply_matched_mw_from_clearing: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    supply_matched_price_from_clearing: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2))
+    supply_matched_slope: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 4))
 
-    buy_down_mw_from_clearing: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
-    buy_down_price_from_clearing: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2))
-    buy_down_slope: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 4))
+    demand_mw_from_clearing: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    demand_price_from_clearing: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2))
+    demand_slope: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 4))
 
-    buy_up_mw_from_clearing: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
-    buy_up_price_from_clearing: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2))
-    buy_up_slope: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 4))
+    demand_matched_mw_from_clearing: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    demand_matched_price_from_clearing: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2))
+    demand_matched_slope: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 4))
 
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
 

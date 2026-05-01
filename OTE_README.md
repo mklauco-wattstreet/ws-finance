@@ -67,22 +67,22 @@ Critical flag: **`supply_volume_gap = 0`** means the first unmatched sell bid si
 
 For each period the curve is walked outward from clearing in four directions, and the single largest price jump in each direction is recorded.
 
-| Direction | Curve walked | Walk order |
-|-----------|--------------|------------|
-| `sell_up`   | sell bids with price > clearing | ASC |
-| `sell_down` | sell bids with price < clearing | DESC |
-| `buy_down`  | buy bids with price < clearing  | DESC |
-| `buy_up`    | buy bids with price > clearing  | ASC |
+| Direction        | Curve walked                                    | Walk order |
+|------------------|-------------------------------------------------|------------|
+| `supply`         | sell bids with price > clearing (unmatched)     | ASC |
+| `supply_matched` | sell bids with price < clearing (matched)       | DESC |
+| `demand`         | buy bids with price < clearing (unmatched)      | DESC |
+| `demand_matched` | buy bids with price > clearing (matched)        | ASC |
 
-Per direction, three columns (e.g. `sell_up_*`):
+Per direction, three columns (e.g. `supply_*`):
 
 | Column | Description |
 |--------|-------------|
 | `<dir>_mw_from_clearing`    | Cumulative MW from clearing to the foot of the jump |
-| `<dir>_price_from_clearing` | Signed price distance to top of jump (`price_top - clearing_price`); negative for `*_down` |
+| `<dir>_price_from_clearing` | Signed price distance to top of jump (`price_top - clearing_price`); negative for `supply_matched` and `demand` |
 | `<dir>_slope`               | `price_from_clearing / mw_from_clearing` (€/MWh per MW) |
 
-NULL across a direction's three fields when that side has < 2 bids in that range (common: `sell_down` and `buy_up` are NULL in normal regimes).
+NULL across a direction's three fields when that side has < 2 bids in that range (common: `supply_matched` and `demand_matched` are NULL in normal regimes).
 
 See `DA_MARKET_TABLES.md` for full analysis, correlation results, and ML feature recommendations.
 
