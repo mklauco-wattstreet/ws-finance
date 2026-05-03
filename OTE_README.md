@@ -29,7 +29,7 @@ Downloads OTE matching curve XMLs and computes three tables at increasing abstra
 | **Downloader** | `app/download_dam_curves.py` |
 | **Uploader** | `app/upload_dam_curves.py` |
 | **Source** | OTE-CR website: `MC_DD_MM_YYYY_EN.xml` |
-| **Schedule** | `30 14 * * *` (14:30, after ~13:00 auction) |
+| **Schedule** | `30 14,16,18,20 * * *` (every 2h from 14:30 — first slot is the live publish, the rest are retries) |
 | **Fetches** | D+1 data (next day's auction results) |
 | **File storage** | `./downloads/` (XML) |
 
@@ -58,6 +58,7 @@ Downloads OTE matching curve XMLs and computes three tables at increasing abstra
 | `supply_price_gap` | supply_next_price - clearing_price |
 | `supply_volume_gap` | Unmatched sell volume between clearing and first step |
 | `demand_next_price` | First unmatched buy bid below MCP |
+| `demand_next_volume` | Volume of that bid |
 | `demand_price_gap` | clearing_price - demand_next_price |
 | `demand_volume_gap` | Unmatched buy volume between clearing and first step |
 
@@ -88,7 +89,7 @@ See `DA_MARKET_TABLES.md` for full analysis, correlation results, and ML feature
 
 ---
 
-### 2. Day-Ahead Prices
+### 2. Day-Ahead Prices (15-min)
 
 Downloads OTE day-ahead settlement price reports (Excel).
 
@@ -97,7 +98,7 @@ Downloads OTE day-ahead settlement price reports (Excel).
 | **Downloader** | `app/download_day_ahead_prices.py` |
 | **Uploader** | `app/upload_day_ahead_prices.py` |
 | **Source** | OTE-CR website: `DM_DD_MM_YYYY_EN.xlsx` (or `DM_15MIN_*` from Oct 2025) |
-| **Schedule** | `0 16 * * *` (16:00 daily) |
+| **Schedule** | `0 16,18,20,22 * * *` (every 2h from 16:00 — retries) |
 | **File storage** | `./ote_files/` (Excel) |
 
 **Table: `ote_prices_day_ahead`** (96 rows/day)
@@ -119,6 +120,37 @@ Downloads OTE day-ahead settlement price reports (Excel).
 PK: `(trade_date, period)`. Upsert on conflict.
 
 **Format transition:** Before Oct 1, 2025, hourly data is expanded to 96 periods (volume/4, prices same). From Oct 1, direct 15-min mapping.
+
+---
+
+### 2b. Day-Ahead Prices (60-min)
+
+Companion table to `ote_prices_day_ahead`, retaining the native 60-min price published by OTE rather than the expanded 15-min view.
+
+| Property | Value |
+|----------|-------|
+| **Downloader** | `app/download_day_ahead_60min_prices.py` |
+| **Uploader** | called by the downloader |
+| **Source** | OTE-CR website: `DM_DD_MM_YYYY_EN.xlsx` (60-min sheet) |
+| **Schedule** | `0 16,18,20,22 * * *` (every 2h from 16:00) |
+| **File storage** | `./ote_files/` (Excel) |
+
+**Table: `ote_prices_day_ahead_60min`** (24 rows/day)
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `period_60` | INTEGER | 1–24 hourly period |
+| `time_interval` | VARCHAR(11) | `"HH:00-HH+1:00"` |
+| `price_60min_eur_mwh` | NUMERIC(10,2) | 60-min product price EUR/MWh |
+| `volume_mwh` | NUMERIC(12,3) | Traded volume |
+| `purchase_15min_products_mwh` | NUMERIC(12,3) | 15-min purchase volume aggregated to the hour |
+| `purchase_60min_products_mwh` | NUMERIC(12,3) | 60-min purchase volume |
+| `sale_15min_products_mwh` | NUMERIC(12,3) | 15-min sale volume aggregated to the hour |
+| `sale_60min_products_mwh` | NUMERIC(12,3) | 60-min sale volume |
+| `saldo_dm_mwh` | NUMERIC(12,3) | DA market balance |
+| `export_mwh` | NUMERIC(12,3) | Export volume |
+
+UNIQUE: `(trade_date, period_60)` and `(trade_date, time_interval)`. Upsert on conflict.
 
 ---
 
@@ -187,6 +219,33 @@ PK: `(trade_date, period)`. Upsert on conflict (file updates intra-day).
 
 ---
 
+### 4b. Intraday Auction Prices (IDA1/IDA2/IDA3)
+
+Three discrete intraday auction sessions held during the delivery day, separate from the continuous market in section 4.
+
+| Property | Value |
+|----------|-------|
+| **Downloader** | `app/download_ida_prices.py --ida {1,2,3}` |
+| **Source** | OTE-CR website (Excel per auction session) |
+| **Schedule** | IDA1: `0 11,13,15 * * *` &nbsp; IDA2: `0 15,17,19 * * *` &nbsp; IDA3: `0 19,21,23 * * *` |
+| **File storage** | `./IDA1/`, `./IDA2/`, `./IDA3/` (cleaned after 7 days) |
+
+**Table: `ote_prices_ida`** (up to 96×3 rows/day)
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `period` | INTEGER | 1–96 |
+| `ida_idx` | SMALLINT | 1, 2, or 3 — which auction session |
+| `time_interval` | VARCHAR(11) | 15-min interval |
+| `price_eur_mwh` | NUMERIC | Auction clearing price EUR/MWh |
+| `volume_mwh` | NUMERIC | Cleared volume |
+| `saldo_dm_mwh` | NUMERIC | Market balance |
+| `export_mwh` / `import_mwh` | NUMERIC | Cross-border flow components |
+
+UNIQUE: `(trade_date, period, ida_idx)`.
+
+---
+
 ### 5. OTE Portal Downloads (Selenium)
 
 Certificate-authenticated portal automation for settlement reports not available via public HTTP.
@@ -223,7 +282,7 @@ Duplicate detection on `(delivery_day, settlement_version, settlement_item, type
 |----------|-------|
 | **Script** | `app/ote_trade_balance_downloader.py` |
 | **Uploader** | `app/upload_ote_trade_balance.py` |
-| **Schedule** | `0 */2 * * *` (every 2 hours) |
+| **Schedule** | `10 */2 * * *` (every 2 hours, offset by 10 min from imbalance prices) |
 
 **Table: `ote_trade_balance`** (96 rows/day)
 
@@ -237,6 +296,28 @@ Duplicate detection on `(delivery_day, settlement_version, settlement_item, type
 | *(same columns in MWh)* | | |
 
 PK: `(delivery_date, time_interval)`. Upsert on conflict with `IS DISTINCT FROM` change detection.
+
+#### Monthly Settlement Data
+
+OTE monthly invoice data, ingested from JSON exports. Structure preserved as JSONB plus extracted scalar columns for indexing.
+
+**Table: `ote_monthly_settlement_data`**
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `header` | JSONB | Original invoice header (NOT NULL) |
+| `trade_date` | DATE | Invoice trade date |
+| `variable_symbol` | VARCHAR(255) | Bank variable symbol |
+| `trade_type` | VARCHAR(100) | Trade type identifier |
+| `version` | INTEGER | Invoice version |
+| `invoice_from_ote` | INTEGER | Direction flag (1 = invoice from OTE, 0 = to OTE) |
+| `volume_mwh` | NUMERIC(12,4) | Volume |
+| `exchange_rate_czk_eur` | NUMERIC(10,6) | Applied FX rate |
+| `original_amount_net_czk` / `_eur` | NUMERIC(15,3) | Net amount |
+| `original_vat_czk` / `_eur` | NUMERIC(15,3) | VAT |
+| `payment_eur` | NUMERIC(15,3) | Final EUR payment |
+
+PK on `id`; indexes on `trade_date`, `trade_type`, `variable_symbol`, `invoice_from_ote`.
 
 ---
 
@@ -293,12 +374,16 @@ Cleanup cron at 02:10 deletes OTE files older than 7 days.
 ## Cron Schedule Summary
 
 ```
-*/15 * * * *  download_intraday_prices.py       (continuous intraday updates)
-0 */2 * * *   download_imbalance_prices.py      (imbalance settlement data)
-0 */2 * * *   ote_trade_balance_downloader.py   (trade balance from portal)
-0 09 * * *    ote_production.py                 (daily payments from portal)
-30 14 * * *   download_dam_curves.py            (D+1 auction matching curves)
-0 16 * * *    download_day_ahead_prices.py      (DA settlement prices)
+*/15 * * * *           download_intraday_prices.py             (continuous intraday updates)
+0 */2 * * *            download_imbalance_prices.py            (imbalance settlement, every 2h)
+10 */2 * * *           ote_trade_balance_downloader.py         (trade balance from portal, +10 offset)
+0 09 * * *             ote_production.py                       (daily payments from portal)
+30 14,16,18,20 * * *   download_dam_curves.py                  (D+1 auction matching curves, retries)
+0 16,18,20,22 * * *    download_day_ahead_prices.py            (DA settlement prices 15-min, retries)
+0 16,18,20,22 * * *    download_day_ahead_60min_prices.py      (DA settlement prices 60-min, retries)
+0 11,13,15 * * *       download_ida_prices.py --ida 1          (intraday auction session 1)
+0 15,17,19 * * *       download_ida_prices.py --ida 2          (intraday auction session 2)
+0 19,21,23 * * *       download_ida_prices.py --ida 3          (intraday auction session 3)
 ```
 
 ## Troubleshooting

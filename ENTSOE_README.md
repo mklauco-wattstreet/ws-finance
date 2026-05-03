@@ -20,15 +20,19 @@ ENTSO-E provides the **pan-European view** of the electricity grid. While CEPS g
 
 | Runner | Doc Type | Table | Active Areas | Schedule |
 |--------|----------|-------|-------------|----------|
-| `entsoe_unified_gen_runner` | A75 | `entsoe_generation_actual` | CZ, DE(4 TSOs), AT, PL, SK | `*/15 * * * *` |
-| `entsoe_unified_load_runner` | A65 | `entsoe_load` | CZ, DE, AT, PL, SK | `*/15 * * * *` |
-| `entsoe_unified_forecast_runner` | A69 | `entsoe_generation_forecast` | CZ, DE, AT, PL, SK | `*/15 * * * *` |
-| `entsoe_unified_scheduled_runner` | A71 | `entsoe_generation_scheduled` | CZ, DE, AT, PL, SK | `*/15 * * * *` |
-| `entsoe_unified_flow_runner` | A11 | `entsoe_cross_border_flows` | CZ (4 borders) | `*/15 * * * *` |
-| `entsoe_unified_sched_flow_runner` | A09 | `entsoe_scheduled_cross_border_flows` | CZ (4 borders) | `*/15 * * * *` |
-| `entsoe_unified_balancing_runner` | A84 | `entsoe_balancing_energy` | CZ, DE, AT, PL, SK | `*/15 * * * *` |
-| `entsoe_unified_imbalance_runner` | A85/A86 | `entsoe_imbalance_prices` | CZ, DE, AT, PL, SK, HU | `*/15 * * * *` |
-| `entsoe_unified_day_ahead_prices_runner` | A44 | `entsoe_day_ahead_prices` | HU, DE-LU, AT | `0 14 * * *` |
+| `entsoe_unified_gen_runner` | A75 | `entsoe_generation_actual` | CZ, DE(4 TSOs), AT, PL, SK | `14,29,44,59 * * * *` |
+| `entsoe_unified_load_runner` | A65 | `entsoe_load` | CZ, DE, AT, PL, SK | `14,29,44,59 * * * *` |
+| `entsoe_unified_forecast_runner` | A69 | `entsoe_generation_forecast` | CZ, DE, AT, PL, SK | `14,29,44,59 * * * *` |
+| `entsoe_unified_forecast_intraday_runner` | A40 | `entsoe_generation_forecast_intraday` | CZ, DE, AT, PL, SK | `14,29,44,59 * * * *` |
+| `entsoe_unified_forecast_current_runner` | A18 | `entsoe_generation_forecast_current` | CZ, DE, AT, PL, SK | `14,29,44,59 * * * *` |
+| `entsoe_unified_scheduled_runner` | A71 | `entsoe_generation_scheduled` | CZ, DE, AT, PL, SK | `14,29,44,59 * * * *` |
+| `entsoe_unified_flow_runner` | A11 | `entsoe_cross_border_flows` | CZ (4 borders) | `14,29,44,59 * * * *` |
+| `entsoe_unified_sched_flow_runner` | A09 | `entsoe_scheduled_cross_border_flows` | CZ (4 borders) | `14,29,44,59 * * * *` |
+| `entsoe_unified_balancing_runner` | A84 | `entsoe_balancing_energy` | CZ, DE, AT, PL, SK | `14,29,44,59 * * * *` |
+| `entsoe_unified_imbalance_runner` | A85/A86 | `entsoe_imbalance_prices` | CZ, DE, AT, PL, SK, HU | `14,29,44,59 * * * *` |
+| `entsoe_unified_day_ahead_prices_runner` | A44 | `entsoe_day_ahead_prices` | HU, DE-LU, AT | `0 14,16,18,20 * * *` |
+
+> Cron lands at `14,29,44,59` so data is on disk before the downstream consumer at `01,16,31,46`. Day-ahead prices retry every 2h after the ~13:00 publication.
 
 ## Directory Structure
 
@@ -64,7 +68,7 @@ ENTSOE_BASE_URL=https://web-api.tp.entsoe.eu/api
 
 ### Cron (Automatic)
 
-Most runners execute every 15 minutes via crontab, fetching the last 3 hours of data. Day-ahead prices run once daily at 14:00 (after ~13:00 publication).
+Most runners execute at minutes `14,29,44,59` of every hour, fetching the last 3 hours of data. The offset is intentional — data lands before a downstream consumer wakes at `01,16,31,46`. Day-ahead prices run every 2h from 14:00–20:00 (publication is ~13:00, so the extra slots are retries).
 
 ### Manual Execution
 
@@ -166,13 +170,33 @@ Actual total load and day-ahead forecast.
 
 ### entsoe_generation_forecast (A69)
 
-Day-ahead generation forecasts for renewable sources.
+Day-ahead generation forecasts for renewable sources. Published once per day for the next delivery day.
 
 | Column | Type | Description |
 |--------|------|-------------|
 | `forecast_solar_mw` | NUMERIC(12,3) | Solar forecast |
 | `forecast_wind_mw` | NUMERIC(12,3) | Wind Onshore forecast |
 | `forecast_wind_offshore_mw` | NUMERIC(12,3) | Wind Offshore forecast |
+
+### entsoe_generation_forecast_intraday (A40)
+
+Intraday-revised generation forecast — TSOs republish forecasts during the day as fresh weather data arrives. Same column set as the DA forecast; row state reflects the latest update for `(trade_date, period, area_id)`.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `forecast_solar_mw` | NUMERIC(12,3) | Solar forecast (intraday revision) |
+| `forecast_wind_mw` | NUMERIC(12,3) | Wind Onshore forecast (intraday revision) |
+| `forecast_wind_offshore_mw` | NUMERIC(12,3) | Wind Offshore forecast (intraday revision) |
+
+### entsoe_generation_forecast_current (A18)
+
+"Current" generation forecast — the most-recent rolling forecast for the period closest to wall-clock now. Same column set as above.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `forecast_solar_mw` | NUMERIC(12,3) | Solar forecast (rolling current) |
+| `forecast_wind_mw` | NUMERIC(12,3) | Wind Onshore forecast (rolling current) |
+| `forecast_wind_offshore_mw` | NUMERIC(12,3) | Wind Offshore forecast (rolling current) |
 
 ### entsoe_generation_scheduled (A71)
 
@@ -209,34 +233,35 @@ Day-ahead scheduled commercial exchanges for CZ borders.
 
 ### entsoe_balancing_energy (A84)
 
-Activated balancing energy prices for aFRR and mFRR reserves.
+Activated balancing energy prices for aFRR, mFRR and RR reserves.
 
 | Column | Type | Description |
 |--------|------|-------------|
-| `afrr_up_price_eur` | NUMERIC(12,3) | aFRR upward activation price (EUR/MWh) |
-| `afrr_down_price_eur` | NUMERIC(12,3) | aFRR downward activation price |
-| `mfrr_up_price_eur` | NUMERIC(12,3) | mFRR upward activation price |
-| `mfrr_down_price_eur` | NUMERIC(12,3) | mFRR downward activation price |
+| `afrr_up_price_eur` | NUMERIC(15,3) | aFRR upward activation price (EUR/MWh) |
+| `afrr_down_price_eur` | NUMERIC(15,3) | aFRR downward activation price |
+| `mfrr_up_price_eur` | NUMERIC(15,3) | mFRR upward activation price |
+| `mfrr_down_price_eur` | NUMERIC(15,3) | mFRR downward activation price |
+| `rr_up_price_eur` | NUMERIC(15,3) | Replacement Reserves upward activation price (added 2026-03-07, mig 041) |
 
 ### entsoe_imbalance_prices (A85/A86)
 
-Imbalance prices with financial components and volumes. Currency is CZK for CZ, EUR for all others (column names say `czk_mwh` but store the local currency).
+Imbalance prices with financial components and volumes. Column names use a plain `_mwh` suffix; the per-row `currency` column carries `CZK` for CZ rows and `EUR` for everyone else.
 
 | Column | Type | Description |
 |--------|------|-------------|
-| `pos_imb_price_czk_mwh` | NUMERIC(15,3) | Positive imbalance price |
-| `pos_imb_scarcity_czk_mwh` | NUMERIC(15,3) | Positive imbalance scarcity component |
-| `pos_imb_incentive_czk_mwh` | NUMERIC(15,3) | Positive imbalance incentive component |
-| `pos_imb_financial_neutrality_czk_mwh` | NUMERIC(15,3) | Positive financial neutrality |
-| `neg_imb_price_czk_mwh` | NUMERIC(15,3) | Negative imbalance price |
-| `neg_imb_scarcity_czk_mwh` | NUMERIC(15,3) | Negative imbalance scarcity component |
-| `neg_imb_incentive_czk_mwh` | NUMERIC(15,3) | Negative imbalance incentive component |
-| `neg_imb_financial_neutrality_czk_mwh` | NUMERIC(15,3) | Negative financial neutrality |
+| `pos_imb_price_mwh` | NUMERIC(15,3) | Positive imbalance price |
+| `pos_imb_scarcity_mwh` | NUMERIC(15,3) | Positive imbalance scarcity component |
+| `pos_imb_incentive_mwh` | NUMERIC(15,3) | Positive imbalance incentive component |
+| `pos_imb_financial_neutrality_mwh` | NUMERIC(15,3) | Positive financial neutrality |
+| `neg_imb_price_mwh` | NUMERIC(15,3) | Negative imbalance price |
+| `neg_imb_scarcity_mwh` | NUMERIC(15,3) | Negative imbalance scarcity component |
+| `neg_imb_incentive_mwh` | NUMERIC(15,3) | Negative imbalance incentive component |
+| `neg_imb_financial_neutrality_mwh` | NUMERIC(15,3) | Negative financial neutrality |
 | `imbalance_mwh` | NUMERIC(12,5) | Total imbalance volume |
 | `difference_mwh` | NUMERIC(12,5) | Difference volume |
 | `situation` | VARCHAR | Market situation |
 | `status` | VARCHAR | Data status |
-| `currency` | VARCHAR | CZK or EUR |
+| `currency` | VARCHAR(3) | `CZK` or `EUR`, NOT NULL, default `EUR` |
 | `delivery_datetime` | TIMESTAMP | Full delivery timestamp |
 
 ### entsoe_day_ahead_prices (A44)
@@ -309,15 +334,18 @@ ORDER BY country_code, period;
 
 ### Imbalance Prices with Currency
 
+Use the `currency` column rather than country code to be safe — it is the source of truth.
+
 ```sql
-SELECT trade_date, period, country_code,
+SELECT i.trade_date, i.period, i.country_code,
        CASE
-           WHEN country_code = 'CZ' THEN ROUND(pos_imb_price_czk_mwh / 24.5, 2)
-           ELSE ROUND(pos_imb_price_czk_mwh, 2)
+           WHEN i.currency = 'CZK' THEN ROUND(i.pos_imb_price_mwh / fx.czk_eur, 2)
+           ELSE ROUND(i.pos_imb_price_mwh, 2)
        END AS imb_price_eur_mwh
-FROM finance.entsoe_imbalance_prices
-WHERE trade_date = '2025-12-15'
-ORDER BY country_code, period;
+FROM finance.entsoe_imbalance_prices i
+LEFT JOIN finance.cnb_exchange_rate fx ON fx.rate_date = i.trade_date
+WHERE i.trade_date = '2025-12-15'
+ORDER BY i.country_code, i.period;
 ```
 
 ## Migration History
@@ -339,7 +367,12 @@ ORDER BY country_code, period;
 | 024 | 2025-12-23 | Partition `entsoe_cross_border_flows` by country_code |
 | 025 | 2025-12-23 | Partition `entsoe_scheduled_cross_border_flows` by country_code |
 | 036 | 2026-01-23 | Add `entsoe_day_ahead_prices` partitioned table (HU) |
+| 037 | 2026-02-12 | Add HU imbalance currency column / data fix |
 | 040 | 2026-03-07 | Add DE-LU bidding zone (area_id=10) and DE/AT partitions for day-ahead prices |
+| 041 | 2026-03-07 | Add `rr_up_price_eur` to `entsoe_balancing_energy` |
+| 045 | 2026-03-12 | Add `entsoe_generation_forecast_intraday` (A40) and `entsoe_generation_forecast_current` (A18) partitioned tables |
+| 051 | 2026-04-05 | Add `updated_at` columns to all ENTSO-E tables |
+| 056 | 2026-05-01 | (latest) — see CEPS/OTE migration tables for non-ENTSO-E migrations interleaved between these revisions |
 
 ---
 

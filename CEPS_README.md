@@ -49,7 +49,7 @@ downloads/ceps/
 
 ### Cron (Automatic)
 
-Pipeline runs every 15 minutes (at :12, :27, :42, :57), fetching today's data for all datasets.
+Pipeline runs every 15 minutes at minutes `14,29,44,59`, fetching today's data for all datasets. The offset lands data on disk before a downstream consumer at `01,16,31,46`.
 
 ### Manual Execution
 
@@ -313,6 +313,8 @@ XML files stored in `downloads/ceps/soap/YYYY/MM/` and auto-cleaned after 1 day 
 | 035 | 2026-01-17 | Create estimated imbalance price table |
 | 042 | 2026-03-07 | Create ceps_1min_features_15min table (distributional/volatility features) |
 | 043 | 2026-03-07 | Create ceps_derived_features_15min table (rolling memory + forecast surprise) |
+| 044 | 2026-03-08 | Add "golden trio" feature columns |
+| 050 | 2026-04-04 | Add `updated_at` to all CEPS tables |
 
 ## Troubleshooting
 
