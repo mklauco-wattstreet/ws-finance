@@ -204,26 +204,28 @@ These are unpredictable from DA data alone. The CEPS aFRR/mFRR activation prices
 
 ## 7. Recommended ML Features (from this analysis)
 
+> **Note:** the ranking below was produced on the legacy MW-offset schema. `da_sell_50mw` / `da_sell_100mw` / `da_sell_steepness_ratio` no longer exist on `da_curve_depth` — they live only on the preserved `da_curve_depth_legacy_offset_mw` table. The "Current source" column maps each legacy feature to the closest concept in the new wall-detection schema. Correlations have not been re-measured against the new columns; treat the priority order as a starting hypothesis, not a verified result.
+
 All DA features use **target period** as lag (D-1 publication, no lag needed).
 
-| Feature | Source | Priority |
-|---------|--------|---------|
-| `intraday_premium x da_sell_100mw` | derived | 1 — best single signal |
-| `intraday_premium` | derived from intraday vwap - clearing | 2 |
-| `da_supply_gap_zero` | `da_period_summary.supply_volume_gap = 0` | 3 |
-| `da_sell_100mw x is_business_hour` | derived | 4 |
-| `da_sell_50mw`, `da_sell_100mw` | `da_curve_depth` | 5 |
-| `da_sell_steepness_ratio` | `da_sell_100mw / da_clearing_price` | 6 |
-| `da_clearing_price` | `da_period_summary` | 7 |
+| # | Legacy feature | Current source | Notes |
+|---|---|---|---|
+| 1 | `intraday_premium x da_sell_100mw` | `intraday_premium x supply_slope` (or `x supply_price_from_clearing`) | Best single signal historically; needs re-fit. |
+| 2 | `intraday_premium` | `ote_prices_intraday_market.weighted_avg_price_eur_mwh - da_period_summary.clearing_price` | Unchanged. |
+| 3 | `da_supply_gap_zero` | `da_period_summary.supply_volume_gap = 0` | Unchanged — present in 100% of top-30 events. |
+| 4 | `da_sell_100mw x is_business_hour` | `supply_slope x is_business_hour` (hours 7–19) | Conditional regime gate. |
+| 5 | `da_sell_50mw`, `da_sell_100mw` | `supply_mw_from_clearing`, `supply_price_from_clearing` | Wall location and height instead of fixed-offset price. |
+| 6 | `da_sell_steepness_ratio` | `supply_slope` (€/MWh per MW) | Slope is the natural ratio in the new schema. |
+| 7 | `da_clearing_price` | `da_period_summary.clearing_price` (or `da_curve_depth.clearing_price`) | Unchanged. |
 
 ---
 
 ## 8. Cron Schedule
 
-DAM curves are downloaded and uploaded daily at **14:30** (auction publishes ~13:00):
+DAM curves are downloaded and uploaded every 2h from **14:30** to **20:30** (auction publishes ~13:00; the extra slots are retries on failure):
 
 ```
-30 14 * * * cd /app/scripts && python3 download_dam_curves.py
+30 14,16,18,20 * * * cd /app/scripts && python3 download_dam_curves.py
 ```
 
 `download_dam_curves.py` runs in AUTO mode: finds last downloaded file, downloads
