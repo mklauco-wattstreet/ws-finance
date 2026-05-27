@@ -39,3 +39,7 @@ OTE_LOCAL_STORAGE_PASSWORD = os.getenv("OTE_LOCAL_STORAGE_PASSWORD")
 ENTSOE_BASE_URL = os.getenv("ENTSOE_BASE_URL", "https://web-api.tp.entsoe.eu/api")
 ENTSOE_SECURITY_TOKEN = os.getenv("ENTSOE_SECURITY_TOKEN")
 ENTSOE_CONTROL_AREA_DOMAIN = os.getenv("ENTSOE_CONTROL_AREA_DOMAIN", "10YCZ-CEPS-----N")
+
+# Trader API configuration (for automated expired position liquidation)
+TRADER_API_URL = os.getenv("TRADER_API_URL")
+TRADER_API_TOKEN = os.getenv("TRADER_API_TOKEN")

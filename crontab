@@ -20,6 +20,9 @@
 # OTE-CR - Download imbalance prices every 2 hours
 0 */2 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 download_imbalance_prices.py >> /var/log/ote.log 2>&1
 
+# Trader - Liquidate expired positions 15 min after imbalance prices fetch
+15 */2 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.liquidate_expired_positions_runner >> /var/log/liquidator.log 2>&1
+
 # OTE-CR - Download intraday prices every 15 minutes
 */15 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 download_intraday_prices.py >> /var/log/ote.log 2>&1
 
@@ -128,6 +131,6 @@
 # ============================================================================
 
 # Rotate all logs daily at 03:00 - keep last 10000 lines (~4 days of logs)
-0 03 * * * for f in /var/log/ote.log /var/log/ceps.log /var/log/entsoe_*.log /var/log/cnb_fx.log /var/log/weather_*.log; do [ -f "$f" ] && tail -10000 "$f" > "$f.tmp" && mv "$f.tmp" "$f"; done 2>/dev/null
+0 03 * * * for f in /var/log/ote.log /var/log/ceps.log /var/log/entsoe_*.log /var/log/cnb_fx.log /var/log/weather_*.log /var/log/liquidator.log; do [ -f "$f" ] && tail -10000 "$f" > "$f.tmp" && mv "$f.tmp" "$f"; done 2>/dev/null
 
 # Empty line required at end of crontab file
