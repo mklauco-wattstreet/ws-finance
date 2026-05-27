@@ -67,7 +67,8 @@ python3 -m runners.<runner_name> [--debug] [--dry-run] [--start YYYY-MM-DD --end
 ## DOCKER & ENVIRONMENT
 * **Source of Truth:** All runtime behavior occurs inside Docker containers.
 * **No `down -v`:** Never suggest `docker compose down -v` to avoid wiping `./ote_files` or DB volumes.
-* **Cron Environment:** Access env vars via `export $(cat /etc/environment_for_cron | xargs)`.
+* **Cron Environment:** Access env vars via `export $(cat /etc/environment_for_cron | xargs)`. The file is generated at container start by [entrypoint.sh](entrypoint.sh) — it mirrors **every** container env var (which means every `.env` entry, since `env_file: .env` is wired in compose) minus a small denylist of shell internals. Adding a new `.env` var does NOT require any entrypoint edit. **Never reintroduce a prefix allowlist** here — it silently breaks new cron jobs.
+* **Entrypoint changes need `--build`, not `--force-recreate`.** `entrypoint.sh` is COPYed into the image in [Dockerfile](Dockerfile). To pick up an edit on production: `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build entsoe-ote-data-uploader`.
 * **Timezone:** All operations must respect `TZ=Europe/Prague`.
 * Always provide single line commands to avoid indentation issues.
 * **`.env` changes require container recreation:** `docker compose restart` does NOT reload `.env`. Use `docker compose up -d --force-recreate entsoe-ote-data-uploader`.
