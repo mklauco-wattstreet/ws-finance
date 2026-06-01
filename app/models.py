@@ -266,18 +266,22 @@ class OteTradeBalance(Base):
 
 
 class EntsoeLoad(Base):
-    """ENTSO-E load data (actual and forecast, 15-minute intervals)."""
+    """ENTSO-E load data (actual and forecast, 15-minute intervals).
+
+    Partitioned by country_code for multi-area storage with partition pruning.
+    Partitions: CZ, DE, AT, PL, SK (by country_code string).
+    """
     __tablename__ = 'entsoe_load'
     __table_args__ = (
-        PrimaryKeyConstraint('id', name='entsoe_load_pkey'),
-        UniqueConstraint('trade_date', 'period', name='entsoe_load_trade_date_period_key'),
-        UniqueConstraint('trade_date', 'time_interval', name='entsoe_load_trade_date_time_interval_key'),
+        PrimaryKeyConstraint('trade_date', 'period', 'area_id', 'country_code'),
         {'schema': DB_SCHEMA}
     )
 
     id: Mapped[int] = mapped_column(Integer, autoincrement=True)
     trade_date: Mapped[date] = mapped_column(Date, nullable=False)
     period: Mapped[int] = mapped_column(Integer, nullable=False)
+    area_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    country_code: Mapped[str] = mapped_column(String(5), nullable=False)
     time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
     actual_load_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     forecast_load_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
@@ -371,6 +375,9 @@ class EntsoeCrossBorderFlows(Base):
 class EntsoeGenerationForecast(Base):
     """ENTSO-E day-ahead generation forecasts (A69) - renewable sources.
 
+    Partitioned by country_code for multi-area storage with partition pruning.
+    Partitions: CZ, DE, AT, PL, SK (by country_code string).
+
     Captures day-ahead forecasts for calculating forecast errors:
     - forecast_solar_mw: B16 (Solar) day-ahead forecast
     - forecast_wind_mw: B19 (Wind Onshore) day-ahead forecast
@@ -378,15 +385,15 @@ class EntsoeGenerationForecast(Base):
     """
     __tablename__ = 'entsoe_generation_forecast'
     __table_args__ = (
-        PrimaryKeyConstraint('id', name='entsoe_generation_forecast_pkey'),
-        UniqueConstraint('trade_date', 'period', name='entsoe_generation_forecast_trade_date_period_key'),
-        UniqueConstraint('trade_date', 'time_interval', name='entsoe_generation_forecast_trade_date_time_interval_key'),
+        PrimaryKeyConstraint('trade_date', 'period', 'area_id', 'country_code'),
         {'schema': DB_SCHEMA}
     )
 
     id: Mapped[int] = mapped_column(Integer, autoincrement=True)
     trade_date: Mapped[date] = mapped_column(Date, nullable=False)
     period: Mapped[int] = mapped_column(Integer, nullable=False)
+    area_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    country_code: Mapped[str] = mapped_column(String(5), nullable=False)
     time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
     forecast_solar_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     forecast_wind_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
@@ -1278,17 +1285,18 @@ class CepsDerivedFeatures60Min(Base):
 
 
 class EntsoeLoad60Min(Base):
-    """ENTSO-E load aggregated to 60-min hours."""
+    """ENTSO-E load aggregated to 60-min hours. Partitioned by country_code."""
     __tablename__ = 'entsoe_load_60min'
     __table_args__ = (
-        PrimaryKeyConstraint('id', name='entsoe_load_60min_pkey'),
-        UniqueConstraint('trade_date', 'time_interval', name='entsoe_load_60min_trade_date_interval_key'),
+        PrimaryKeyConstraint('trade_date', 'time_interval', 'area_id', 'country_code'),
         {'schema': DB_SCHEMA}
     )
 
     id: Mapped[int] = mapped_column(Integer, autoincrement=True)
     trade_date: Mapped[date] = mapped_column(Date, nullable=False)
     time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    area_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    country_code: Mapped[str] = mapped_column(String(5), nullable=False)
     actual_load_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     forecast_load_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
@@ -1296,17 +1304,18 @@ class EntsoeLoad60Min(Base):
 
 
 class EntsoeGenerationForecast60Min(Base):
-    """ENTSO-E day-ahead generation forecast aggregated to 60-min hours."""
+    """ENTSO-E day-ahead generation forecast aggregated to 60-min hours. Partitioned by country_code."""
     __tablename__ = 'entsoe_generation_forecast_60min'
     __table_args__ = (
-        PrimaryKeyConstraint('id', name='entsoe_generation_forecast_60min_pkey'),
-        UniqueConstraint('trade_date', 'time_interval', name='entsoe_generation_forecast_60min_trade_date_interval_key'),
+        PrimaryKeyConstraint('trade_date', 'time_interval', 'area_id', 'country_code'),
         {'schema': DB_SCHEMA}
     )
 
     id: Mapped[int] = mapped_column(Integer, autoincrement=True)
     trade_date: Mapped[date] = mapped_column(Date, nullable=False)
     time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    area_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    country_code: Mapped[str] = mapped_column(String(5), nullable=False)
     forecast_solar_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     forecast_wind_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     forecast_wind_offshore_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))

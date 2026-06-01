@@ -34,42 +34,47 @@ from backfill._common import (
 )
 
 
-# -------------------- entsoe_load_60min --------------------
+# -------------------- entsoe_load_60min (partitioned by country_code) --------------------
 LOAD_SQL = f"""
 INSERT INTO entsoe_load_60min (
-    trade_date, time_interval, actual_load_mw, forecast_load_mw
+    trade_date, time_interval, area_id, country_code,
+    actual_load_mw, forecast_load_mw
 )
 SELECT
     trade_date,
     {HOUR_INTERVAL_SQL},
+    area_id,
+    country_code,
     AVG(actual_load_mw),
     AVG(forecast_load_mw)
 FROM entsoe_load
 WHERE trade_date = %s
-GROUP BY trade_date, {HOUR_GROUP_SQL}
-ON CONFLICT (trade_date, time_interval) DO UPDATE SET
+GROUP BY trade_date, {HOUR_GROUP_SQL}, area_id, country_code
+ON CONFLICT (trade_date, time_interval, area_id, country_code) DO UPDATE SET
     actual_load_mw = EXCLUDED.actual_load_mw,
     forecast_load_mw = EXCLUDED.forecast_load_mw,
     updated_at = CURRENT_TIMESTAMP
 """
 
 
-# -------------------- entsoe_generation_forecast_60min --------------------
+# -------------------- entsoe_generation_forecast_60min (partitioned by country_code) --------------------
 GEN_FORECAST_SQL = f"""
 INSERT INTO entsoe_generation_forecast_60min (
-    trade_date, time_interval,
+    trade_date, time_interval, area_id, country_code,
     forecast_solar_mw, forecast_wind_mw, forecast_wind_offshore_mw
 )
 SELECT
     trade_date,
     {HOUR_INTERVAL_SQL},
+    area_id,
+    country_code,
     AVG(forecast_solar_mw),
     AVG(forecast_wind_mw),
     AVG(forecast_wind_offshore_mw)
 FROM entsoe_generation_forecast
 WHERE trade_date = %s
-GROUP BY trade_date, {HOUR_GROUP_SQL}
-ON CONFLICT (trade_date, time_interval) DO UPDATE SET
+GROUP BY trade_date, {HOUR_GROUP_SQL}, area_id, country_code
+ON CONFLICT (trade_date, time_interval, area_id, country_code) DO UPDATE SET
     forecast_solar_mw = EXCLUDED.forecast_solar_mw,
     forecast_wind_mw = EXCLUDED.forecast_wind_mw,
     forecast_wind_offshore_mw = EXCLUDED.forecast_wind_offshore_mw,
