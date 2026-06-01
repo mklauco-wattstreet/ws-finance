@@ -43,7 +43,7 @@ This document lists every new `_60min` table, its primary key, and every column 
 | **Schema** | `finance` |
 | **Column types** | Identical to the 15-min source, so `INSERT … SELECT` works without casts |
 | **`created_at` / `updated_at`** | `TIMESTAMP DEFAULT CURRENT_TIMESTAMP` (timezone-aware where the source is) |
-| **`period` column** | Where present, ∈ 1..24 (23 or 25 on DST days), one row per hour |
+| **Temporal key** | `time_interval` only. The 15-min `period` column is **not** carried over to any 60-min table — `time_interval` is sufficient and avoids a DST-aware integer ordinal. |
 | **`time_interval`** | `VARCHAR(11)`, format `'HH:MM-HH:MM'` (e.g., `'09:00-10:00'`) |
 | **Partitioning** | If the source is LIST-partitioned by `country_code`, the 60-min variant uses the **same** partition scheme and partition list |
 | **Indexes** | Replicate any non-PK index on `(trade_date)` that the source has |
@@ -64,13 +64,12 @@ This document lists every new `_60min` table, its primary key, and every column 
 
 #### `finance.da_period_summary_60min`
 
-**PK:** `(delivery_date, period)`
+**PK:** `(delivery_date, time_interval)`
 
 | Column | Type | Rule |
 |---|---|---|
 | `delivery_date` | `DATE NOT NULL` | key |
-| `period` | `INTEGER NOT NULL` | key, 1..24 |
-| `time_interval` | `VARCHAR(11) NOT NULL` | derived from `period` |
+| `time_interval` | `VARCHAR(11) NOT NULL` | key |
 | `clearing_price` | `NUMERIC(10,2)` | mean |
 | `clearing_volume` | `NUMERIC(12,3)` | sum |
 | `supply_next_price` | `NUMERIC(10,2)` | mean |
@@ -85,13 +84,12 @@ This document lists every new `_60min` table, its primary key, and every column 
 
 #### `finance.da_curve_depth_60min`
 
-**PK:** `(delivery_date, period)`
+**PK:** `(delivery_date, time_interval)`
 
 | Column | Type | Rule |
 |---|---|---|
 | `delivery_date` | `DATE NOT NULL` | key |
-| `period` | `INTEGER NOT NULL` | key, 1..24 |
-| `time_interval` | `VARCHAR(11) NOT NULL` | — |
+| `time_interval` | `VARCHAR(11) NOT NULL` | key |
 | `clearing_price` | `NUMERIC(10,2) NOT NULL` | mean |
 | `supply_mw_from_clearing` | `NUMERIC(12,3)` | mean |
 | `supply_price_from_clearing` | `NUMERIC(10,2)` | mean |
@@ -115,15 +113,14 @@ This document lists every new `_60min` table, its primary key, and every column 
 
 #### `finance.ote_prices_ida_60min`
 
-**PK:** `(id)` with `UNIQUE (trade_date, period_60, ida_idx)`
+**PK:** `(id)` with `UNIQUE (trade_date, time_interval, ida_idx)`
 
 | Column | Type | Rule |
 |---|---|---|
 | `id` | `SERIAL` | autoincrement |
 | `trade_date` | `DATE NOT NULL` | key |
-| `period_60` | `INTEGER NOT NULL` | key, 1..24 |
+| `time_interval` | `VARCHAR(11) NOT NULL` | key |
 | `ida_idx` | `INTEGER NOT NULL` | key, 1/2/3 |
-| `time_interval` | `VARCHAR(11) NOT NULL` | — |
 | `price_eur_mwh` | `NUMERIC(10,2)` | vwap (by `volume_mwh`) |
 | `volume_mwh` | `NUMERIC(12,3)` | sum |
 | `saldo_dm_mwh` | `NUMERIC(12,3)` | sum |
@@ -284,8 +281,8 @@ Types match `ceps_1min_features_15min` 1:1.
 > **Default chosen — 7 tables, not 6.** Adds `entsoe_imbalance_prices_60min` to the spec's set. Rationale: the imbalance price table is consumed by the imbalance predictor and the liquidator in this repo. Having a 60-min view is consistent with the rest and avoids a future second migration.
 
 **Common shape**
-- Non-partitioned: PK `(id)` with `UNIQUE (trade_date, period)`; `id SERIAL`; `period` ∈ 1..24.
-- Partitioned by `country_code`: PK `(trade_date, period, area_id, country_code)`; same partition list as source (CZ/DE/AT/PL/SK/HU as applicable).
+- Non-partitioned: PK `(id)` with `UNIQUE (trade_date, time_interval)`; `id SERIAL`.
+- Partitioned by `country_code`: PK `(trade_date, time_interval, area_id, country_code)`; same partition list as source (CZ/DE/AT/PL/SK/HU as applicable).
 
 #### `finance.entsoe_load_60min` (single CZ table)
 
@@ -328,7 +325,7 @@ Types match `ceps_1min_features_15min` 1:1.
 | `flow_sk_mw` | `NUMERIC(12,3)` | mean |
 | `flow_total_net_mw` | `NUMERIC(12,3)` | mean |
 
-UNIQUE `(delivery_datetime, area_id)` and `(trade_date, period, area_id)` — mirroring source.
+UNIQUE `(delivery_datetime, area_id)` and `(trade_date, time_interval, area_id)` — mirroring source minus the `period` column.
 
 #### `finance.entsoe_scheduled_cross_border_flows_60min` (single CZ-centric table)
 
