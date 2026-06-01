@@ -893,3 +893,546 @@ class WeatherCurrent(Base):
     wind_speed_10m_kmh: Mapped[Optional[Decimal]] = mapped_column(Numeric(6, 2))
     created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
     updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+
+
+# =============================================================================
+# 60-minute aggregations (see docs/60min_tables_plan.md, migrations 057-061)
+#
+# Every 60-min table keys solely on time_interval (no `period` column).
+# Column types and rules mirror the 15-min source 1:1.
+# =============================================================================
+
+
+class DaPeriodSummary60Min(Base):
+    """Day-ahead per-period summary aggregated to 60-min hours."""
+    __tablename__ = 'da_period_summary_60min'
+    __table_args__ = (
+        PrimaryKeyConstraint('delivery_date', 'time_interval', name='da_period_summary_60min_pkey'),
+        {'schema': DB_SCHEMA}
+    )
+
+    delivery_date: Mapped[date] = mapped_column(Date, nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    clearing_price: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2))
+    clearing_volume: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    supply_next_price: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2))
+    supply_next_volume: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    supply_price_gap: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2))
+    supply_volume_gap: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    demand_next_price: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2))
+    demand_next_volume: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    demand_price_gap: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2))
+    demand_volume_gap: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+
+
+class DaCurveDepth60Min(Base):
+    """Day-ahead curve depth aggregated to 60-min hours."""
+    __tablename__ = 'da_curve_depth_60min'
+    __table_args__ = (
+        PrimaryKeyConstraint('delivery_date', 'time_interval', name='da_curve_depth_60min_pkey'),
+        {'schema': DB_SCHEMA}
+    )
+
+    delivery_date: Mapped[date] = mapped_column(Date, nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    clearing_price: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    supply_mw_from_clearing: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    supply_price_from_clearing: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2))
+    supply_slope: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 4))
+    supply_matched_mw_from_clearing: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    supply_matched_price_from_clearing: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2))
+    supply_matched_slope: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 4))
+    demand_mw_from_clearing: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    demand_price_from_clearing: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2))
+    demand_slope: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 4))
+    demand_matched_mw_from_clearing: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    demand_matched_price_from_clearing: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2))
+    demand_matched_slope: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 4))
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+
+
+class OtePricesIda60Min(Base):
+    """OTE intraday auction prices aggregated to 60-min hours."""
+    __tablename__ = 'ote_prices_ida_60min'
+    __table_args__ = (
+        PrimaryKeyConstraint('id', name='ote_prices_ida_60min_pkey'),
+        UniqueConstraint('trade_date', 'time_interval', 'ida_idx', name='ote_prices_ida_60min_trade_date_interval_ida_idx_key'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(Integer, autoincrement=True)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    ida_idx: Mapped[int] = mapped_column(Integer, nullable=False)
+    price_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2))
+    volume_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    saldo_dm_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    export_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    import_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+
+
+class WeatherCurrent60Min(Base):
+    """Open-Meteo current weather aggregated to 60-min hours."""
+    __tablename__ = 'weather_current_60min'
+    __table_args__ = (
+        PrimaryKeyConstraint('trade_date', 'time_interval'),
+        {'schema': DB_SCHEMA}
+    )
+
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    temperature_2m_degc: Mapped[Optional[Decimal]] = mapped_column(Numeric(6, 2))
+    shortwave_radiation_wm2: Mapped[Optional[Decimal]] = mapped_column(Numeric(8, 2))
+    direct_radiation_wm2: Mapped[Optional[Decimal]] = mapped_column(Numeric(8, 2))
+    cloud_cover_pct: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2))
+    wind_speed_10m_kmh: Mapped[Optional[Decimal]] = mapped_column(Numeric(6, 2))
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+
+
+class WeatherForecast60Min(Base):
+    """Open-Meteo weather forecast aggregated to 60-min hours."""
+    __tablename__ = 'weather_forecast_60min'
+    __table_args__ = (
+        PrimaryKeyConstraint('trade_date', 'time_interval', 'forecast_made_at'),
+        {'schema': DB_SCHEMA}
+    )
+
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    forecast_made_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    temperature_2m_degc: Mapped[Optional[Decimal]] = mapped_column(Numeric(6, 2))
+    shortwave_radiation_wm2: Mapped[Optional[Decimal]] = mapped_column(Numeric(8, 2))
+    direct_radiation_wm2: Mapped[Optional[Decimal]] = mapped_column(Numeric(8, 2))
+    cloud_cover_pct: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2))
+    wind_speed_10m_kmh: Mapped[Optional[Decimal]] = mapped_column(Numeric(6, 2))
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+
+
+class CepsActualImbalance60Min(Base):
+    """CEPS actual imbalance aggregated to 60-min hours. Partitioned by year."""
+    __tablename__ = 'ceps_actual_imbalance_60min'
+    __table_args__ = (
+        PrimaryKeyConstraint('trade_date', 'time_interval', 'id', name='ceps_actual_imbalance_60min_pkey'),
+        UniqueConstraint('trade_date', 'time_interval', name='uq_ceps_actual_imbalance_60min_trade_date_interval'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(Integer, autoincrement=True)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    load_mean_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 5))
+    load_median_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 5))
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+
+
+class CepsEstimatedImbalancePrice60Min(Base):
+    """CEPS estimated imbalance price aggregated to 60-min hours. Partitioned by year."""
+    __tablename__ = 'ceps_estimated_imbalance_price_60min'
+    __table_args__ = (
+        PrimaryKeyConstraint('trade_date', 'time_interval', 'id', name='ceps_estimated_imbalance_price_60min_pkey'),
+        UniqueConstraint('trade_date', 'time_interval', name='uq_ceps_estimated_imbalance_price_60min_trade_date_interval'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(Integer, autoincrement=True)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    estimated_price_czk_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+
+
+class CepsActualRePrice60Min(Base):
+    """CEPS reserve energy prices aggregated to 60-min hours. Partitioned by year."""
+    __tablename__ = 'ceps_actual_re_price_60min'
+    __table_args__ = (
+        PrimaryKeyConstraint('trade_date', 'time_interval', 'id', name='ceps_actual_re_price_60min_pkey'),
+        UniqueConstraint('trade_date', 'time_interval', name='uq_ceps_actual_re_price_60min_trade_date_interval'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(Integer, autoincrement=True)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    price_afrr_plus_mean_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    price_afrr_plus_median_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    price_afrr_plus_last_at_interval_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    price_afrr_minus_mean_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    price_afrr_minus_median_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    price_afrr_minus_last_at_interval_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    price_mfrr_plus_mean_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    price_mfrr_plus_median_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    price_mfrr_plus_last_at_interval_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    price_mfrr_minus_mean_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    price_mfrr_minus_median_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    price_mfrr_minus_last_at_interval_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    price_mfrr_5_mean_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    price_mfrr_5_median_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    price_mfrr_5_last_at_interval_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+
+
+class CepsSvrActivation60Min(Base):
+    """CEPS SVR activation aggregated to 60-min hours. Partitioned by year."""
+    __tablename__ = 'ceps_svr_activation_60min'
+    __table_args__ = (
+        PrimaryKeyConstraint('trade_date', 'time_interval', 'id', name='ceps_svr_activation_60min_pkey'),
+        UniqueConstraint('trade_date', 'time_interval', name='uq_ceps_svr_activation_60min_trade_date_interval'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(Integer, autoincrement=True)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    afrr_plus_mean_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    afrr_plus_median_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    afrr_plus_last_at_interval_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    afrr_minus_mean_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    afrr_minus_median_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    afrr_minus_last_at_interval_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    mfrr_plus_mean_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    mfrr_plus_median_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    mfrr_plus_last_at_interval_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    mfrr_minus_mean_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    mfrr_minus_median_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    mfrr_minus_last_at_interval_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+
+
+class CepsExportImportSvr60Min(Base):
+    """CEPS export/import SVR aggregated to 60-min hours. Partitioned by year."""
+    __tablename__ = 'ceps_export_import_svr_60min'
+    __table_args__ = (
+        PrimaryKeyConstraint('trade_date', 'time_interval', 'id', name='ceps_export_import_svr_60min_pkey'),
+        UniqueConstraint('trade_date', 'time_interval', name='uq_ceps_export_import_svr_60min_trade_date_interval'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(Integer, autoincrement=True)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    imbalance_netting_mean_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    imbalance_netting_median_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    imbalance_netting_last_at_interval_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    mari_mfrr_mean_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    mari_mfrr_median_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    mari_mfrr_last_at_interval_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    picasso_afrr_mean_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    picasso_afrr_median_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    picasso_afrr_last_at_interval_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    sum_exchange_mean_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    sum_exchange_median_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    sum_exchange_last_at_interval_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+
+
+class CepsGeneration60Min(Base):
+    """CEPS generation by plant type aggregated to 60-min hours. Partitioned by year."""
+    __tablename__ = 'ceps_generation_60min'
+    __table_args__ = (
+        PrimaryKeyConstraint('trade_date', 'time_interval', 'id', name='ceps_generation_60min_pkey'),
+        UniqueConstraint('trade_date', 'time_interval', name='uq_ceps_generation_60min_trade_date_interval'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(Integer, autoincrement=True)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    tpp_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    ccgt_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    npp_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    hpp_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    pspp_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    altpp_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    appp_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    wpp_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    pvpp_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+
+
+class CepsGenerationPlan60Min(Base):
+    """CEPS planned generation aggregated to 60-min hours. Partitioned by year."""
+    __tablename__ = 'ceps_generation_plan_60min'
+    __table_args__ = (
+        PrimaryKeyConstraint('trade_date', 'time_interval', 'id', name='ceps_generation_plan_60min_pkey'),
+        UniqueConstraint('trade_date', 'time_interval', name='uq_ceps_generation_plan_60min_trade_date_interval'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(Integer, autoincrement=True)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    total_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+
+
+class CepsGenerationRes60Min(Base):
+    """CEPS renewable generation aggregated to 60-min hours. Partitioned by year."""
+    __tablename__ = 'ceps_generation_res_60min'
+    __table_args__ = (
+        PrimaryKeyConstraint('trade_date', 'time_interval', 'id', name='ceps_generation_res_60min_pkey'),
+        UniqueConstraint('trade_date', 'time_interval', name='uq_ceps_generation_res_60min_trade_date_interval'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(Integer, autoincrement=True)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    wind_mean_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    wind_median_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    wind_last_at_interval_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    solar_mean_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    solar_median_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    solar_last_at_interval_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+
+
+class Ceps1MinFeatures60Min(Base):
+    """CEPS 1-min distributional features re-aggregated natively to 60-min hours.
+
+    Note: populated by reading the underlying 1-min source over a 60-min
+    window, NOT by aggregating ceps_1min_features_15min rows (aggregating
+    stats-of-stats is mathematically wrong). Partitioned by year.
+    """
+    __tablename__ = 'ceps_1min_features_60min'
+    __table_args__ = (
+        PrimaryKeyConstraint('trade_date', 'time_interval', 'id', name='ceps_1min_features_60min_pkey'),
+        UniqueConstraint('trade_date', 'time_interval', name='uq_ceps_1min_features_60min_trade_date_interval'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(Integer, autoincrement=True)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    minute_count: Mapped[Optional[int]] = mapped_column(SmallInteger)
+    afrr_plus_min_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    afrr_plus_max_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    afrr_plus_std_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    afrr_plus_skew: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 5))
+    afrr_minus_min_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    afrr_minus_max_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    afrr_minus_std_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    afrr_minus_skew: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 5))
+    mfrr_plus_min_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    mfrr_plus_max_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    mfrr_plus_std_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    mfrr_plus_skew: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 5))
+    mfrr_minus_min_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    mfrr_minus_max_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    mfrr_minus_std_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    mfrr_minus_skew: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 5))
+    imbalance_range_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 5))
+    imbalance_std_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 5))
+    imbalance_slope: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 8))
+    minutes_at_floor: Mapped[Optional[int]] = mapped_column(SmallInteger)
+    minutes_near_peak: Mapped[Optional[int]] = mapped_column(SmallInteger)
+    saturation_count: Mapped[Optional[int]] = mapped_column(SmallInteger)
+    total_active_mean_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    total_active_std_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 5))
+    platform_active_count: Mapped[Optional[int]] = mapped_column(SmallInteger)
+    afrr_mfrr_plus_spread_mean_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    afrr_mfrr_plus_spread_std_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    afrr_mfrr_minus_spread_mean_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    afrr_mfrr_minus_spread_std_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+
+
+class CepsDerivedFeatures60Min(Base):
+    """CEPS derived rolling/surprise features at 60-min hours. Partitioned by year.
+
+    Rule for every column is `last` — the value of the last 15-min quarter
+    of the hour. Rolling fields already span >= 2h windows; surprise
+    fields are differences of means already taken at quarter resolution.
+    """
+    __tablename__ = 'ceps_derived_features_60min'
+    __table_args__ = (
+        PrimaryKeyConstraint('trade_date', 'time_interval', 'id', name='ceps_derived_features_60min_pkey'),
+        UniqueConstraint('trade_date', 'time_interval', name='uq_ceps_derived_features_60min_trade_date_interval'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(Integer, autoincrement=True)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    imb_roll_2h: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 5))
+    imb_roll_4h: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 5))
+    imb_integral_4h: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    solar_error_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    wind_error_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    gen_total_error_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+
+
+class EntsoeLoad60Min(Base):
+    """ENTSO-E load aggregated to 60-min hours."""
+    __tablename__ = 'entsoe_load_60min'
+    __table_args__ = (
+        PrimaryKeyConstraint('id', name='entsoe_load_60min_pkey'),
+        UniqueConstraint('trade_date', 'time_interval', name='entsoe_load_60min_trade_date_interval_key'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(Integer, autoincrement=True)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    actual_load_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    forecast_load_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+
+
+class EntsoeGenerationForecast60Min(Base):
+    """ENTSO-E day-ahead generation forecast aggregated to 60-min hours."""
+    __tablename__ = 'entsoe_generation_forecast_60min'
+    __table_args__ = (
+        PrimaryKeyConstraint('id', name='entsoe_generation_forecast_60min_pkey'),
+        UniqueConstraint('trade_date', 'time_interval', name='entsoe_generation_forecast_60min_trade_date_interval_key'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(Integer, autoincrement=True)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    forecast_solar_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    forecast_wind_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    forecast_wind_offshore_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+
+
+class EntsoeGenerationActual60Min(Base):
+    """ENTSO-E actual generation aggregated to 60-min hours. Partitioned by country_code."""
+    __tablename__ = 'entsoe_generation_actual_60min'
+    __table_args__ = (
+        PrimaryKeyConstraint('trade_date', 'time_interval', 'area_id', 'country_code'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(Integer, autoincrement=True)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    area_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    country_code: Mapped[str] = mapped_column(String(5), nullable=False)
+    gen_nuclear_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    gen_coal_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    gen_gas_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    gen_solar_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    gen_wind_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    gen_wind_offshore_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    gen_hydro_pumped_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    gen_biomass_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    gen_hydro_other_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+
+
+class EntsoeCrossBorderFlows60Min(Base):
+    """ENTSO-E cross-border physical flows aggregated to 60-min hours."""
+    __tablename__ = 'entsoe_cross_border_flows_60min'
+    __table_args__ = (
+        PrimaryKeyConstraint('id', name='entsoe_cross_border_flows_60min_pkey'),
+        UniqueConstraint('delivery_datetime', 'area_id', name='entsoe_cross_border_flows_60min_datetime_area_key'),
+        UniqueConstraint('trade_date', 'time_interval', 'area_id', name='entsoe_cross_border_flows_60min_trade_date_interval_area_key'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(Integer, autoincrement=True)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    delivery_datetime: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    area_id: Mapped[str] = mapped_column(String(20), nullable=False)
+    flow_de_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    flow_at_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    flow_pl_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    flow_sk_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    flow_total_net_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+
+
+class EntsoeScheduledCrossBorderFlows60Min(Base):
+    """ENTSO-E scheduled cross-border exchanges aggregated to 60-min hours."""
+    __tablename__ = 'entsoe_scheduled_cross_border_flows_60min'
+    __table_args__ = (
+        PrimaryKeyConstraint('id', name='entsoe_sched_xborder_flows_60min_pkey'),
+        UniqueConstraint('trade_date', 'time_interval', name='entsoe_sched_xborder_flows_60min_date_interval_key'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(Integer, autoincrement=True)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    scheduled_de_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    scheduled_at_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    scheduled_pl_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    scheduled_sk_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    scheduled_total_net_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+
+
+class EntsoeDayAheadPrices60Min(Base):
+    """ENTSO-E day-ahead prices aggregated to 60-min hours. Partitioned by country_code."""
+    __tablename__ = 'entsoe_day_ahead_prices_60min'
+    __table_args__ = (
+        PrimaryKeyConstraint('trade_date', 'time_interval', 'area_id', 'country_code'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(Integer, autoincrement=True)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    area_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    country_code: Mapped[str] = mapped_column(String(5), nullable=False)
+    price_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+
+
+class EntsoeImbalancePrices60Min(Base):
+    """ENTSO-E imbalance prices aggregated to 60-min hours. Partitioned by country_code.
+
+    Added beyond the upstream ta-feature-api spec — see
+    docs/60min_tables_plan.md §5 default #5.
+    """
+    __tablename__ = 'entsoe_imbalance_prices_60min'
+    __table_args__ = (
+        PrimaryKeyConstraint('trade_date', 'time_interval', 'area_id', 'country_code'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(Integer, autoincrement=True)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    area_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    country_code: Mapped[str] = mapped_column(String(5), nullable=False)
+    pos_imb_price_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    pos_imb_scarcity_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    pos_imb_incentive_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    pos_imb_financial_neutrality_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    neg_imb_price_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    neg_imb_scarcity_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    neg_imb_incentive_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    neg_imb_financial_neutrality_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    imbalance_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 5))
+    difference_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 5))
+    situation: Mapped[Optional[str]] = mapped_column(String)
+    status: Mapped[Optional[str]] = mapped_column(String)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    delivery_datetime: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True))
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
