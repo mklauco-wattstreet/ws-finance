@@ -959,6 +959,42 @@ class DaCurveDepth60Min(Base):
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
 
 
+class OtePricesImbalance60Min(Base):
+    """OTE-CR domestic imbalance settlement aggregated to 60-min hours.
+
+    CZ-specific CZK/MWh table — distinct from EntsoeImbalancePrices60Min
+    which holds the ENTSO-E per-country EUR/MWh series. See
+    docs/60min_tables_plan.md §4.7 for the column-by-column rules:
+    volumes & costs SUM; settlement and component prices MEAN.
+    """
+    __tablename__ = 'ote_prices_imbalance_60min'
+    __table_args__ = (
+        PrimaryKeyConstraint('id', name='ote_prices_imbalance_60min_pkey'),
+        UniqueConstraint('trade_date', 'time_interval', name='ote_prices_imbalance_60min_trade_date_interval_key'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(Integer, autoincrement=True)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    system_imbalance_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 5))
+    absolute_imbalance_sum_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 5))
+    positive_imbalance_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 5))
+    negative_imbalance_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 5))
+    rounded_imbalance_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 5))
+    cost_of_be_czk: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    cost_of_imbalance_czk: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    settlement_price_imbalance_czk_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    settlement_price_counter_imbalance_czk_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    price_protective_be_component_czk_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    price_be_component_czk_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    price_im_component_czk_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    price_si_component_czk_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    price_not_performed_activation_czk_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+
+
 class OtePricesIda60Min(Base):
     """OTE intraday auction prices aggregated to 60-min hours."""
     __tablename__ = 'ote_prices_ida_60min'

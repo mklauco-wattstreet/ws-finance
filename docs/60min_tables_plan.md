@@ -366,6 +366,38 @@ UNIQUE `(delivery_datetime, area_id)` and `(trade_date, time_interval, area_id)`
 
 ---
 
+### 4.7 OTE-CR domestic imbalance settlement (added 2026-06-02, migration 063)
+
+#### `finance.ote_prices_imbalance_60min`
+
+**Source**: `finance.ote_prices_imbalance` (CZ-only, CZK/MWh — distinct from `entsoe_imbalance_prices_60min` which is per-country EUR/MWh).
+**PK**: `(id)` with `UNIQUE (trade_date, time_interval)`
+
+| Column | Type | Rule |
+|---|---|---|
+| `id` | `SERIAL` | autoincrement |
+| `trade_date` | `DATE NOT NULL` | key |
+| `time_interval` | `VARCHAR(11) NOT NULL` | key |
+| `system_imbalance_mwh` | `NUMERIC(12,5)` | sum |
+| `absolute_imbalance_sum_mwh` | `NUMERIC(12,5)` | sum |
+| `positive_imbalance_mwh` | `NUMERIC(12,5)` | sum |
+| `negative_imbalance_mwh` | `NUMERIC(12,5)` | sum |
+| `rounded_imbalance_mwh` | `NUMERIC(12,5)` | sum |
+| `cost_of_be_czk` | `NUMERIC(15,3)` | sum |
+| `cost_of_imbalance_czk` | `NUMERIC(15,3)` | sum |
+| `settlement_price_imbalance_czk_mwh` | `NUMERIC(15,3)` | mean |
+| `settlement_price_counter_imbalance_czk_mwh` | `NUMERIC(15,3)` | mean |
+| `price_protective_be_component_czk_mwh` | `NUMERIC(15,3)` | mean |
+| `price_be_component_czk_mwh` | `NUMERIC(15,3)` | mean |
+| `price_im_component_czk_mwh` | `NUMERIC(15,3)` | mean |
+| `price_si_component_czk_mwh` | `NUMERIC(15,3)` | mean |
+| `price_not_performed_activation_czk_mwh` | `NUMERIC(15,3)` | mean |
+| `created_at`, `updated_at` | `TIMESTAMP DEFAULT CURRENT_TIMESTAMP` | — |
+
+> Note on settlement-price rule: kept as `mean` for consistency with the rest of the 60-min set. If a future API consumer needs the realized hour-level price for settlement-style logic, switch the two `settlement_price_*` columns to **VWAP by `rounded_imbalance_mwh`** — DDL is the same.
+
+---
+
 ## 5. Defaults summary (overridable)
 
 These are the choices I'm committing to so the migrations can be written. Each is structurally orthogonal to the DDL — flipping any of them later does not change the table shapes, only the aggregator runner.

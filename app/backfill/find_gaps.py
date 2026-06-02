@@ -26,6 +26,7 @@ from backfill._common import get_db_connection
 TABLES = [
     ('da_period_summary',                    'delivery_date', None),
     ('da_curve_depth',                       'delivery_date', None),
+    ('ote_prices_imbalance',                 'trade_date',    None),
     ('ote_prices_ida',                       'trade_date',    'ida_idx'),
     ('weather_current',                      'trade_date',    None),
     ('weather_forecast',                     'trade_date',    None),
