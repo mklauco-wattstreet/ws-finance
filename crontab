@@ -111,6 +111,20 @@
 14,29,44,59 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.weather_current_runner >> /var/log/weather_current.log 2>&1
 
 # ============================================================================
+# 60-min aggregators — fire 1 min after the 15-min source runners (:14,:29,:44,:59)
+# Each runs in --auto mode (trailing 6 hours). HOUR_COMPLETE_HAVING (in
+# backfill/_common.py) gates partial hours, so empty firings are normal.
+# ============================================================================
+
+15,30,45,0 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m backfill.backfill_da_60min --auto >> /var/log/aggregator_da_60min.log 2>&1
+15,30,45,0 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m backfill.backfill_ida_60min --auto >> /var/log/aggregator_ida_60min.log 2>&1
+15,30,45,0 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m backfill.backfill_weather_60min --auto >> /var/log/aggregator_weather_60min.log 2>&1
+15,30,45,0 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m backfill.backfill_ceps_60min --auto >> /var/log/aggregator_ceps_60min.log 2>&1
+15,30,45,0 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m backfill.backfill_ceps_1min_features_60min --auto >> /var/log/aggregator_ceps_1min_features_60min.log 2>&1
+15,30,45,0 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m backfill.backfill_entsoe_60min --auto >> /var/log/aggregator_entsoe_60min.log 2>&1
+15,30,45,0 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m backfill.backfill_ote_imbalance_60min --auto >> /var/log/aggregator_ote_imbalance_60min.log 2>&1
+
+# ============================================================================
 # Cleanup - Delete old downloaded files daily at 02:00
 # ============================================================================
 
@@ -131,6 +145,6 @@
 # ============================================================================
 
 # Rotate all logs daily at 03:00 - keep last 10000 lines (~4 days of logs)
-0 03 * * * for f in /var/log/ote.log /var/log/ceps.log /var/log/entsoe_*.log /var/log/cnb_fx.log /var/log/weather_*.log /var/log/liquidator.log; do [ -f "$f" ] && tail -10000 "$f" > "$f.tmp" && mv "$f.tmp" "$f"; done 2>/dev/null
+0 03 * * * for f in /var/log/ote.log /var/log/ceps.log /var/log/entsoe_*.log /var/log/cnb_fx.log /var/log/weather_*.log /var/log/liquidator.log /var/log/aggregator_*.log; do [ -f "$f" ] && tail -10000 "$f" > "$f.tmp" && mv "$f.tmp" "$f"; done 2>/dev/null
 
 # Empty line required at end of crontab file

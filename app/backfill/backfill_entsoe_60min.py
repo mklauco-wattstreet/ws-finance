@@ -26,6 +26,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from backfill._common import (
+    HOUR_COMPLETE_HAVING,
     HOUR_GROUP_SQL,
     HOUR_INTERVAL_SQL,
     parse_args,
@@ -50,6 +51,7 @@ SELECT
 FROM entsoe_load
 WHERE trade_date = %s
 GROUP BY trade_date, {HOUR_GROUP_SQL}, area_id, country_code
+{HOUR_COMPLETE_HAVING}
 ON CONFLICT (trade_date, time_interval, area_id, country_code) DO UPDATE SET
     actual_load_mw = EXCLUDED.actual_load_mw,
     forecast_load_mw = EXCLUDED.forecast_load_mw,
@@ -74,6 +76,7 @@ SELECT
 FROM entsoe_generation_forecast
 WHERE trade_date = %s
 GROUP BY trade_date, {HOUR_GROUP_SQL}, area_id, country_code
+{HOUR_COMPLETE_HAVING}
 ON CONFLICT (trade_date, time_interval, area_id, country_code) DO UPDATE SET
     forecast_solar_mw = EXCLUDED.forecast_solar_mw,
     forecast_wind_mw = EXCLUDED.forecast_wind_mw,
@@ -102,6 +105,7 @@ SELECT
 FROM entsoe_generation_actual
 WHERE trade_date = %s
 GROUP BY trade_date, {HOUR_GROUP_SQL}, area_id, country_code
+{HOUR_COMPLETE_HAVING}
 ON CONFLICT (trade_date, time_interval, area_id, country_code) DO UPDATE SET
     {", ".join(f"{c} = EXCLUDED.{c}" for c in _GEN_ACTUAL_COLS)},
     updated_at = CURRENT_TIMESTAMP
@@ -124,6 +128,7 @@ SELECT
 FROM entsoe_cross_border_flows
 WHERE trade_date = %s
 GROUP BY trade_date, {HOUR_GROUP_SQL}, area_id
+{HOUR_COMPLETE_HAVING}
 ON CONFLICT (trade_date, time_interval, area_id) DO UPDATE SET
     delivery_datetime = EXCLUDED.delivery_datetime,
     {", ".join(f"{c} = EXCLUDED.{c}" for c in _FLOW_COLS)},
@@ -146,6 +151,7 @@ SELECT
 FROM entsoe_scheduled_cross_border_flows
 WHERE trade_date = %s
 GROUP BY trade_date, {HOUR_GROUP_SQL}
+{HOUR_COMPLETE_HAVING}
 ON CONFLICT (trade_date, time_interval) DO UPDATE SET
     {", ".join(f"{c} = EXCLUDED.{c}" for c in _SCHED_FLOW_COLS)},
     updated_at = CURRENT_TIMESTAMP
@@ -166,6 +172,7 @@ SELECT
 FROM entsoe_day_ahead_prices
 WHERE trade_date = %s
 GROUP BY trade_date, {HOUR_GROUP_SQL}, area_id, country_code
+{HOUR_COMPLETE_HAVING}
 ON CONFLICT (trade_date, time_interval, area_id, country_code) DO UPDATE SET
     price_eur_mwh = EXCLUDED.price_eur_mwh,
     updated_at = CURRENT_TIMESTAMP
@@ -201,6 +208,7 @@ SELECT
 FROM entsoe_imbalance_prices
 WHERE trade_date = %s
 GROUP BY trade_date, {HOUR_GROUP_SQL}, area_id, country_code
+{HOUR_COMPLETE_HAVING}
 ON CONFLICT (trade_date, time_interval, area_id, country_code) DO UPDATE SET
     {", ".join(f"{c} = EXCLUDED.{c}" for c in _IMB_PRICE_COLS)},
     imbalance_mwh = EXCLUDED.imbalance_mwh,

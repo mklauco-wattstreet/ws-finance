@@ -79,7 +79,7 @@ python3 -m runners.<runner_name> [--debug] [--dry-run] [--start YYYY-MM-DD --end
 
 ## DATABASE & MIGRATIONS
 * **Alembic Only:** All schema changes must be performed via Alembic migrations. The ini is mounted at `/app/alembic.ini` (not `/app/scripts/`).
-* **60-min tables:** Every grid source has a `<source>_60min` mirror table (migrations 057-061). See [docs/60min_tables_plan.md](docs/60min_tables_plan.md) for the column inventory and aggregation rules. Aggregator runners that populate these tables are still TBD — the tables exist but are empty until that follow-up PR lands.
+* **60-min tables:** Every grid source has a `<source>_60min` mirror table (migrations 057-063). See [docs/60min_tables_plan.md](docs/60min_tables_plan.md) for the column inventory, aggregation rules, and live-aggregator design (§9). The 7 aggregators are the existing `app/backfill/backfill_*_60min.py` scripts invoked with `--auto`; they fire at `15,30,45,0 * * * *` (1 min after the 15-min source runners) with a strict `HAVING COUNT(DISTINCT time_interval) = 4` completeness gate — partial hours produce no row.
 * **Legacy Warning:** Do not use or copy the `create_tables_if_not_exist` logic found in `app/entsoe/entsoe_pipeline.py`.
 * **Persistence:** Use the mounted volumes (`./ote_files`, `./downloads`) for persistent file storage.
 * **Connection Management:** Use a context manager for database connections to ensure they are closed or returned to the pool.

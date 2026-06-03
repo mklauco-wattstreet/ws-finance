@@ -1,7 +1,13 @@
-"""Shared helpers for 60-min backfill scripts.
+"""Shared helpers for 60-min backfill / aggregator scripts.
 
-Every script in this package follows the same shape:
+Two CLI modes:
     python3 -m backfill.backfill_<source> YYYY-MM-DD YYYY-MM-DD [--debug] [--dry-run]
+    python3 -m backfill.backfill_<source> --auto                 [--debug] [--dry-run]
+
+`--auto` processes the trailing 6 hours in Europe/Prague — equivalent to
+running `(NOW - 6h).date()` through `NOW.date()` (1-2 days). The HAVING
+gate (HOUR_COMPLETE_HAVING) makes reprocessing whole days safe; partial
+hours produce no row.
 
 Aggregations are SQL-only (INSERT … SELECT … GROUP BY hour),
 day-by-day with one commit per day, ON CONFLICT DO UPDATE for idempotency.
@@ -10,6 +16,7 @@ day-by-day with one commit per day, ON CONFLICT DO UPDATE for idempotency.
 import argparse
 import logging
 import sys
+import zoneinfo
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -19,6 +26,8 @@ import psycopg2
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from config import DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT, DB_SCHEMA
 
+
+PRAGUE_TZ = zoneinfo.ZoneInfo("Europe/Prague")
 
 # SQL fragment that derives the 60-min time_interval from a 15-min one.
 # Example: '09:15-09:30' -> '09:00-10:00', '23:45-00:00' -> '23:00-00:00'.
@@ -31,6 +40,11 @@ HOUR_INTERVAL_SQL = (
 
 # GROUP BY expression that buckets 15-min rows into hours.
 HOUR_GROUP_SQL = "SUBSTRING(time_interval, 1, 2)"
+
+# HAVING fragment enforcing "all four quarters of the hour present".
+# Combined with GROUP BY hour, COUNT(DISTINCT time_interval) = 4 can only
+# mean the exact 4 expected quarters — partial hours are filtered out.
+HOUR_COMPLETE_HAVING = "HAVING COUNT(DISTINCT time_interval) = 4"
 
 
 def setup_logging(name: str, debug: bool = False) -> logging.Logger:
@@ -69,27 +83,46 @@ def print_banner(title: str) -> None:
 
 
 def parse_args(label: str) -> argparse.Namespace:
-    """Standard CLI for every backfill script.
+    """Standard CLI for every backfill / aggregator script.
 
-    Positional args (REQUIRED — no defaults, per architect decision):
+    Positional args (optional iff `--auto` is given):
         start  YYYY-MM-DD
         end    YYYY-MM-DD (inclusive)
-    Optional: --debug, --dry-run
+
+    Flags:
+        --auto      process trailing 6 hours in Europe/Prague
+                    (start_date = (NOW-6h).date(), end_date = NOW.date())
+        --debug     verbose logging
+        --dry-run   report without writing
     """
     parser = argparse.ArgumentParser(description=f"60-min backfill: {label}")
-    parser.add_argument('start', help='Start date YYYY-MM-DD (inclusive)')
-    parser.add_argument('end', help='End date YYYY-MM-DD (inclusive)')
+    parser.add_argument('start', nargs='?',
+                        help='Start date YYYY-MM-DD (required unless --auto)')
+    parser.add_argument('end', nargs='?',
+                        help='End date YYYY-MM-DD (required unless --auto)')
+    parser.add_argument('--auto', action='store_true',
+                        help='Process trailing 6 hours (replaces start/end)')
     parser.add_argument('--debug', action='store_true', help='Verbose logging')
     parser.add_argument('--dry-run', action='store_true',
                         help='Report source row counts without writing')
     args = parser.parse_args()
-    try:
-        args.start_date = datetime.strptime(args.start, '%Y-%m-%d').date()
-        args.end_date = datetime.strptime(args.end, '%Y-%m-%d').date()
-    except ValueError as e:
-        parser.error(f"Invalid date format: {e}")
-    if args.end_date < args.start_date:
-        parser.error("end must be >= start")
+
+    if args.auto:
+        if args.start or args.end:
+            parser.error('--auto cannot be combined with positional start/end')
+        now = datetime.now(PRAGUE_TZ)
+        args.start_date = (now - timedelta(hours=6)).date()
+        args.end_date = now.date()
+    else:
+        if not (args.start and args.end):
+            parser.error('start and end are required unless --auto is given')
+        try:
+            args.start_date = datetime.strptime(args.start, '%Y-%m-%d').date()
+            args.end_date = datetime.strptime(args.end, '%Y-%m-%d').date()
+        except ValueError as e:
+            parser.error(f"Invalid date format: {e}")
+        if args.end_date < args.start_date:
+            parser.error("end must be >= start")
     return args
 
 

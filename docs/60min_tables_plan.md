@@ -444,3 +444,55 @@ Architect approval required on:
 3. The done criteria in §6.
 
 After sign-off: I write the 5 migrations + the 22 ORM classes, run them locally, confirm `alembic autogenerate` produces no diff, and open the PR.
+
+---
+
+## 9. Live aggregator runners (added 2026-06-02)
+
+Closes the "Aggregator runners" deferral in §7. All `_60min` tables are populated by reusing the existing backfill scripts in live mode — the same scripts that did the historical fill, given a new `--auto` flag.
+
+### Hard rules
+
+1. **Hour alignment.** Every 60-min row keys on `time_interval ∈ {'00:00-01:00', '01:00-02:00', …, '23:00-00:00'}`. Always full hours, never sliding windows.
+2. **Completeness gate.** A 60-min row for hour H may be written ONLY if the 15-min source has all four exact quarters of H: `'HH:00-HH:15'`, `'HH:15-HH:30'`, `'HH:30-HH:45'`, `'HH:45-HH+1:00'`. Partial hours produce **no** row.
+3. **Fire often, no delay logic.** Aggregators fire every 15 minutes regardless of source state. Empty firings are the normal case most of the time. No sleeps, retry queues, source-side notifications, or "wait until source is ready" checks. Just stateless cron + idempotent SQL.
+
+### SQL guard (single pattern)
+
+Every 15-min-source aggregation query ends with:
+
+```sql
+GROUP BY trade_date, SUBSTRING(time_interval, 1, 2) [, …extra_partition_keys]
+HAVING COUNT(DISTINCT time_interval) = 4
+```
+
+Because GROUP BY buckets by hour, the 4 distinct `time_interval` values within an hour group can only be the 4 expected quarters. The constant `HOUR_COMPLETE_HAVING` in `app/backfill/_common.py` is the single source of truth.
+
+For partitioned tables (e.g. `entsoe_imbalance_prices_60min`, `entsoe_load_60min`), the GROUP BY also includes `area_id, country_code` and the HAVING applies per-partition: each country × area × hour needs its own four quarters.
+
+For `weather_forecast_60min`, the GROUP BY includes `forecast_made_at`; HAVING applies per forecast snapshot × hour.
+
+For `ceps_1min_features_60min` (native re-aggregation from the 1-min source), the equivalent guard is `HAVING COUNT(*) = 60` inside the `agg` CTE — full 60 distinct minutes required.
+
+### CLI: `--auto`
+
+Every backfill script now accepts `--auto`, which replaces the required `start end` positional args with a trailing 6-hour window:
+- `args.start_date = (NOW(Europe/Prague) - 6h).date()`
+- `args.end_date   = NOW(Europe/Prague).date()`
+
+The script's existing day-by-day driver iterates 1–2 days. Reprocessing whole days is safe because all queries use `ON CONFLICT DO UPDATE` and the HAVING gate keeps partial hours out.
+
+### Cron schedule
+
+All 7 aggregators fire at `15,30,45,0 * * * *` (every 15 min, 1 minute after the source `:14,:29,:44,:59` runners). The schedule is uniform: OTE imbalance / DA tables don't update every 15 min upstream, but their aggregators safely no-op most of the time and pick up new hours when they appear.
+
+### One-time cleanup
+
+Existing 60-min rows from the bootstrap backfill predate the HAVING gate and include partial-hour aggregations. Run once before/during the cutover to live aggregators:
+
+```bash
+docker compose exec entsoe-ote-data-uploader python3 -m backfill.cleanup_partial_60min_rows --dry-run
+docker compose exec entsoe-ote-data-uploader python3 -m backfill.cleanup_partial_60min_rows
+```
+
+For each 60-min table, the cleanup deletes rows whose corresponding hour in the source is incomplete (matched on all partition keys). Re-run each backfill script over its full source range afterwards — the HAVING gate ensures only complete hours are re-emitted.

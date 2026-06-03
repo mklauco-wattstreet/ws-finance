@@ -14,6 +14,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from backfill._common import (
+    HOUR_COMPLETE_HAVING,
     HOUR_GROUP_SQL,
     HOUR_INTERVAL_SQL,
     parse_args,
@@ -47,6 +48,7 @@ SELECT
 FROM da_period_summary
 WHERE delivery_date = %s
 GROUP BY delivery_date, {HOUR_GROUP_SQL}
+{HOUR_COMPLETE_HAVING}
 ON CONFLICT (delivery_date, time_interval) DO UPDATE SET
     clearing_price = EXCLUDED.clearing_price,
     clearing_volume = EXCLUDED.clearing_volume,
@@ -88,6 +90,7 @@ SELECT
 FROM da_curve_depth
 WHERE delivery_date = %s
 GROUP BY delivery_date, {HOUR_GROUP_SQL}
+{HOUR_COMPLETE_HAVING}
 ON CONFLICT (delivery_date, time_interval) DO UPDATE SET
     clearing_price = EXCLUDED.clearing_price,
     supply_mw_from_clearing = EXCLUDED.supply_mw_from_clearing,

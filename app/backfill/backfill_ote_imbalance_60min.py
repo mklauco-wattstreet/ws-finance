@@ -18,6 +18,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from backfill._common import (
+    HOUR_COMPLETE_HAVING,
     HOUR_GROUP_SQL,
     HOUR_INTERVAL_SQL,
     parse_args,
@@ -60,6 +61,7 @@ SELECT
 FROM ote_prices_imbalance
 WHERE trade_date = %s
 GROUP BY trade_date, {HOUR_GROUP_SQL}
+{HOUR_COMPLETE_HAVING}
 ON CONFLICT (trade_date, time_interval) DO UPDATE SET
     system_imbalance_mwh = EXCLUDED.system_imbalance_mwh,
     absolute_imbalance_sum_mwh = EXCLUDED.absolute_imbalance_sum_mwh,

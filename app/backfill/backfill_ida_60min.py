@@ -16,6 +16,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from backfill._common import (
+    HOUR_COMPLETE_HAVING,
     HOUR_GROUP_SQL,
     HOUR_INTERVAL_SQL,
     parse_args,
@@ -42,6 +43,7 @@ SELECT
 FROM ote_prices_ida
 WHERE trade_date = %s
 GROUP BY trade_date, {HOUR_GROUP_SQL}, ida_idx
+{HOUR_COMPLETE_HAVING}
 ON CONFLICT (trade_date, time_interval, ida_idx) DO UPDATE SET
     price_eur_mwh = EXCLUDED.price_eur_mwh,
     volume_mwh = EXCLUDED.volume_mwh,

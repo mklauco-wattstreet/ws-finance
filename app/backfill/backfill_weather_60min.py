@@ -15,6 +15,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from backfill._common import (
+    HOUR_COMPLETE_HAVING,
     HOUR_GROUP_SQL,
     HOUR_INTERVAL_SQL,
     parse_args,
@@ -40,6 +41,7 @@ SELECT
 FROM weather_current
 WHERE trade_date = %s
 GROUP BY trade_date, {HOUR_GROUP_SQL}
+{HOUR_COMPLETE_HAVING}
 ON CONFLICT (trade_date, time_interval) DO UPDATE SET
     temperature_2m_degc = EXCLUDED.temperature_2m_degc,
     shortwave_radiation_wm2 = EXCLUDED.shortwave_radiation_wm2,
@@ -68,6 +70,7 @@ SELECT
 FROM weather_forecast
 WHERE trade_date = %s
 GROUP BY trade_date, {HOUR_GROUP_SQL}, forecast_made_at
+{HOUR_COMPLETE_HAVING}
 ON CONFLICT (trade_date, time_interval, forecast_made_at) DO UPDATE SET
     temperature_2m_degc = EXCLUDED.temperature_2m_degc,
     shortwave_radiation_wm2 = EXCLUDED.shortwave_radiation_wm2,

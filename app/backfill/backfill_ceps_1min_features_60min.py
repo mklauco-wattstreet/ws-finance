@@ -1,15 +1,18 @@
 """Backfill ceps_1min_features_60min by re-aggregating from the 1-min source.
 
 Mirrors app/ceps/preprocess_ceps_data.py::aggregate_1min_features with
-three surgical changes:
+two surgical changes:
   1. bucket  : DATE_TRUNC('hour', …)        (was 15-min FLOOR bucket)
-  2. label   : INTERVAL '1 hour'            (was INTERVAL '15 minutes')
-  3. coverage: MIN_MINUTE_COUNT = 48        (was 12 — both are 80% of bucket)
+  2. coverage: strict HAVING COUNT(*) = 60  (no partial hours)
 
 Per docs/60min_tables_plan.md §4.4: distributional stats (min/max/std/
 skew, threshold counts, slopes) cannot be aggregated from the already-
 aggregated 15-min stats. They must be recomputed from the 1-min source
 over a 60-min window.
+
+Completeness gate is enforced inside the `agg` CTE — an hour with fewer
+than 60 distinct minutes never reaches the INSERT (mirrors the
+HAVING COUNT(DISTINCT time_interval) = 4 used by the 15-min aggregators).
 
 Source tables (all in finance schema):
   - ceps_actual_re_price_1min       (driver — required)
@@ -19,6 +22,7 @@ Source tables (all in finance schema):
 
 Usage:
     python3 -m backfill.backfill_ceps_1min_features_60min YYYY-MM-DD YYYY-MM-DD [--debug] [--dry-run]
+    python3 -m backfill.backfill_ceps_1min_features_60min --auto              [--debug] [--dry-run]
 """
 
 import sys
@@ -37,7 +41,6 @@ from backfill._common import (
 
 PRICE_FLOOR_EUR = -500
 PRICE_PEAK_EUR = 500
-MIN_MINUTE_COUNT = 48  # 80% of a 60-min window (mirrors 12/15 in 15-min source)
 
 
 # The SQL takes the same parameter (the day) three times: once for daily_sat,
@@ -180,6 +183,7 @@ agg AS (
 
     FROM interval_data
     GROUP BY trade_date, interval_start
+    HAVING COUNT(*) = 60
 )
 INSERT INTO finance.ceps_1min_features_60min (
     trade_date, time_interval, minute_count,
@@ -195,35 +199,15 @@ INSERT INTO finance.ceps_1min_features_60min (
 )
 SELECT
     trade_date, time_interval, n,
-    CASE WHEN n >= {MIN_MINUTE_COUNT} THEN afrr_plus_min END,
-    CASE WHEN n >= {MIN_MINUTE_COUNT} THEN afrr_plus_max END,
-    CASE WHEN n >= {MIN_MINUTE_COUNT} THEN afrr_plus_std END,
-    CASE WHEN n >= {MIN_MINUTE_COUNT} THEN afrr_plus_skew END,
-    CASE WHEN n >= {MIN_MINUTE_COUNT} THEN afrr_minus_min END,
-    CASE WHEN n >= {MIN_MINUTE_COUNT} THEN afrr_minus_max END,
-    CASE WHEN n >= {MIN_MINUTE_COUNT} THEN afrr_minus_std END,
-    CASE WHEN n >= {MIN_MINUTE_COUNT} THEN afrr_minus_skew END,
-    CASE WHEN n >= {MIN_MINUTE_COUNT} THEN mfrr_plus_min END,
-    CASE WHEN n >= {MIN_MINUTE_COUNT} THEN mfrr_plus_max END,
-    CASE WHEN n >= {MIN_MINUTE_COUNT} THEN mfrr_plus_std END,
-    CASE WHEN n >= {MIN_MINUTE_COUNT} THEN mfrr_plus_skew END,
-    CASE WHEN n >= {MIN_MINUTE_COUNT} THEN mfrr_minus_min END,
-    CASE WHEN n >= {MIN_MINUTE_COUNT} THEN mfrr_minus_max END,
-    CASE WHEN n >= {MIN_MINUTE_COUNT} THEN mfrr_minus_std END,
-    CASE WHEN n >= {MIN_MINUTE_COUNT} THEN mfrr_minus_skew END,
-    CASE WHEN n >= {MIN_MINUTE_COUNT} THEN imb_range END,
-    CASE WHEN n >= {MIN_MINUTE_COUNT} THEN imb_std END,
-    CASE WHEN n >= {MIN_MINUTE_COUNT} THEN imb_slope END,
-    CASE WHEN n >= {MIN_MINUTE_COUNT} THEN minutes_at_floor END,
-    CASE WHEN n >= {MIN_MINUTE_COUNT} THEN minutes_near_peak END,
-    CASE WHEN n >= {MIN_MINUTE_COUNT} THEN saturation_count END,
-    CASE WHEN n >= {MIN_MINUTE_COUNT} THEN total_active_mean END,
-    CASE WHEN n >= {MIN_MINUTE_COUNT} THEN total_active_std END,
-    CASE WHEN n >= {MIN_MINUTE_COUNT} THEN platform_active_count END,
-    CASE WHEN n >= {MIN_MINUTE_COUNT} THEN afrr_mfrr_plus_spread_mean END,
-    CASE WHEN n >= {MIN_MINUTE_COUNT} THEN afrr_mfrr_plus_spread_std END,
-    CASE WHEN n >= {MIN_MINUTE_COUNT} THEN afrr_mfrr_minus_spread_mean END,
-    CASE WHEN n >= {MIN_MINUTE_COUNT} THEN afrr_mfrr_minus_spread_std END
+    afrr_plus_min, afrr_plus_max, afrr_plus_std, afrr_plus_skew,
+    afrr_minus_min, afrr_minus_max, afrr_minus_std, afrr_minus_skew,
+    mfrr_plus_min, mfrr_plus_max, mfrr_plus_std, mfrr_plus_skew,
+    mfrr_minus_min, mfrr_minus_max, mfrr_minus_std, mfrr_minus_skew,
+    imb_range, imb_std, imb_slope,
+    minutes_at_floor, minutes_near_peak, saturation_count,
+    total_active_mean, total_active_std, platform_active_count,
+    afrr_mfrr_plus_spread_mean, afrr_mfrr_plus_spread_std,
+    afrr_mfrr_minus_spread_mean, afrr_mfrr_minus_spread_std
 FROM agg
 ON CONFLICT (trade_date, time_interval) DO UPDATE SET
     minute_count = EXCLUDED.minute_count,

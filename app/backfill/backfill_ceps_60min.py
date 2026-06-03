@@ -27,6 +27,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from backfill._common import (
+    HOUR_COMPLETE_HAVING,
     HOUR_GROUP_SQL,
     HOUR_INTERVAL_SQL,
     parse_args,
@@ -59,6 +60,7 @@ SELECT
 FROM ceps_actual_imbalance_15min
 WHERE trade_date = %s
 GROUP BY trade_date, {HOUR_GROUP_SQL}
+{HOUR_COMPLETE_HAVING}
 {_on_conflict_update("load_mean_mw", "load_median_mw")}
 """
 
@@ -75,6 +77,7 @@ SELECT
 FROM ceps_estimated_imbalance_price_15min
 WHERE trade_date = %s
 GROUP BY trade_date, {HOUR_GROUP_SQL}
+{HOUR_COMPLETE_HAVING}
 {_on_conflict_update("estimated_price_czk_mwh")}
 """
 
@@ -104,6 +107,7 @@ SELECT
 FROM ceps_actual_re_price_15min
 WHERE trade_date = %s
 GROUP BY trade_date, {HOUR_GROUP_SQL}
+{HOUR_COMPLETE_HAVING}
 {_on_conflict_update(*_RE_PRICE_COLS)}
 """
 
@@ -132,6 +136,7 @@ SELECT
 FROM ceps_svr_activation_15min
 WHERE trade_date = %s
 GROUP BY trade_date, {HOUR_GROUP_SQL}
+{HOUR_COMPLETE_HAVING}
 {_on_conflict_update(*_SVR_COLS)}
 """
 
@@ -160,6 +165,7 @@ SELECT
 FROM ceps_export_import_svr_15min
 WHERE trade_date = %s
 GROUP BY trade_date, {HOUR_GROUP_SQL}
+{HOUR_COMPLETE_HAVING}
 {_on_conflict_update(*_EX_COLS)}
 """
 
@@ -179,6 +185,7 @@ SELECT
 FROM ceps_generation_15min
 WHERE trade_date = %s
 GROUP BY trade_date, {HOUR_GROUP_SQL}
+{HOUR_COMPLETE_HAVING}
 {_on_conflict_update(*_GEN_COLS)}
 """
 
@@ -190,6 +197,7 @@ SELECT trade_date, {HOUR_INTERVAL_SQL}, AVG(total_mw)
 FROM ceps_generation_plan_15min
 WHERE trade_date = %s
 GROUP BY trade_date, {HOUR_GROUP_SQL}
+{HOUR_COMPLETE_HAVING}
 {_on_conflict_update("total_mw")}
 """
 
@@ -216,6 +224,7 @@ SELECT
 FROM ceps_generation_res_15min
 WHERE trade_date = %s
 GROUP BY trade_date, {HOUR_GROUP_SQL}
+{HOUR_COMPLETE_HAVING}
 {_on_conflict_update(*_RES_COLS)}
 """
 
@@ -235,6 +244,7 @@ SELECT
 FROM ceps_derived_features_15min
 WHERE trade_date = %s
 GROUP BY trade_date, {HOUR_GROUP_SQL}
+{HOUR_COMPLETE_HAVING}
 {_on_conflict_update(*_DERIVED_COLS)}
 """
 
