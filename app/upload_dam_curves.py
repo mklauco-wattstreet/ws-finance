@@ -200,10 +200,16 @@ def compute_and_upsert_period_summary(delivery_date, conn, logger):
     Compute da_period_summary from da_bid data and upsert results.
 
     For each period:
-    - clearing_price: MAX(price) WHERE side='sell' AND volume_matched > 0
+    - clearing_price: official OTE price from ote_prices_day_ahead.price_15min_eur_mwh
+      (DOES NOT use MAX(matched sell price) — that's a Paradoxically Accepted Bid
+      artifact. The OTE auction accepts sells priced above clearing because of
+      block-order coupling; MAX would return the PAB instead of the cleared price.)
     - clearing_volume: SUM(volume_matched) WHERE side='sell' AND volume_matched > 0
     - supply_next: first unmatched sell bid above clearing price
     - demand_next: first unmatched buy bid below clearing price
+
+    Periods without a matching ote_prices_day_ahead row are SKIPPED (no row
+    inserted). Inner JOIN — better to emit nothing than a wrong clearing_price.
 
     Args:
         delivery_date: Date to compute summary for
@@ -215,19 +221,24 @@ def compute_and_upsert_period_summary(delivery_date, conn, logger):
     """
     cursor = conn.cursor()
 
-    # CTE-based query: 2 scans of da_bid (sell + buy) instead of 5
+    # CTE-based query: clearing_price from OTE (authoritative), volumes from da_bid.
+    # INNER JOIN to ote_prices_day_ahead drops periods where OTE has no price
+    # (e.g. DST-skipped hour 02 on spring-forward day) — correct behaviour.
     summary_query = """
         WITH clearing AS (
             SELECT
-                period,
-                MIN(time_interval) AS time_interval,
-                MAX(price) AS clearing_price,
-                SUM(volume_matched) AS clearing_volume
-            FROM da_bid
-            WHERE delivery_date = %s
-              AND side = 'sell'
-              AND volume_matched > 0
-            GROUP BY period
+                b.period,
+                MIN(b.time_interval) AS time_interval,
+                ote.price_15min_eur_mwh AS clearing_price,
+                SUM(b.volume_matched) AS clearing_volume
+            FROM da_bid b
+            JOIN ote_prices_day_ahead ote
+              ON ote.trade_date = b.delivery_date
+             AND ote.time_interval = b.time_interval
+            WHERE b.delivery_date = %s
+              AND b.side = 'sell'
+              AND b.volume_matched > 0
+            GROUP BY b.period, ote.price_15min_eur_mwh
         ),
         sell_unmatched AS (
             SELECT
@@ -403,17 +414,22 @@ def compute_and_upsert_curve_depth(delivery_date, conn, logger):
     """
     cursor = conn.cursor()
 
+    # clearing_price from OTE (authoritative), same fix as period_summary —
+    # see compute_and_upsert_period_summary docstring for rationale (PABs).
     depth_query = """
         WITH clearing AS (
             SELECT
-                period,
-                MIN(time_interval) AS time_interval,
-                MAX(price) AS clearing_price
-            FROM da_bid
-            WHERE delivery_date = %s
-              AND side = 'sell'
-              AND volume_matched > 0
-            GROUP BY period
+                b.period,
+                MIN(b.time_interval) AS time_interval,
+                ote.price_15min_eur_mwh AS clearing_price
+            FROM da_bid b
+            JOIN ote_prices_day_ahead ote
+              ON ote.trade_date = b.delivery_date
+             AND ote.time_interval = b.time_interval
+            WHERE b.delivery_date = %s
+              AND b.side = 'sell'
+              AND b.volume_matched > 0
+            GROUP BY b.period, ote.price_15min_eur_mwh
         ),
         supply_walk AS (
             SELECT
