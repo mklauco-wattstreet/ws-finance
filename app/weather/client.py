@@ -20,7 +20,11 @@ logger = logging.getLogger(__name__)
 class OpenMeteoClient:
     """Client for Open-Meteo forecast and previous-runs APIs."""
 
-    def __init__(self, max_retries: int = 3, backoff_factor: float = 1.0):
+    def __init__(self, max_retries: int = 5, backoff_factor: float = 2.0):
+        # 5 retries × backoff_factor 2.0 → sleeps of 2, 4, 8, 16, 32 s.
+        # Total per-request patience ≈ 62 s (was ~7 s with 3 × 1.0). Caught
+        # too short by Open-Meteo's intermittent 502s on 2026-06-04 15:14,
+        # which lost the 06-05 delivery-day forecast vintage.
         self.session = requests.Session()
         retry_strategy = Retry(
             total=max_retries,
