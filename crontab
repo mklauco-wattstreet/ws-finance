@@ -126,7 +126,9 @@
 15,30,45,0 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m backfill.backfill_ceps_60min --auto >> /var/log/aggregator_ceps_60min.log 2>&1
 15,30,45,0 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m backfill.backfill_ceps_1min_features_60min --auto >> /var/log/aggregator_ceps_1min_features_60min.log 2>&1
 15,30,45,0 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m backfill.backfill_entsoe_60min --auto >> /var/log/aggregator_entsoe_60min.log 2>&1
-15,30,45,0 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m backfill.backfill_ote_imbalance_60min --auto >> /var/log/aggregator_ote_imbalance_60min.log 2>&1
+# OTE imbalance settlement data is published with a multi-day lag, so a 6h --auto
+# window misses late-arriving days. Look back 14 days (idempotent re-aggregation).
+15,30,45,0 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m backfill.backfill_ote_imbalance_60min --auto --auto-days 14 >> /var/log/aggregator_ote_imbalance_60min.log 2>&1
 
 # ============================================================================
 # Cleanup - Delete old downloaded files daily at 02:00

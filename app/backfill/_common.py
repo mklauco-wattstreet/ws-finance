@@ -102,6 +102,11 @@ def parse_args(label: str) -> argparse.Namespace:
                         help='End date YYYY-MM-DD (required unless --auto)')
     parser.add_argument('--auto', action='store_true',
                         help='Process trailing 6 hours (replaces start/end)')
+    parser.add_argument('--auto-days', type=int, default=None, metavar='N',
+                        help='With --auto, look back N days instead of 6 hours. '
+                             'Use for sources published with a multi-day lag '
+                             '(e.g. OTE settlement data) so late-arriving days '
+                             'still get aggregated. Reprocessing is idempotent.')
     parser.add_argument('--debug', action='store_true', help='Verbose logging')
     parser.add_argument('--dry-run', action='store_true',
                         help='Report source row counts without writing')
@@ -111,7 +116,10 @@ def parse_args(label: str) -> argparse.Namespace:
         if args.start or args.end:
             parser.error('--auto cannot be combined with positional start/end')
         now = datetime.now(PRAGUE_TZ)
-        args.start_date = (now - timedelta(hours=6)).date()
+        if args.auto_days is not None:
+            args.start_date = (now - timedelta(days=args.auto_days)).date()
+        else:
+            args.start_date = (now - timedelta(hours=6)).date()
         args.end_date = now.date()
     else:
         if not (args.start and args.end):
