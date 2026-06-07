@@ -62,7 +62,6 @@ def parse_document(
     # Reason may sit at document level (most common) or per-TimeSeries.
     doc_reason_code = _txt(root, "o:Reason/o:code")
     doc_reason_text = _txt(root, "o:Reason/o:text")
-    raw_xml = xml_bytes.decode("utf-8", errors="replace")
 
     events: List[Dict[str, Any]] = []
     points: List[Dict[str, Any]] = []
@@ -130,7 +129,6 @@ def parse_document(
             "max_unavailable_mw": max_unavailable,
             "reason_code": _txt(ts, "o:Reason/o:code") or doc_reason_code,
             "reason_text": _txt(ts, "o:Reason/o:text") or doc_reason_text,
-            "source_xml": raw_xml,
         })
 
     return events, points

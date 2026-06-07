@@ -50,7 +50,7 @@ EVENT_COLUMNS = [
     "biddingzone_domain", "production_resource_mrid", "production_resource_name",
     "location_name", "psr_type", "power_system_resource_mrid", "power_system_resource_name",
     "nominal_power_mw", "quantity_unit", "curve_type", "unavail_start", "unavail_end",
-    "min_available_mw", "max_unavailable_mw", "reason_code", "reason_text", "source_xml",
+    "min_available_mw", "max_unavailable_mw", "reason_code", "reason_text",
 ]
 EVENT_CONFLICT = ["doc_mrid", "revision_number", "timeseries_mrid", "country_code"]
 

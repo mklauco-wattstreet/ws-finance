@@ -1527,7 +1527,6 @@ class EntsoeOutages(Base):
     max_unavailable_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     reason_code: Mapped[Optional[str]] = mapped_column(String(10))
     reason_text: Mapped[Optional[str]] = mapped_column(String(255))
-    source_xml: Mapped[Optional[str]] = mapped_column(String)
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
     updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
 
