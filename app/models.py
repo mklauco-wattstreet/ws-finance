@@ -1481,3 +1481,145 @@ class EntsoeImbalancePrices60Min(Base):
     delivery_datetime: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True))
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
     updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+
+
+class EntsoeOutages(Base):
+    """ENTSO-E outage events (A77 production/generation unavailability).
+
+    Raw, lossless event store. One row per document TimeSeries; outages are
+    event-based (interval minutes..years), revised over time via
+    revision_number, and withdrawn via doc_status. Partitioned by country_code
+    (CZ active). A80-ready via doc_type + power_system_resource_* columns.
+
+    created_datetime (publication time) enables point-in-time / no-lookahead
+    feature queries: WHERE created_datetime <= :decision_time.
+    """
+    __tablename__ = 'entsoe_outages'
+    __table_args__ = (
+        PrimaryKeyConstraint('doc_mrid', 'revision_number', 'timeseries_mrid', 'country_code'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(Integer, autoincrement=True)
+    doc_mrid: Mapped[str] = mapped_column(String(60), nullable=False)
+    revision_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    timeseries_mrid: Mapped[str] = mapped_column(String(60), nullable=False)
+    doc_type: Mapped[str] = mapped_column(String(3), nullable=False)
+    business_type: Mapped[Optional[str]] = mapped_column(String(3))
+    doc_status: Mapped[Optional[str]] = mapped_column(String(3))  # A05 Active / A09 Cancelled / A13 Withdrawn; NULL = Active. Default query returns Active+Cancelled only.
+    process_type: Mapped[Optional[str]] = mapped_column(String(3))
+    created_datetime: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True))
+    area_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    country_code: Mapped[str] = mapped_column(String(5), nullable=False)
+    biddingzone_domain: Mapped[Optional[str]] = mapped_column(String(20))
+    production_resource_mrid: Mapped[Optional[str]] = mapped_column(String(40))
+    production_resource_name: Mapped[Optional[str]] = mapped_column(String(120))
+    location_name: Mapped[Optional[str]] = mapped_column(String(120))
+    psr_type: Mapped[Optional[str]] = mapped_column(String(3))
+    power_system_resource_mrid: Mapped[Optional[str]] = mapped_column(String(40))
+    power_system_resource_name: Mapped[Optional[str]] = mapped_column(String(120))
+    nominal_power_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    quantity_unit: Mapped[Optional[str]] = mapped_column(String(10))
+    curve_type: Mapped[Optional[str]] = mapped_column(String(3))
+    unavail_start: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    unavail_end: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    min_available_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    max_unavailable_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    reason_code: Mapped[Optional[str]] = mapped_column(String(10))
+    reason_text: Mapped[Optional[str]] = mapped_column(String(255))
+    source_xml: Mapped[Optional[str]] = mapped_column(String)
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+
+
+class EntsoeOutagePoints(Base):
+    """Full PT1M Available_Period capacity curve for outage events.
+
+    One row per Point; available_mw is the remaining (available) capacity during
+    the point interval (unavailable = nominal - available). Partitioned by
+    country_code.
+    """
+    __tablename__ = 'entsoe_outage_points'
+    __table_args__ = (
+        PrimaryKeyConstraint('doc_mrid', 'revision_number', 'timeseries_mrid', 'position', 'country_code'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(Integer, autoincrement=True)
+    doc_mrid: Mapped[str] = mapped_column(String(60), nullable=False)
+    revision_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    timeseries_mrid: Mapped[str] = mapped_column(String(60), nullable=False)
+    area_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    country_code: Mapped[str] = mapped_column(String(5), nullable=False)
+    point_start: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    point_end: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True))
+    resolution: Mapped[Optional[str]] = mapped_column(String(10))
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    available_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+
+
+class EntsoeOutages15min(Base):
+    """Primary outage feature: total OUT MW per 15-min MTU (Prague periods 1..96).
+
+    Deduped per unit (active, latest revision), summed per delivery period.
+    Partitioned by country_code.
+    """
+    __tablename__ = 'entsoe_outages_15min'
+    __table_args__ = (
+        PrimaryKeyConstraint('trade_date', 'period', 'area_id', 'country_code'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(Integer, autoincrement=True)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    period: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    area_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    country_code: Mapped[str] = mapped_column(String(5), nullable=False)
+    delivery_datetime: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True))
+    total_out_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    planned_out_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    forced_out_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    n_units: Mapped[Optional[int]] = mapped_column(Integer)
+    out_lignite_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    out_hard_coal_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    out_gas_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    out_nuclear_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    out_hydro_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    out_other_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+
+
+class EntsoeOutages60min(Base):
+    """Hourly outage aggregate: mean MW for level signals, max for peak/counts.
+
+    Aggregated from entsoe_outages_15min with the standard completeness gate
+    (4 distinct periods per hour). Partitioned by country_code.
+    """
+    __tablename__ = 'entsoe_outages_60min'
+    __table_args__ = (
+        PrimaryKeyConstraint('trade_date', 'time_interval', 'area_id', 'country_code'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(Integer, autoincrement=True)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    area_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    country_code: Mapped[str] = mapped_column(String(5), nullable=False)
+    delivery_datetime: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True))
+    total_out_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    total_out_mw_max: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    planned_out_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    forced_out_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    n_units_max: Mapped[Optional[int]] = mapped_column(Integer)
+    out_lignite_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    out_hard_coal_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    out_gas_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    out_nuclear_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    out_hydro_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    out_other_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')

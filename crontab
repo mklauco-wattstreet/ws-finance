@@ -90,6 +90,10 @@
 # ENTSO-E - Unified scheduled cross-border flows pipeline every 15 minutes
 14,29,44,59 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.entsoe_unified_sched_flow_runner >> /var/log/entsoe_sched_flow.log 2>&1
 
+# ENTSO-E - Outages (A77 planned + A80 forced unavailability, CZ) every 15 min
+# Update-window poll catches new + revised + cancelled/withdrawn outages; rebuilds 15min/60min aggregates for [D-3,D+2]
+14,29,44,59 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.entsoe_outages_runner >> /var/log/entsoe_outages.log 2>&1
+
 # ENTSO-E - Unified day-ahead prices every 2h from 14:00-20:00 (published ~13:00, retry on failure)
 0 14,16,18,20 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.entsoe_unified_day_ahead_prices_runner >> /var/log/entsoe_day_ahead.log 2>&1
 

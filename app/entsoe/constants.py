@@ -108,3 +108,9 @@ ACTIVE_IMBALANCE_AREAS = [
     (5, SK_BZN, "SK", "SK"),
     (9, HU_BZN, "HU", "HU"),
 ]
+
+# Outages (A77 production unit unavailability). Fetched per bidding zone.
+# CZ only to start; outage data relevant from 2026-03-01 (see OUTAGE_BACKFILL_FLOOR).
+ACTIVE_OUTAGE_AREAS = [
+    (1, CZ_BZN, "CZ", "CZ"),
+]
