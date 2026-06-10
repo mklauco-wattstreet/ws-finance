@@ -32,6 +32,14 @@ SYSTEM_USER_ID = 1
 
 LIQUIDATIONS_LOG_TABLE = '"trader-app".manual_position_logs'
 
+# Settlement source table by contract duration (minutes). 15-min MTU contracts
+# settle off the raw 15-min table; 60-min (hourly) contracts off the aggregated
+# 60-min table. Both expose settlement_price_imbalance_czk_mwh.
+SETTLEMENT_TABLE_BY_DURATION = {
+    15: "finance.ote_prices_imbalance",
+    60: "finance.ote_prices_imbalance_60min",
+}
+
 
 @dataclass
 class LiquidationResult:
@@ -55,26 +63,38 @@ def parse_contract_id(contract_id: str) -> Optional[Dict[str, Any]]:
     m = CONTRACT_ID_RE.match(contract_id.strip())
     if not m:
         return None
-    yyyymmdd_start, hhmm_start, _yyyymmdd_end, hhmm_end = m.groups()
+    yyyymmdd_start, hhmm_start, yyyymmdd_end, hhmm_end = m.groups()
     try:
-        trade_date = datetime.strptime(yyyymmdd_start, "%Y%m%d").date()
+        start_dt = datetime.strptime(f"{yyyymmdd_start} {hhmm_start}", "%Y%m%d %H:%M")
+        end_dt = datetime.strptime(f"{yyyymmdd_end} {hhmm_end}", "%Y%m%d %H:%M")
     except ValueError:
         return None
+    duration_minutes = int((end_dt - start_dt).total_seconds() // 60)
+    if duration_minutes <= 0:
+        return None
     return {
-        "trade_date": trade_date,
+        # OTE imbalance tables key on delivery-start, so cross-midnight
+        # contracts line up with their start date.
+        "trade_date": start_dt.date(),
         "time_interval": f"{hhmm_start}-{hhmm_end}",
+        "duration_minutes": duration_minutes,
     }
 
 
 def fetch_settlement_price(
-    conn, trade_date: date, time_interval: str
+    conn, table: str, trade_date: date, time_interval: str
 ) -> Optional[float]:
+    """Settlement price from `table` (15-min or 60-min imbalance source).
+
+    `table` comes from SETTLEMENT_TABLE_BY_DURATION (a fixed internal map),
+    never from user input, so interpolating it into the query is safe.
+    """
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT settlement_price_imbalance_czk_mwh "
-            "FROM finance.ote_prices_imbalance "
-            "WHERE trade_date = %s AND time_interval = %s "
-            "LIMIT 1",
+            f"SELECT settlement_price_imbalance_czk_mwh "
+            f"FROM {table} "
+            f"WHERE trade_date = %s AND time_interval = %s "
+            f"LIMIT 1",
             (trade_date, time_interval),
         )
         row = cur.fetchone()
@@ -179,16 +199,29 @@ def process_position(
 
     trade_date = parsed["trade_date"]
     time_interval = parsed["time_interval"]
+    duration = parsed["duration_minutes"]
 
-    settlement = fetch_settlement_price(conn, trade_date, time_interval)
+    table = SETTLEMENT_TABLE_BY_DURATION.get(duration)
+    if table is None:
+        logger.warning(
+            f"  Skipping {position_id} ({contract_id}): unsupported contract "
+            f"duration {duration} min (supported: "
+            f"{sorted(SETTLEMENT_TABLE_BY_DURATION)})"
+        )
+        return LiquidationResult(
+            position_id, contract_id, side, "skipped_unsupported_duration",
+            detail=f"{duration}min",
+        )
+
+    settlement = fetch_settlement_price(conn, table, trade_date, time_interval)
     if settlement is None:
         logger.info(
             f"  Skipping {position_id} ({contract_id}): no OTE settlement "
-            f"price for {trade_date} {time_interval}"
+            f"price for {trade_date} {time_interval} ({duration}min, {table})"
         )
         return LiquidationResult(
             position_id, contract_id, side, "skipped_no_price",
-            detail=f"{trade_date} {time_interval}",
+            detail=f"{trade_date} {time_interval} ({duration}min)",
         )
 
     fx = fetch_eur_czk_rate(conn, trade_date)
