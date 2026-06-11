@@ -76,17 +76,20 @@ class OutagesRunner(BaseRunner):
         return dt.astimezone(timezone.utc).strftime("%Y%m%d%H%M")
 
     def _fetch(self, bidding_zone, period_start, period_end, doc_type=DOC_TYPE_A77,
-               business_type=None, doc_status=None, update=False):
-        """Offset-paginated fetch; returns list of XML byte documents."""
+               business_type=None, doc_status=None):
+        """Offset-paginated fetch over the outage window; returns XML byte docs.
+
+        Always sends periodStart/periodEnd — they are MANDATORY for the A77/A80
+        endpoint. (PeriodStartUpdate/PeriodEndUpdate are optional *additional*
+        filters; a request that sends only those, omitting periodStart/periodEnd,
+        is rejected with HTTP 400 — which previously froze the cron path.)
+        """
         docs = []
         offset = 0
         bt = f"&BusinessType={business_type}" if business_type else ""
         ds = f"&DocStatus={doc_status}" if doc_status else ""
         while True:
-            if update:
-                tparams = f"PeriodStartUpdate={self._fmt(period_start)}&PeriodEndUpdate={self._fmt(period_end)}"
-            else:
-                tparams = f"periodStart={self._fmt(period_start)}&periodEnd={self._fmt(period_end)}"
+            tparams = f"periodStart={self._fmt(period_start)}&periodEnd={self._fmt(period_end)}"
             url = (f"{self.client.base_url}?securityToken={self.client.security_token}"
                    f"&documentType={doc_type}{bt}{ds}&BiddingZone_Domain={bidding_zone}"
                    f"&{tparams}&offset={offset}")
@@ -281,26 +284,31 @@ class OutagesRunner(BaseRunner):
                     for doc_type, btype, dstatus in FETCH_SPECS:
                         d = self._fetch(bidding_zone, fetch_start, fetch_end,
                                         doc_type=doc_type, business_type=btype,
-                                        doc_status=dstatus, update=False)
+                                        doc_status=dstatus)
                         lbl = f"{doc_type}{('/'+btype) if btype else ''}{('/'+dstatus) if dstatus else ''}"
                         self.logger.info(f"  {lbl}: {len(d)} docs")
                         docs.extend(d)
                 else:
-                    # cron: poll recent UPDATE window for new + revised outages
-                    now_utc = datetime.now(timezone.utc)
-                    upd_start = now_utc - timedelta(hours=6)
-                    # Forward horizon = decision horizon (D+1) + 1 day margin = D+2.
-                    # Beyond that, planned outages aren't published yet, so rows would
-                    # just be self-rewriting zeros. Backward 3d catches late revisions.
+                    # cron: refetch the OUTAGE window over the aggregation range.
+                    # We intentionally do NOT use PeriodStartUpdate/PeriodEndUpdate:
+                    # ENTSO-E requires periodStart/periodEnd (mandatory), and an
+                    # update-window-only request is rejected with HTTP 400. Refetching
+                    # [D-3, D+2] returns the current state of every overlapping outage
+                    # (new + revised + cancelled), which is all the aggregates need.
+                    # Forward horizon D+2 = decision horizon (D+1) + 1 day margin;
+                    # backward 3d catches late revisions/cancellations.
                     today = datetime.now(PRAGUE_TZ).date()
                     agg_start = self._prague_midnight_utc(today - timedelta(days=3))
                     agg_end = self._prague_midnight_utc(today + timedelta(days=3))
-                    self.logger.info(f"{label}: cron update-window {upd_start:%Y-%m-%d %H:%M} -> now")
+                    self.logger.info(f"{label}: cron outage-window {today - timedelta(days=3)} -> {today + timedelta(days=2)}")
                     docs = []
                     for doc_type, btype, dstatus in FETCH_SPECS:
-                        docs.extend(self._fetch(bidding_zone, upd_start, now_utc,
-                                                doc_type=doc_type, business_type=btype,
-                                                doc_status=dstatus, update=True))
+                        d = self._fetch(bidding_zone, agg_start, agg_end,
+                                        doc_type=doc_type, business_type=btype,
+                                        doc_status=dstatus)
+                        lbl = f"{doc_type}{('/'+btype) if btype else ''}{('/'+dstatus) if dstatus else ''}"
+                        self.logger.info(f"  {lbl}: {len(d)} docs")
+                        docs.extend(d)
 
                 self.logger.info(f"{label}: fetched {len(docs)} documents")
                 with self.database_connection() as conn:
