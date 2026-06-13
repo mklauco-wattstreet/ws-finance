@@ -1,0 +1,231 @@
+"""Rebuild the five CEPS *_1min tables so all timestamps are timestamptz.
+
+Revision ID: 069
+Revises: 068
+Create Date: 2026-06-13
+
+!!! DO NOT APPLY STANDALONE — SEE "RUNTIME BUNDLE REQUIRED" BELOW !!!
+A second review (correct, demonstrated) showed this migration is unsafe on its
+own: converting the naive `delivery_timestamp` to timestamptz makes every CEPS
+INSERT and every local-bucket aggregation session-timezone dependent.
+
+  * INSERT: the parser strips CEPS XML offsets to naive Prague wall-clock and the
+    uploader passes naive datetimes straight into delivery_timestamp. On a
+    timestamptz column under the current GMT session, naive '17:57' is stored as
+    17:57Z (true instant is 15:57Z) — every future row shifted +2h.
+  * BUCKETING: aggregation SQL uses delivery_timestamp::date, date_trunc('hour'),
+    extract(minute) to derive trade_date/time_interval. On timestamptz under GMT,
+    a 00:30 Prague delivery buckets into the PREVIOUS day. Verified live.
+
+RUNTIME BUNDLE REQUIRED (all must ship together with this migration):
+  1. Pin every CEPS DB session to Europe/Prague. This single change makes naive
+     inserts interpret as Prague AND bucket SQL render Prague — fixing both issues
+     at once. Either `SET TIME ZONE 'Europe/Prague'` on each CEPS connection
+     (ceps_soap_pipeline + every aggregator/feature/backfill/cleanup entry point),
+     or `ALTER ROLE user_finance SET timezone='Europe/Prague'` (DB-wide — also
+     affects ENTSO-E/OTE; audit blast radius first).
+  2. Reapply the migration-067 column comments (this rebuild drops them).
+  3. DST fall-back: to actually preserve both repeated hours, the parser must keep
+     the XML offset/instant and dedup by instant (today it strips+dedups by naive,
+     so the duplicate hour is still collapsed — the "loss stops recurring" claim is
+     FALSE without this change).
+  4. Re-verify 15min/60min/feature outputs (trade_date/time_interval unchanged).
+
+Because of this blast radius, the recommended plan is to DEFER this migration and
+keep delivery_timestamp naive-Prague (see 068 + the generated-column option in the
+rollout notes). Apply 069 only as part of the coordinated runtime bundle above.
+
+GOAL
+----
+Make every timestamp on the *_1min tables a true instant (`timestamptz`):
+  - delivery_timestamp : currently naive *Prague* wall-clock (migration 029)
+  - created_at         : currently naive *UTC* wall-clock
+  - updated_at         : currently naive *UTC* wall-clock
+After this, `created_at - delivery_timestamp` returns the real publication lag
+(~2 min) with NO `AT TIME ZONE` gymnastics — the database is self-contained.
+
+WHY A FULL REBUILD (not ALTER TYPE)
+-----------------------------------
+`delivery_timestamp` is the RANGE partition key. Postgres forbids ALTER COLUMN
+TYPE on a partition key, so each table must be recreated — exactly the technique
+migration 029 used (in the wrong direction). This reverses 029 for the data type
+while preserving the Prague calendar-year partition layout.
+
+CONVERSION (relabel, not shift — verified by exact round-trip on live data):
+  delivery_timestamp -> instant via `AT TIME ZONE 'Europe/Prague'`  (it holds Prague)
+  created_at/updated_at -> instant via `AT TIME ZONE 'UTC'`         (they hold UTC)
+
+DST NOTES
+  * Spring-forward gap: the non-existent local hour holds 0 rows (verified) — nothing to convert.
+  * Fall-back overlap: the naive UNIQUE(delivery_timestamp) ALREADY collapsed the
+    duplicated hour to 60 rows years ago; this migration neither worsens nor can
+    recover that pre-existing loss. Going forward, timestamptz keeps the two
+    physical hours distinct, so the annual loss STOPS recurring.
+
+SAFETY / PRE-FLIGHT  (HEAVY, BLOCKING — run manually in a maintenance window):
+  * Tables must be owned by user_finance (reassign from postgres first; see rev 067).
+  * Each table is rebuilt under ACCESS EXCLUSIVE and fully rewritten. The *_1min
+    tables hold raw minute data (millions of rows) — this is the long pole.
+  * PAUSE the CEPS cron (14,29,44,59 pipeline + 15,30,45,0 aggregators) for the run.
+  * No views depend on these tables (verified), so DROP ... CASCADE only removes
+    the table's own partitions.
+  * Partition boundaries use Prague-standard-time midnight ('+01') to match the
+    calendar-year scheme of migrations 027/029.
+
+NOTE ON ids: original id values are preserved; the identity sequence is reset to
+MAX(id) after copy. (No FK references these ids — verified.)
+"""
+
+from alembic import op
+
+revision = '069'
+down_revision = '068'
+branch_labels = None
+depends_on = None
+
+
+# Per-table spec. `value_cols` is the verbatim DDL for the data columns; `value_names`
+# is the matching ordered list of bare column names for the INSERT/SELECT (kept
+# explicit rather than parsed — the DDL contains commas inside NUMERIC(p,s)).
+# `idx_created_at` is None where the original table had no created_at index.
+TABLES = [
+    {
+        "name": "ceps_actual_imbalance_1min",
+        "value_cols": "system_imbalance_mw NUMERIC(12,5) NOT NULL",
+        "value_names": ["system_imbalance_mw"],
+        "uq": "uq_ceps_1min_delivery_timestamp",
+        "idx_delivery": "idx_ceps_1min_delivery_timestamp",
+        "idx_created_at": "idx_ceps_1min_created_at",
+    },
+    {
+        "name": "ceps_actual_re_price_1min",
+        "value_cols": (
+            "price_afrr_plus_eur_mwh NUMERIC(15,3), "
+            "price_afrr_minus_eur_mwh NUMERIC(15,3), "
+            "price_mfrr_plus_eur_mwh NUMERIC(15,3), "
+            "price_mfrr_minus_eur_mwh NUMERIC(15,3), "
+            "price_mfrr_5_eur_mwh NUMERIC(15,3)"
+        ),
+        "value_names": [
+            "price_afrr_plus_eur_mwh", "price_afrr_minus_eur_mwh",
+            "price_mfrr_plus_eur_mwh", "price_mfrr_minus_eur_mwh", "price_mfrr_5_eur_mwh",
+        ],
+        "uq": "uq_ceps_re_price_1min_delivery_timestamp",
+        "idx_delivery": "idx_ceps_re_price_1min_delivery_timestamp",
+        "idx_created_at": "idx_ceps_re_price_1min_created_at",
+    },
+    {
+        "name": "ceps_export_import_svr_1min",
+        "value_cols": (
+            "imbalance_netting_mw NUMERIC(15,5), "
+            "mari_mfrr_mw NUMERIC(15,5), "
+            "picasso_afrr_mw NUMERIC(15,5), "
+            "sum_exchange_european_platforms_mw NUMERIC(15,5)"
+        ),
+        "value_names": [
+            "imbalance_netting_mw", "mari_mfrr_mw",
+            "picasso_afrr_mw", "sum_exchange_european_platforms_mw",
+        ],
+        "uq": "uq_ceps_export_import_svr_1min_delivery_timestamp",
+        "idx_delivery": "idx_ceps_export_import_svr_1min_delivery_timestamp",
+        "idx_created_at": "idx_ceps_export_import_svr_1min_created_at",
+    },
+    {
+        "name": "ceps_generation_res_1min",
+        "value_cols": "wind_mw NUMERIC(12,3), solar_mw NUMERIC(12,3)",
+        "value_names": ["wind_mw", "solar_mw"],
+        "uq": "uq_ceps_generation_res_1min_delivery_timestamp",
+        "idx_delivery": "idx_ceps_generation_res_1min_delivery_timestamp",
+        "idx_created_at": None,   # this table has no created_at index
+    },
+    {
+        "name": "ceps_svr_activation_1min",
+        "value_cols": (
+            "afrr_plus_mw NUMERIC(15,3), "
+            "afrr_minus_mw NUMERIC(15,3), "
+            "mfrr_plus_mw NUMERIC(15,3), "
+            "mfrr_minus_mw NUMERIC(15,3), "
+            "mfrr_5_mw NUMERIC(15,3)"
+        ),
+        "value_names": [
+            "afrr_plus_mw", "afrr_minus_mw",
+            "mfrr_plus_mw", "mfrr_minus_mw", "mfrr_5_mw",
+        ],
+        "uq": "uq_ceps_svr_activation_1min_delivery_timestamp",
+        "idx_delivery": "idx_ceps_svr_activation_1min_delivery_timestamp",
+        "idx_created_at": "idx_ceps_svr_activation_1min_created_at",
+    },
+]
+
+YEARS = range(2024, 2029)  # partitions 2024..2028 (matches existing layout)
+
+
+def upgrade() -> None:
+    for t in TABLES:
+        name = t["name"]
+        tmp = f"{name}__tz"
+        vcols_ddl = t["value_cols"]
+        vcols = ", ".join(t["value_names"])
+
+        # 1) New partitioned table, delivery_timestamp + audit columns all timestamptz.
+        op.execute(f"""
+            CREATE TABLE finance.{tmp} (
+                id BIGSERIAL,
+                delivery_timestamp TIMESTAMPTZ NOT NULL,
+                {vcols_ddl},
+                created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                CONSTRAINT {t['uq']}__tz UNIQUE (delivery_timestamp)
+            ) PARTITION BY RANGE (delivery_timestamp);
+        """)
+
+        # 2) Calendar-year partitions at Prague-standard-time midnight (+01).
+        for y in YEARS:
+            op.execute(f"""
+                CREATE TABLE finance.{tmp}_{y}
+                PARTITION OF finance.{tmp}
+                FOR VALUES FROM ('{y}-01-01 00:00:00+01') TO ('{y + 1}-01-01 00:00:00+01');
+            """)
+
+        # 3) Indexes (delivery always; created_at where the original had one).
+        op.execute(f"CREATE INDEX {t['idx_delivery']}__tz ON finance.{tmp} (delivery_timestamp);")
+        if t["idx_created_at"]:
+            op.execute(f"CREATE INDEX {t['idx_created_at']}__tz ON finance.{tmp} (created_at);")
+
+        # 4) Copy + convert (relabel each column from its true source zone).
+        op.execute(f"""
+            INSERT INTO finance.{tmp}
+                (id, delivery_timestamp, {vcols}, created_at, updated_at)
+            SELECT
+                id,
+                delivery_timestamp AT TIME ZONE 'Europe/Prague',
+                {vcols},
+                created_at AT TIME ZONE 'UTC',
+                updated_at AT TIME ZONE 'UTC'
+            FROM finance.{name};
+        """)
+
+        # 5) Keep id sequence ahead of copied values.
+        op.execute(f"""
+            SELECT setval(
+                pg_get_serial_sequence('finance.{tmp}', 'id'),
+                COALESCE((SELECT MAX(id) FROM finance.{tmp}), 1),
+                true
+            );
+        """)
+
+        # 6) Swap: drop old (drops its partitions; no views depend), rename new in.
+        op.execute(f"DROP TABLE finance.{name} CASCADE;")
+        op.execute(f"ALTER TABLE finance.{tmp} RENAME TO {name};")
+        op.execute(f"ALTER TABLE finance.{name} RENAME CONSTRAINT {t['uq']}__tz TO {t['uq']};")
+        op.execute(f"ALTER INDEX finance.{t['idx_delivery']}__tz RENAME TO {t['idx_delivery']};")
+        if t["idx_created_at"]:
+            op.execute(f"ALTER INDEX finance.{t['idx_created_at']}__tz RENAME TO {t['idx_created_at']};")
+        for y in YEARS:
+            op.execute(f"ALTER TABLE finance.{tmp}_{y} RENAME TO {name}_{y};")
+
+
+def downgrade() -> None:
+    # Not supported: reversing to naive would reintroduce the zone-mismatch bug and
+    # the annual fall-back data loss. Restore from backup if truly needed.
+    raise NotImplementedError("Downgrade not supported — table rebuild, see docstring.")
