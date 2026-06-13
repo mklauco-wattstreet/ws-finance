@@ -24,7 +24,7 @@ from pathlib import Path
 import psycopg2
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from config import DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT, DB_SCHEMA
+from config import DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT, DB_SCHEMA, DB_SESSION_OPTIONS
 
 
 PRAGUE_TZ = zoneinfo.ZoneInfo("Europe/Prague")
@@ -65,6 +65,7 @@ def get_db_connection():
         user=DB_USER,
         password=DB_PASSWORD,
         dbname=DB_NAME,
+        options=DB_SESSION_OPTIONS,  # pin session tz; do not inherit server ambient
     )
     try:
         with conn.cursor() as cur:
