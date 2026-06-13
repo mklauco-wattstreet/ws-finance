@@ -75,6 +75,9 @@ def aggregate_imbalance_15min(affected_intervals: Set[tuple], conn, logger) -> i
             system_imbalance_median_mw = EXCLUDED.system_imbalance_median_mw,
             system_imbalance_last_mw = EXCLUDED.system_imbalance_last_mw,
             updated_at = CURRENT_TIMESTAMP
+        WHERE finance.ceps_actual_imbalance_15min.system_imbalance_mean_mw IS DISTINCT FROM EXCLUDED.system_imbalance_mean_mw
+           OR finance.ceps_actual_imbalance_15min.system_imbalance_median_mw IS DISTINCT FROM EXCLUDED.system_imbalance_median_mw
+           OR finance.ceps_actual_imbalance_15min.system_imbalance_last_mw IS DISTINCT FROM EXCLUDED.system_imbalance_last_mw
     """
 
     with conn.cursor() as cur:
@@ -148,6 +151,21 @@ def aggregate_re_price_15min(affected_intervals: Set[tuple], conn, logger) -> in
             price_mfrr_minus_last_at_interval_eur_mwh = EXCLUDED.price_mfrr_minus_last_at_interval_eur_mwh,
             price_mfrr_5_last_at_interval_eur_mwh = EXCLUDED.price_mfrr_5_last_at_interval_eur_mwh,
             updated_at = CURRENT_TIMESTAMP
+        WHERE finance.ceps_actual_re_price_15min.price_afrr_plus_mean_eur_mwh IS DISTINCT FROM EXCLUDED.price_afrr_plus_mean_eur_mwh
+           OR finance.ceps_actual_re_price_15min.price_afrr_minus_mean_eur_mwh IS DISTINCT FROM EXCLUDED.price_afrr_minus_mean_eur_mwh
+           OR finance.ceps_actual_re_price_15min.price_mfrr_plus_mean_eur_mwh IS DISTINCT FROM EXCLUDED.price_mfrr_plus_mean_eur_mwh
+           OR finance.ceps_actual_re_price_15min.price_mfrr_minus_mean_eur_mwh IS DISTINCT FROM EXCLUDED.price_mfrr_minus_mean_eur_mwh
+           OR finance.ceps_actual_re_price_15min.price_mfrr_5_mean_eur_mwh IS DISTINCT FROM EXCLUDED.price_mfrr_5_mean_eur_mwh
+           OR finance.ceps_actual_re_price_15min.price_afrr_plus_median_eur_mwh IS DISTINCT FROM EXCLUDED.price_afrr_plus_median_eur_mwh
+           OR finance.ceps_actual_re_price_15min.price_afrr_minus_median_eur_mwh IS DISTINCT FROM EXCLUDED.price_afrr_minus_median_eur_mwh
+           OR finance.ceps_actual_re_price_15min.price_mfrr_plus_median_eur_mwh IS DISTINCT FROM EXCLUDED.price_mfrr_plus_median_eur_mwh
+           OR finance.ceps_actual_re_price_15min.price_mfrr_minus_median_eur_mwh IS DISTINCT FROM EXCLUDED.price_mfrr_minus_median_eur_mwh
+           OR finance.ceps_actual_re_price_15min.price_mfrr_5_median_eur_mwh IS DISTINCT FROM EXCLUDED.price_mfrr_5_median_eur_mwh
+           OR finance.ceps_actual_re_price_15min.price_afrr_plus_last_at_interval_eur_mwh IS DISTINCT FROM EXCLUDED.price_afrr_plus_last_at_interval_eur_mwh
+           OR finance.ceps_actual_re_price_15min.price_afrr_minus_last_at_interval_eur_mwh IS DISTINCT FROM EXCLUDED.price_afrr_minus_last_at_interval_eur_mwh
+           OR finance.ceps_actual_re_price_15min.price_mfrr_plus_last_at_interval_eur_mwh IS DISTINCT FROM EXCLUDED.price_mfrr_plus_last_at_interval_eur_mwh
+           OR finance.ceps_actual_re_price_15min.price_mfrr_minus_last_at_interval_eur_mwh IS DISTINCT FROM EXCLUDED.price_mfrr_minus_last_at_interval_eur_mwh
+           OR finance.ceps_actual_re_price_15min.price_mfrr_5_last_at_interval_eur_mwh IS DISTINCT FROM EXCLUDED.price_mfrr_5_last_at_interval_eur_mwh
     """
 
     with conn.cursor() as cur:
@@ -216,6 +234,21 @@ def aggregate_svr_activation_15min(affected_intervals: Set[tuple], conn, logger)
             mfrr_minus_last_at_interval_mw = EXCLUDED.mfrr_minus_last_at_interval_mw,
             mfrr_5_last_at_interval_mw = EXCLUDED.mfrr_5_last_at_interval_mw,
             updated_at = CURRENT_TIMESTAMP
+        WHERE finance.ceps_svr_activation_15min.afrr_plus_mean_mw IS DISTINCT FROM EXCLUDED.afrr_plus_mean_mw
+           OR finance.ceps_svr_activation_15min.afrr_minus_mean_mw IS DISTINCT FROM EXCLUDED.afrr_minus_mean_mw
+           OR finance.ceps_svr_activation_15min.mfrr_plus_mean_mw IS DISTINCT FROM EXCLUDED.mfrr_plus_mean_mw
+           OR finance.ceps_svr_activation_15min.mfrr_minus_mean_mw IS DISTINCT FROM EXCLUDED.mfrr_minus_mean_mw
+           OR finance.ceps_svr_activation_15min.mfrr_5_mean_mw IS DISTINCT FROM EXCLUDED.mfrr_5_mean_mw
+           OR finance.ceps_svr_activation_15min.afrr_plus_median_mw IS DISTINCT FROM EXCLUDED.afrr_plus_median_mw
+           OR finance.ceps_svr_activation_15min.afrr_minus_median_mw IS DISTINCT FROM EXCLUDED.afrr_minus_median_mw
+           OR finance.ceps_svr_activation_15min.mfrr_plus_median_mw IS DISTINCT FROM EXCLUDED.mfrr_plus_median_mw
+           OR finance.ceps_svr_activation_15min.mfrr_minus_median_mw IS DISTINCT FROM EXCLUDED.mfrr_minus_median_mw
+           OR finance.ceps_svr_activation_15min.mfrr_5_median_mw IS DISTINCT FROM EXCLUDED.mfrr_5_median_mw
+           OR finance.ceps_svr_activation_15min.afrr_plus_last_at_interval_mw IS DISTINCT FROM EXCLUDED.afrr_plus_last_at_interval_mw
+           OR finance.ceps_svr_activation_15min.afrr_minus_last_at_interval_mw IS DISTINCT FROM EXCLUDED.afrr_minus_last_at_interval_mw
+           OR finance.ceps_svr_activation_15min.mfrr_plus_last_at_interval_mw IS DISTINCT FROM EXCLUDED.mfrr_plus_last_at_interval_mw
+           OR finance.ceps_svr_activation_15min.mfrr_minus_last_at_interval_mw IS DISTINCT FROM EXCLUDED.mfrr_minus_last_at_interval_mw
+           OR finance.ceps_svr_activation_15min.mfrr_5_last_at_interval_mw IS DISTINCT FROM EXCLUDED.mfrr_5_last_at_interval_mw
     """
 
     with conn.cursor() as cur:
@@ -279,6 +312,18 @@ def aggregate_export_import_svr_15min(affected_intervals: Set[tuple], conn, logg
             picasso_afrr_last_at_interval_mw = EXCLUDED.picasso_afrr_last_at_interval_mw,
             sum_exchange_last_at_interval_mw = EXCLUDED.sum_exchange_last_at_interval_mw,
             updated_at = CURRENT_TIMESTAMP
+        WHERE finance.ceps_export_import_svr_15min.imbalance_netting_mean_mw IS DISTINCT FROM EXCLUDED.imbalance_netting_mean_mw
+           OR finance.ceps_export_import_svr_15min.mari_mfrr_mean_mw IS DISTINCT FROM EXCLUDED.mari_mfrr_mean_mw
+           OR finance.ceps_export_import_svr_15min.picasso_afrr_mean_mw IS DISTINCT FROM EXCLUDED.picasso_afrr_mean_mw
+           OR finance.ceps_export_import_svr_15min.sum_exchange_mean_mw IS DISTINCT FROM EXCLUDED.sum_exchange_mean_mw
+           OR finance.ceps_export_import_svr_15min.imbalance_netting_median_mw IS DISTINCT FROM EXCLUDED.imbalance_netting_median_mw
+           OR finance.ceps_export_import_svr_15min.mari_mfrr_median_mw IS DISTINCT FROM EXCLUDED.mari_mfrr_median_mw
+           OR finance.ceps_export_import_svr_15min.picasso_afrr_median_mw IS DISTINCT FROM EXCLUDED.picasso_afrr_median_mw
+           OR finance.ceps_export_import_svr_15min.sum_exchange_median_mw IS DISTINCT FROM EXCLUDED.sum_exchange_median_mw
+           OR finance.ceps_export_import_svr_15min.imbalance_netting_last_at_interval_mw IS DISTINCT FROM EXCLUDED.imbalance_netting_last_at_interval_mw
+           OR finance.ceps_export_import_svr_15min.mari_mfrr_last_at_interval_mw IS DISTINCT FROM EXCLUDED.mari_mfrr_last_at_interval_mw
+           OR finance.ceps_export_import_svr_15min.picasso_afrr_last_at_interval_mw IS DISTINCT FROM EXCLUDED.picasso_afrr_last_at_interval_mw
+           OR finance.ceps_export_import_svr_15min.sum_exchange_last_at_interval_mw IS DISTINCT FROM EXCLUDED.sum_exchange_last_at_interval_mw
     """
 
     with conn.cursor() as cur:
@@ -305,6 +350,7 @@ def upsert_imbalance_data(records: List[Dict], conn, logger) -> int:
         VALUES %s
         ON CONFLICT (delivery_timestamp)
         DO UPDATE SET system_imbalance_mw = EXCLUDED.system_imbalance_mw, updated_at = CURRENT_TIMESTAMP
+        WHERE finance.ceps_actual_imbalance_1min.system_imbalance_mw IS DISTINCT FROM EXCLUDED.system_imbalance_mw
     """
 
     with conn.cursor() as cur:
@@ -354,6 +400,11 @@ def upsert_re_price_data(records: List[Dict], conn, logger) -> int:
             price_mfrr_minus_eur_mwh = EXCLUDED.price_mfrr_minus_eur_mwh,
             price_mfrr_5_eur_mwh = EXCLUDED.price_mfrr_5_eur_mwh,
             updated_at = CURRENT_TIMESTAMP
+        WHERE finance.ceps_actual_re_price_1min.price_afrr_plus_eur_mwh IS DISTINCT FROM EXCLUDED.price_afrr_plus_eur_mwh
+           OR finance.ceps_actual_re_price_1min.price_afrr_minus_eur_mwh IS DISTINCT FROM EXCLUDED.price_afrr_minus_eur_mwh
+           OR finance.ceps_actual_re_price_1min.price_mfrr_plus_eur_mwh IS DISTINCT FROM EXCLUDED.price_mfrr_plus_eur_mwh
+           OR finance.ceps_actual_re_price_1min.price_mfrr_minus_eur_mwh IS DISTINCT FROM EXCLUDED.price_mfrr_minus_eur_mwh
+           OR finance.ceps_actual_re_price_1min.price_mfrr_5_eur_mwh IS DISTINCT FROM EXCLUDED.price_mfrr_5_eur_mwh
     """
 
     with conn.cursor() as cur:
@@ -397,6 +448,11 @@ def upsert_svr_activation_data(records: List[Dict], conn, logger) -> int:
             mfrr_minus_mw = EXCLUDED.mfrr_minus_mw,
             mfrr_5_mw = EXCLUDED.mfrr_5_mw,
             updated_at = CURRENT_TIMESTAMP
+        WHERE finance.ceps_svr_activation_1min.afrr_plus_mw IS DISTINCT FROM EXCLUDED.afrr_plus_mw
+           OR finance.ceps_svr_activation_1min.afrr_minus_mw IS DISTINCT FROM EXCLUDED.afrr_minus_mw
+           OR finance.ceps_svr_activation_1min.mfrr_plus_mw IS DISTINCT FROM EXCLUDED.mfrr_plus_mw
+           OR finance.ceps_svr_activation_1min.mfrr_minus_mw IS DISTINCT FROM EXCLUDED.mfrr_minus_mw
+           OR finance.ceps_svr_activation_1min.mfrr_5_mw IS DISTINCT FROM EXCLUDED.mfrr_5_mw
     """
 
     with conn.cursor() as cur:
@@ -440,6 +496,10 @@ def upsert_export_import_svr_data(records: List[Dict], conn, logger) -> int:
             picasso_afrr_mw = EXCLUDED.picasso_afrr_mw,
             sum_exchange_european_platforms_mw = EXCLUDED.sum_exchange_european_platforms_mw,
             updated_at = CURRENT_TIMESTAMP
+        WHERE finance.ceps_export_import_svr_1min.imbalance_netting_mw IS DISTINCT FROM EXCLUDED.imbalance_netting_mw
+           OR finance.ceps_export_import_svr_1min.mari_mfrr_mw IS DISTINCT FROM EXCLUDED.mari_mfrr_mw
+           OR finance.ceps_export_import_svr_1min.picasso_afrr_mw IS DISTINCT FROM EXCLUDED.picasso_afrr_mw
+           OR finance.ceps_export_import_svr_1min.sum_exchange_european_platforms_mw IS DISTINCT FROM EXCLUDED.sum_exchange_european_platforms_mw
     """
 
     with conn.cursor() as cur:
@@ -499,6 +559,12 @@ def aggregate_generation_res_15min(affected_intervals: Set[tuple], conn, logger)
             solar_median_mw = EXCLUDED.solar_median_mw,
             solar_last_at_interval_mw = EXCLUDED.solar_last_at_interval_mw,
             updated_at = CURRENT_TIMESTAMP
+        WHERE finance.ceps_generation_res_15min.wind_mean_mw IS DISTINCT FROM EXCLUDED.wind_mean_mw
+           OR finance.ceps_generation_res_15min.wind_median_mw IS DISTINCT FROM EXCLUDED.wind_median_mw
+           OR finance.ceps_generation_res_15min.wind_last_at_interval_mw IS DISTINCT FROM EXCLUDED.wind_last_at_interval_mw
+           OR finance.ceps_generation_res_15min.solar_mean_mw IS DISTINCT FROM EXCLUDED.solar_mean_mw
+           OR finance.ceps_generation_res_15min.solar_median_mw IS DISTINCT FROM EXCLUDED.solar_median_mw
+           OR finance.ceps_generation_res_15min.solar_last_at_interval_mw IS DISTINCT FROM EXCLUDED.solar_last_at_interval_mw
     """
 
     with conn.cursor() as cur:
@@ -530,6 +596,8 @@ def upsert_generation_res_data(records: List[Dict], conn, logger) -> int:
             wind_mw = EXCLUDED.wind_mw,
             solar_mw = EXCLUDED.solar_mw,
             updated_at = CURRENT_TIMESTAMP
+        WHERE finance.ceps_generation_res_1min.wind_mw IS DISTINCT FROM EXCLUDED.wind_mw
+           OR finance.ceps_generation_res_1min.solar_mw IS DISTINCT FROM EXCLUDED.solar_mw
     """
 
     with conn.cursor() as cur:
@@ -597,6 +665,15 @@ def upsert_generation_data(records: List[Dict], conn, logger) -> int:
             wpp_mw = EXCLUDED.wpp_mw,
             pvpp_mw = EXCLUDED.pvpp_mw,
             updated_at = CURRENT_TIMESTAMP
+        WHERE finance.ceps_generation_15min.tpp_mw IS DISTINCT FROM EXCLUDED.tpp_mw
+           OR finance.ceps_generation_15min.ccgt_mw IS DISTINCT FROM EXCLUDED.ccgt_mw
+           OR finance.ceps_generation_15min.npp_mw IS DISTINCT FROM EXCLUDED.npp_mw
+           OR finance.ceps_generation_15min.hpp_mw IS DISTINCT FROM EXCLUDED.hpp_mw
+           OR finance.ceps_generation_15min.pspp_mw IS DISTINCT FROM EXCLUDED.pspp_mw
+           OR finance.ceps_generation_15min.altpp_mw IS DISTINCT FROM EXCLUDED.altpp_mw
+           OR finance.ceps_generation_15min.appp_mw IS DISTINCT FROM EXCLUDED.appp_mw
+           OR finance.ceps_generation_15min.wpp_mw IS DISTINCT FROM EXCLUDED.wpp_mw
+           OR finance.ceps_generation_15min.pvpp_mw IS DISTINCT FROM EXCLUDED.pvpp_mw
     """
 
     with conn.cursor() as cur:
@@ -634,6 +711,7 @@ def upsert_generation_plan_data(records: List[Dict], conn, logger) -> int:
         DO UPDATE SET
             total_mw = EXCLUDED.total_mw,
             updated_at = CURRENT_TIMESTAMP
+        WHERE finance.ceps_generation_plan_15min.total_mw IS DISTINCT FROM EXCLUDED.total_mw
     """
 
     with conn.cursor() as cur:
@@ -695,6 +773,8 @@ def upsert_estimated_imbalance_price_data(records: List[Dict], conn, logger) -> 
         DO UPDATE SET
             estimated_price_czk_mwh = EXCLUDED.estimated_price_czk_mwh,
             updated_at = CURRENT_TIMESTAMP
+        WHERE finance.ceps_estimated_imbalance_price_15min.estimated_price_czk_mwh
+              IS DISTINCT FROM EXCLUDED.estimated_price_czk_mwh
     """
 
     with conn.cursor() as cur:
