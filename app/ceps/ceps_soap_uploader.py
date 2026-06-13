@@ -55,25 +55,25 @@ def aggregate_imbalance_15min(affected_intervals: Set[tuple], conn, logger) -> i
                 delivery_timestamp::date AS trade_date,
                 DATE_TRUNC('hour', delivery_timestamp) +
                     INTERVAL '15 minutes' * FLOOR(EXTRACT(MINUTE FROM delivery_timestamp) / 15) AS interval_start,
-                load_mw
+                system_imbalance_mw
             FROM finance.ceps_actual_imbalance_1min
             WHERE delivery_timestamp >= %s AND delivery_timestamp < %s::date + INTERVAL '1 day'
         )
         INSERT INTO finance.ceps_actual_imbalance_15min
-            (trade_date, time_interval, load_mean_mw, load_median_mw, last_load_at_interval_mw)
+            (trade_date, time_interval, system_imbalance_mean_mw, system_imbalance_median_mw, system_imbalance_last_mw)
         SELECT
             trade_date,
             TO_CHAR(interval_start, 'HH24:MI') || '-' || TO_CHAR(interval_start + INTERVAL '15 minutes', 'HH24:MI') AS time_interval,
-            AVG(load_mw),
-            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY load_mw),
-            (ARRAY_AGG(load_mw ORDER BY interval_start DESC))[1]
+            AVG(system_imbalance_mw),
+            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY system_imbalance_mw),
+            (ARRAY_AGG(system_imbalance_mw ORDER BY interval_start DESC))[1]
         FROM interval_data
         WHERE (trade_date, TO_CHAR(interval_start, 'HH24:MI') || '-' || TO_CHAR(interval_start + INTERVAL '15 minutes', 'HH24:MI')) IN %s
         GROUP BY trade_date, interval_start
         ON CONFLICT (trade_date, time_interval) DO UPDATE SET
-            load_mean_mw = EXCLUDED.load_mean_mw,
-            load_median_mw = EXCLUDED.load_median_mw,
-            last_load_at_interval_mw = EXCLUDED.last_load_at_interval_mw,
+            system_imbalance_mean_mw = EXCLUDED.system_imbalance_mean_mw,
+            system_imbalance_median_mw = EXCLUDED.system_imbalance_median_mw,
+            system_imbalance_last_mw = EXCLUDED.system_imbalance_last_mw,
             updated_at = CURRENT_TIMESTAMP
     """
 
@@ -298,13 +298,13 @@ def upsert_imbalance_data(records: List[Dict], conn, logger) -> int:
     affected_intervals = get_affected_intervals(records)
 
     # Prepare data for bulk insert
-    values = [(r['delivery_timestamp'], r['load_mw']) for r in records]
+    values = [(r['delivery_timestamp'], r['system_imbalance_mw']) for r in records]
 
     query_1min = """
-        INSERT INTO finance.ceps_actual_imbalance_1min (delivery_timestamp, load_mw)
+        INSERT INTO finance.ceps_actual_imbalance_1min (delivery_timestamp, system_imbalance_mw)
         VALUES %s
         ON CONFLICT (delivery_timestamp)
-        DO UPDATE SET load_mw = EXCLUDED.load_mw, updated_at = CURRENT_TIMESTAMP
+        DO UPDATE SET system_imbalance_mw = EXCLUDED.system_imbalance_mw, updated_at = CURRENT_TIMESTAMP
     """
 
     with conn.cursor() as cur:

@@ -1068,8 +1068,8 @@ class CepsActualImbalance60Min(Base):
     id: Mapped[int] = mapped_column(Integer, autoincrement=True)
     trade_date: Mapped[date] = mapped_column(Date, nullable=False)
     time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
-    load_mean_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 5))
-    load_median_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 5))
+    system_imbalance_mean_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 5))
+    system_imbalance_median_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 5))
     created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
     updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
 

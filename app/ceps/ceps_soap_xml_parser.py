@@ -47,7 +47,7 @@ def parse_imbalance_xml(xml_root: ET.Element) -> List[Dict]:
         xml_root: XML root element from SOAP response
 
     Returns:
-        List of dicts with keys: delivery_timestamp, load_mw
+        List of dicts with keys: delivery_timestamp, system_imbalance_mw
     """
     records = []
 
@@ -62,7 +62,7 @@ def parse_imbalance_xml(xml_root: ET.Element) -> List[Dict]:
             try:
                 records.append({
                     'delivery_timestamp': parse_datetime(date_str),
-                    'load_mw': float(value1)
+                    'system_imbalance_mw': float(value1)
                 })
             except (ValueError, TypeError) as e:
                 # Skip invalid records

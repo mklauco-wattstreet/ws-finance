@@ -68,7 +68,7 @@ def aggregate_1min_features(affected_intervals: Set[tuple], conn, logger) -> int
                 re.price_afrr_minus_eur_mwh,
                 re.price_mfrr_plus_eur_mwh,
                 re.price_mfrr_minus_eur_mwh,
-                imb.load_mw,
+                imb.system_imbalance_mw,
                 act.afrr_plus_mw,
                 act.mfrr_plus_mw,
                 svr.picasso_afrr_mw,
@@ -158,11 +158,11 @@ def aggregate_1min_features(affected_intervals: Set[tuple], conn, logger) -> int
                 END AS mfrr_minus_skew,
 
                 -- Imbalance distribution
-                MAX(load_mw) - MIN(load_mw) AS imb_range,
-                STDDEV_SAMP(load_mw) AS imb_std,
+                MAX(system_imbalance_mw) - MIN(system_imbalance_mw) AS imb_range,
+                STDDEV_SAMP(system_imbalance_mw) AS imb_std,
                 -- Normalized x: minute index 0..14 avoids float precision issues with epoch
                 REGR_SLOPE(
-                    load_mw,
+                    system_imbalance_mw,
                     EXTRACT(EPOCH FROM delivery_timestamp - interval_start)::int / 60
                 ) AS imb_slope,
 
@@ -289,7 +289,7 @@ def aggregate_1min_features(affected_intervals: Set[tuple], conn, logger) -> int
 def aggregate_derived_features(affected_intervals: Set[tuple], conn, logger) -> int:
     """Compute rolling memory and forecast surprise features for 15-min intervals.
 
-    Rolling memory: AVG/SUM of load_mean_mw over trailing 2h (8) and 4h (16) intervals.
+    Rolling memory: AVG/SUM of system_imbalance_mean_mw over trailing 2h (8) and 4h (16) intervals.
     Window functions require lookback data, so the query includes the previous day.
 
     Forecast surprise: actual generation minus forecast/plan.
@@ -314,10 +314,10 @@ def aggregate_derived_features(affected_intervals: Set[tuple], conn, logger) -> 
             SELECT
                 trade_date,
                 time_interval,
-                load_mean_mw,
-                AVG(load_mean_mw) OVER w8 AS imb_roll_2h,
-                AVG(load_mean_mw) OVER w16 AS imb_roll_4h,
-                SUM(load_mean_mw) OVER w16 AS imb_integral_4h
+                system_imbalance_mean_mw,
+                AVG(system_imbalance_mean_mw) OVER w8 AS imb_roll_2h,
+                AVG(system_imbalance_mean_mw) OVER w16 AS imb_roll_4h,
+                SUM(system_imbalance_mean_mw) OVER w16 AS imb_integral_4h
             FROM finance.ceps_actual_imbalance_15min
             WHERE trade_date IN %s
             WINDOW

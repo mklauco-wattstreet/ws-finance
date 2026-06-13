@@ -50,18 +50,18 @@ def _on_conflict_update(*cols: str) -> str:
 # -------------------- ceps_actual_imbalance_60min --------------------
 ACTUAL_IMBALANCE_SQL = f"""
 INSERT INTO ceps_actual_imbalance_60min (
-    trade_date, time_interval, load_mean_mw, load_median_mw
+    trade_date, time_interval, system_imbalance_mean_mw, system_imbalance_median_mw
 )
 SELECT
     trade_date,
     {HOUR_INTERVAL_SQL},
-    AVG(load_mean_mw),
-    AVG(load_median_mw)
+    AVG(system_imbalance_mean_mw),
+    AVG(system_imbalance_median_mw)
 FROM ceps_actual_imbalance_15min
 WHERE trade_date = %s
 GROUP BY trade_date, {HOUR_GROUP_SQL}
 {HOUR_COMPLETE_HAVING}
-{_on_conflict_update("load_mean_mw", "load_median_mw")}
+{_on_conflict_update("system_imbalance_mean_mw", "system_imbalance_median_mw")}
 """
 
 

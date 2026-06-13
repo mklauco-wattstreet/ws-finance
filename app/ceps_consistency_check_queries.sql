@@ -129,28 +129,28 @@ ORDER BY trade_date DESC;
 
 -- 6. NULL VALUES CHECK
 SELECT
-    '1min: load_mw' AS field,
+    '1min: system_imbalance_mw' AS field,
     COUNT(*) AS null_count
 FROM finance.ceps_actual_imbalance_1min
-WHERE load_mw IS NULL
+WHERE system_imbalance_mw IS NULL
 UNION ALL
 SELECT
-    '15min: load_mean_mw' AS field,
+    '15min: system_imbalance_mean_mw' AS field,
     COUNT(*) AS null_count
 FROM finance.ceps_actual_imbalance_15min
-WHERE load_mean_mw IS NULL
+WHERE system_imbalance_mean_mw IS NULL
 UNION ALL
 SELECT
-    '15min: load_median_mw' AS field,
+    '15min: system_imbalance_median_mw' AS field,
     COUNT(*) AS null_count
 FROM finance.ceps_actual_imbalance_15min
-WHERE load_median_mw IS NULL
+WHERE system_imbalance_median_mw IS NULL
 UNION ALL
 SELECT
-    '15min: last_load_at_interval_mw' AS field,
+    '15min: system_imbalance_last_mw' AS field,
     COUNT(*) AS null_count
 FROM finance.ceps_actual_imbalance_15min
-WHERE last_load_at_interval_mw IS NULL;
+WHERE system_imbalance_last_mw IS NULL;
 
 -- 7. SUMMARY STATISTICS
 WITH date_coverage AS (

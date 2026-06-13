@@ -16,7 +16,7 @@ HAVING COUNT(DISTINCT time_interval) = 4 used by the 15-min aggregators).
 
 Source tables (all in finance schema):
   - ceps_actual_re_price_1min       (driver — required)
-  - ceps_actual_imbalance_1min      (load_mw)
+  - ceps_actual_imbalance_1min      (system_imbalance_mw)
   - ceps_export_import_svr_1min     (picasso/mari for saturation flag)
   - ceps_svr_activation_1min        (afrr+/mfrr+ for total-active)
 
@@ -63,7 +63,7 @@ interval_data AS (
         re.price_afrr_minus_eur_mwh,
         re.price_mfrr_plus_eur_mwh,
         re.price_mfrr_minus_eur_mwh,
-        imb.load_mw,
+        imb.system_imbalance_mw,
         act.afrr_plus_mw,
         act.mfrr_plus_mw,
         svr.picasso_afrr_mw,
@@ -154,10 +154,10 @@ agg AS (
         END AS mfrr_minus_skew,
 
         -- Imbalance distribution
-        MAX(load_mw) - MIN(load_mw) AS imb_range,
-        STDDEV_SAMP(load_mw) AS imb_std,
+        MAX(system_imbalance_mw) - MIN(system_imbalance_mw) AS imb_range,
+        STDDEV_SAMP(system_imbalance_mw) AS imb_std,
         REGR_SLOPE(
-            load_mw,
+            system_imbalance_mw,
             EXTRACT(EPOCH FROM delivery_timestamp - interval_start)::int / 60
         ) AS imb_slope,
 
