@@ -23,16 +23,6 @@ DB_NAME = os.getenv("DB_NAME", "postgres")
 DB_PORT = int(os.getenv("DB_PORT", "5432"))
 DB_SCHEMA = os.getenv("DB_SCHEMA", "finance")
 
-# Explicit DB session timezone. Pinned so behaviour is DETERMINISTIC and does NOT
-# depend on the Postgres server's ambient `timezone` GUC, which differs per host
-# (local docker defaults to GMT, the production server defaults to Europe/Prague).
-# That ambient divergence is what made `created_at` land in UTC locally but Prague
-# in production. All naive business timestamps (e.g. CEPS delivery_timestamp) are
-# Prague wall-clock, so Europe/Prague is the correct, convention-aligned pin.
-# Use as: psycopg2.connect(..., options=DB_SESSION_OPTIONS)
-DB_SESSION_TIMEZONE = os.getenv("DB_SESSION_TIMEZONE", "Europe/Prague")
-DB_SESSION_OPTIONS = f"-c timezone={DB_SESSION_TIMEZONE}"
-
 # Validate required database credentials
 if not DB_USER or not DB_PASSWORD:
     raise ValueError(

@@ -39,7 +39,7 @@ import time
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from config import DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT, DB_SESSION_OPTIONS
+from config import DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT
 from ceps.ceps_soap_xml_parser import parse_soap_xml
 from ceps.ceps_soap_uploader import upsert_data
 
@@ -451,8 +451,7 @@ def main():
                 password=DB_PASSWORD,
                 dbname=DB_NAME,
                 port=DB_PORT,
-                connect_timeout=15,
-                options=DB_SESSION_OPTIONS,  # pin session tz; do not inherit server ambient
+                connect_timeout=15
             )
         except Exception as e:
             logger.error(f"DB connection failed: {e}")

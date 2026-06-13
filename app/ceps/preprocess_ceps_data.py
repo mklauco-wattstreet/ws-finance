@@ -25,7 +25,7 @@ import psycopg2
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from config import DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT, DB_SESSION_OPTIONS
+from config import DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT
 
 # Threshold constants
 PRICE_FLOOR_EUR = -500
@@ -479,8 +479,7 @@ if __name__ == '__main__':
 
     conn = psycopg2.connect(
         host=DB_HOST, user=DB_USER, password=DB_PASSWORD,
-        dbname=DB_NAME, port=DB_PORT, connect_timeout=15,
-        options=DB_SESSION_OPTIONS,  # pin session tz; do not inherit server ambient
+        dbname=DB_NAME, port=DB_PORT, connect_timeout=15
     )
     try:
         if args.table in ('1min_features', 'all'):
