@@ -36,10 +36,13 @@ are skipped by the data_type filter — this migration is idempotent.
 PRE-FLIGHT (must hold or the ALTER fails):
   * Tables must be owned by the migration role (user_finance). Older CEPS tables
     may be owned by `postgres`; reassign ownership first (see migration 067 note).
-  * Verify the conversion zone is correct for THIS environment: confirm
-    `SHOW timezone` is GMT/UTC and that a sample created_at matches a known UTC
-    ingest time. The `AT TIME ZONE 'UTC'` relabel is only correct if the stored
-    naive audit values are UTC wall-clock (true in dev; confirm in prod).
+  * Conversion zone is taken from current_setting('TimeZone') — the session zone
+    in which the naive audit values were written (dev=GMT/UTC, prod=Europe/Prague).
+    This assumes that zone has been STABLE across the table's history. Before
+    running, confirm `created_at - delivery_timestamp` is consistently a small
+    POSITIVE lag (~+2 min) on BOTH the oldest and newest rows. If some old rows
+    show a large negative (~ -2h), the storage zone changed over time and a single
+    relabel would corrupt part of the data — STOP and handle per-era.
   * ALTER COLUMN TYPE takes ACCESS EXCLUSIVE and rewrites partitions. The 15min/
     60min tables are tiny (96/24 rows/day) so this is fast; still run with the
     CEPS cron paused.
@@ -72,10 +75,15 @@ def upgrade() -> None:
           AND c.data_type = 'timestamp without time zone'           -- skip already-tz
         ORDER BY c.table_name, c.column_name
       LOOP
+        -- Relabel using the SESSION timezone — that IS the zone these naive values
+        -- were written in (CURRENT_TIMESTAMP under the app/alembic connection).
+        -- Dev session = GMT (created_at is UTC); prod session = Europe/Prague
+        -- (created_at is Prague). current_setting('TimeZone') is correct for both;
+        -- a hardcoded zone would corrupt whichever environment it doesn't match.
         EXECUTE format(
-          'ALTER TABLE finance.%I ALTER COLUMN %I TYPE timestamptz USING (%I AT TIME ZONE ''UTC'')',
+          'ALTER TABLE finance.%I ALTER COLUMN %I TYPE timestamptz USING (%I AT TIME ZONE current_setting(''TimeZone''))',
           r.table_name, r.column_name, r.column_name);
-        RAISE NOTICE 'tz-converted finance.%.%', r.table_name, r.column_name;
+        RAISE NOTICE 'tz-converted finance.%.% using session tz %', r.table_name, r.column_name, current_setting('TimeZone');
       END LOOP;
     END $$;
     """)

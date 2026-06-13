@@ -37,8 +37,10 @@ PRE-FLIGHT (HEAVY — run manually, CEPS cron paused, maintenance window):
   * Tables must be owned by user_finance (reassign from postgres first; see 067).
   * Adding a STORED generated column and ALTER TYPE both force a full table
     rewrite under ACCESS EXCLUSIVE; the *_1min tables hold millions of rows.
-  * Confirm `SHOW timezone` is GMT/UTC and a sample created_at matches a known UTC
-    ingest time before trusting the `AT TIME ZONE 'UTC'` relabel in production.
+  * Audit relabel uses current_setting('TimeZone') (dev=GMT/UTC, prod=Europe/Prague).
+    Confirm that zone has been STABLE across history: `created_at - delivery_timestamp`
+    should be a small POSITIVE lag (~+2 min) on the OLDEST and newest rows alike. A
+    large negative (~ -2h) on old rows means the zone changed — STOP, handle per-era.
 """
 
 from alembic import op
@@ -61,10 +63,16 @@ def upgrade() -> None:
     for tbl in ONE_MIN_TABLES:
         # Single ALTER TABLE -> single rewrite: relabel audit cols as UTC instants
         # and add the derived Prague-instant column.
+        # Audit relabel uses the SESSION timezone (the zone the naive values were
+        # written in: dev=GMT/UTC, prod=Europe/Prague) — NOT a hardcoded literal,
+        # which would corrupt whichever environment it doesn't match.
+        # delivery_instant uses literal 'Europe/Prague' on purpose: delivery_timestamp
+        # is a naive Prague wall-clock on BOTH environments, so the literal is correct
+        # regardless of session (and a generated column requires an immutable zone).
         op.execute(f"""
             ALTER TABLE finance.{tbl}
-                ALTER COLUMN created_at TYPE timestamptz USING (created_at AT TIME ZONE 'UTC'),
-                ALTER COLUMN updated_at TYPE timestamptz USING (updated_at AT TIME ZONE 'UTC'),
+                ALTER COLUMN created_at TYPE timestamptz USING (created_at AT TIME ZONE current_setting('TimeZone')),
+                ALTER COLUMN updated_at TYPE timestamptz USING (updated_at AT TIME ZONE current_setting('TimeZone')),
                 ADD COLUMN delivery_instant timestamptz
                     GENERATED ALWAYS AS (delivery_timestamp AT TIME ZONE 'Europe/Prague') STORED;
         """)
@@ -78,9 +86,9 @@ def upgrade() -> None:
 def downgrade() -> None:
     for tbl in ONE_MIN_TABLES:
         op.execute(f"ALTER TABLE finance.{tbl} DROP COLUMN delivery_instant;")
-        # audit columns back to naive UTC wall-clock
+        # audit columns back to naive wall-clock in the session zone (matches upgrade)
         op.execute(f"""
             ALTER TABLE finance.{tbl}
-                ALTER COLUMN created_at TYPE timestamp USING (created_at AT TIME ZONE 'UTC'),
-                ALTER COLUMN updated_at TYPE timestamp USING (updated_at AT TIME ZONE 'UTC');
+                ALTER COLUMN created_at TYPE timestamp USING (created_at AT TIME ZONE current_setting('TimeZone')),
+                ALTER COLUMN updated_at TYPE timestamp USING (updated_at AT TIME ZONE current_setting('TimeZone'));
         """)
