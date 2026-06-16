@@ -4,6 +4,22 @@
 services:
   entsoe-ote-data-uploader:
     shm_size: '512m'
+    # Resource caps so the every-15-min cron burst (13 concurrent jobs at
+    # 14,29,44,59 + 7 aggregators at 15,30,45,0) can't starve other containers
+    # on this host.
+    #   cpus       — HARD throttle (CFS quota). Smooths the CPU spike; only slows
+    #                jobs, never kills them. Safe to keep tight.
+    #   mem_limit  — HARD cap for the WHOLE container/cgroup (all concurrent
+    #                processes share it). Exceeding it = OOM-kill of a cron child
+    #                = SILENT data gap. Keep headroom above measured peak; do NOT
+    #                squeeze. Manual backfills (docker compose exec) also run under
+    #                this cap — a large backfill can OOM if set too low.
+    #   mem_reservation — soft floor the scheduler tries to honour.
+    # Right-size with: docker stats --no-stream entsoe-ote-data-uploader
+    # (sample across a :59->:00 burst and during a backfill), then tighten.
+    cpus: '1.00'
+    mem_limit: 3g
+    mem_reservation: 1g
     # Remove extra_hosts in production (override to empty)
     extra_hosts: []
     # SENTRY_DSN is loaded from .env on the production host (see .env.production.example)
