@@ -153,9 +153,13 @@ def main():
         # Matches both DM_DD_MM_YYYY_EN.xlsx and DM_15MIN_DD_MM_YYYY_EN.xlsx
         date_pattern = r'(\d{2})_(\d{2})_(\d{4})_EN\.xlsx'
 
+        # Scope to 15-min files only. A broader "DM_*.xlsx" also matches the
+        # 60-min reports (DM_60MIN_*), whose date would poison the "last
+        # downloaded" pointer: if a DM_60MIN_D lands before DM_15MIN_D, auto
+        # mode would jump past date D and never backfill the missing 15-min file.
         start_date, end_date = auto_determine_date_range(
             base_dir=script_dir,
-            file_pattern="DM_*.xlsx",
+            file_pattern="DM_15MIN_*.xlsx",
             date_pattern=date_pattern,
             logger=logger,
             minimum_date=datetime(2025, 11, 1)
