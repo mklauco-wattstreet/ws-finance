@@ -375,6 +375,18 @@ def upload_to_database(records, conn, trade_date):
             price_60min_ref_eur_mwh = EXCLUDED.price_60min_ref_eur_mwh,
             is_15min = EXCLUDED.is_15min,
             updated_at = CURRENT_TIMESTAMP
+        WHERE ote_prices_day_ahead.time_interval IS DISTINCT FROM EXCLUDED.time_interval
+           OR ote_prices_day_ahead.price_15min_eur_mwh IS DISTINCT FROM EXCLUDED.price_15min_eur_mwh
+           OR ote_prices_day_ahead.volume_mwh IS DISTINCT FROM EXCLUDED.volume_mwh
+           OR ote_prices_day_ahead.purchase_15min_products_mwh IS DISTINCT FROM EXCLUDED.purchase_15min_products_mwh
+           OR ote_prices_day_ahead.purchase_60min_products_mwh IS DISTINCT FROM EXCLUDED.purchase_60min_products_mwh
+           OR ote_prices_day_ahead.sale_15min_products_mwh IS DISTINCT FROM EXCLUDED.sale_15min_products_mwh
+           OR ote_prices_day_ahead.sale_60min_products_mwh IS DISTINCT FROM EXCLUDED.sale_60min_products_mwh
+           OR ote_prices_day_ahead.saldo_dm_mwh IS DISTINCT FROM EXCLUDED.saldo_dm_mwh
+           OR ote_prices_day_ahead.export_mwh IS DISTINCT FROM EXCLUDED.export_mwh
+           OR ote_prices_day_ahead.import_mwh IS DISTINCT FROM EXCLUDED.import_mwh
+           OR ote_prices_day_ahead.price_60min_ref_eur_mwh IS DISTINCT FROM EXCLUDED.price_60min_ref_eur_mwh
+           OR ote_prices_day_ahead.is_15min IS DISTINCT FROM EXCLUDED.is_15min
     """
 
     # Prepare data as tuples for bulk upsert

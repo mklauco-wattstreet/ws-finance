@@ -171,6 +171,16 @@ def upload_to_database(records, conn, trade_date):
             export_mwh = EXCLUDED.export_mwh,
             import_mwh = EXCLUDED.import_mwh,
             updated_at = CURRENT_TIMESTAMP
+        WHERE ote_prices_day_ahead_60min.time_interval IS DISTINCT FROM EXCLUDED.time_interval
+           OR ote_prices_day_ahead_60min.price_60min_eur_mwh IS DISTINCT FROM EXCLUDED.price_60min_eur_mwh
+           OR ote_prices_day_ahead_60min.volume_mwh IS DISTINCT FROM EXCLUDED.volume_mwh
+           OR ote_prices_day_ahead_60min.purchase_15min_products_mwh IS DISTINCT FROM EXCLUDED.purchase_15min_products_mwh
+           OR ote_prices_day_ahead_60min.purchase_60min_products_mwh IS DISTINCT FROM EXCLUDED.purchase_60min_products_mwh
+           OR ote_prices_day_ahead_60min.sale_15min_products_mwh IS DISTINCT FROM EXCLUDED.sale_15min_products_mwh
+           OR ote_prices_day_ahead_60min.sale_60min_products_mwh IS DISTINCT FROM EXCLUDED.sale_60min_products_mwh
+           OR ote_prices_day_ahead_60min.saldo_dm_mwh IS DISTINCT FROM EXCLUDED.saldo_dm_mwh
+           OR ote_prices_day_ahead_60min.export_mwh IS DISTINCT FROM EXCLUDED.export_mwh
+           OR ote_prices_day_ahead_60min.import_mwh IS DISTINCT FROM EXCLUDED.import_mwh
     """
 
     values = []
