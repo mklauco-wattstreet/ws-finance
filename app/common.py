@@ -379,3 +379,52 @@ def run_upload_script(upload_script_name, base_dir, start_date, end_date, logger
             all_success = False
 
     return all_success, upload_lines
+
+
+def run_aggregator(module_name, start_date, end_date, logger, base_dir):
+    """
+    Run a 60-min aggregator module for an explicit delivery-date range.
+
+    Chains the DB-side aggregation directly onto a download+upload so the
+    derived 60-min tables land in the SAME run — not on the next fixed
+    aggregator cron tick. This matters for day-ahead data: the aggregator's
+    `--auto` window (trailing 6h of delivery_date) never covers tomorrow's
+    delivery date, so it must be invoked here with explicit dates.
+
+    Args:
+        module_name: Dotted module, e.g. 'backfill.backfill_da_60min'
+        start_date: First delivery date (datetime)
+        end_date: Last delivery date, inclusive (datetime)
+        base_dir: cwd for the subprocess (script dir; backfill/ resolves via PYTHONPATH)
+        logger: Logger instance
+
+    Returns:
+        (bool success, list[str] output_lines)
+    """
+    start = start_date.strftime('%Y-%m-%d')
+    end = end_date.strftime('%Y-%m-%d')
+    lines = []
+    try:
+        proc = subprocess.Popen(
+            ['/usr/local/bin/python3', '-u', '-m', module_name, start, end],
+            cwd=base_dir,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+            env=os.environ.copy(),
+        )
+        for line in proc.stdout:
+            line = line.rstrip()
+            if not line:
+                continue
+            logger.info(f"[agg {module_name}] {line}")
+            lines.append(line)
+        proc.wait()
+        if proc.returncode != 0:
+            logger.error(f"Aggregator {module_name} failed (exit {proc.returncode})")
+            return False, lines
+        return True, lines
+    except Exception as e:
+        logger.error(f"Aggregator {module_name} error: {e}")
+        return False, lines

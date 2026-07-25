@@ -149,6 +149,16 @@ def main():
     if auto_mode:
         print_banner("OTE-CR Day-Ahead Price Report Downloader (AUTO)", debug_mode)
 
+        # Poll guard: once tomorrow's file is on disk it has already been
+        # downloaded AND uploaded (upload runs in the same run it lands), so
+        # skip the redundant 30-day re-upload that otherwise fires on every
+        # 10-min poll for the rest of the window.
+        tomorrow = datetime.now() + timedelta(days=1)
+        tf = script_dir / tomorrow.strftime('%Y') / tomorrow.strftime('%m') / get_filename(tomorrow)
+        if tf.exists() and tf.stat().st_size > 0:
+            logger.info(f"Tomorrow's file already present ({tf.name}); nothing to do")
+            sys.exit(0)
+
         # Regex pattern to extract date from filename (DD_MM_YYYY)
         # Matches both DM_DD_MM_YYYY_EN.xlsx and DM_15MIN_DD_MM_YYYY_EN.xlsx
         date_pattern = r'(\d{2})_(\d{2})_(\d{4})_EN\.xlsx'

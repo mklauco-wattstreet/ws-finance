@@ -135,6 +135,18 @@ def main():
     if auto_mode:
         print_banner("OTE-CR Day-Ahead 60min Price Report Downloader (AUTO)", debug_mode)
 
+        # Poll guard: once tomorrow's file is on disk it has already been
+        # downloaded AND uploaded in the same run, so skip the redundant
+        # 30-day re-upload on every 10-min poll. Check both the .xlsx name and
+        # the .xls fallback that download_report may have saved instead.
+        tomorrow = datetime.now() + timedelta(days=1)
+        tdir = script_dir / tomorrow.strftime('%Y') / tomorrow.strftime('%m')
+        tname = get_filename(tomorrow)
+        for cand in (tdir / tname, tdir / tname.replace('.xlsx', '.xls')):
+            if cand.exists() and cand.stat().st_size > 0:
+                logger.info(f"Tomorrow's file already present ({cand.name}); nothing to do")
+                sys.exit(0)
+
         date_pattern = r'(\d{2})_(\d{2})_(\d{4})_EN\.xlsx?'
 
         start_date, end_date = auto_determine_date_range(

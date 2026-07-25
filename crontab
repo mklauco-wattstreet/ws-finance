@@ -11,11 +11,13 @@
 # OTE-CR - Czech Market Data
 # ============================================================================
 
-# OTE-CR - Download day-ahead prices every 2h from 16:00-22:00 (published ~14:00, retry on failure)
-0 16,18,20,22 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 download_day_ahead_prices.py >> /var/log/ote.log 2>&1
+# OTE-CR - Download day-ahead prices every 10 min from 14:00-21:59 (published ~14:00).
+# Self-stops via on-disk guard once tomorrow's file has landed + uploaded.
+2,12,22,32,42,52 14-21 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 download_day_ahead_prices.py >> /var/log/ote.log 2>&1
 
-# OTE-CR - Download day-ahead 60min prices every 2h from 16:00-22:00 (published ~14:00, retry on failure)
-0 16,18,20,22 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 download_day_ahead_60min_prices.py >> /var/log/ote.log 2>&1
+# OTE-CR - Download day-ahead 60min prices every 10 min from 14:00-21:59 (published ~14:00).
+# Self-stops via on-disk guard once tomorrow's file has landed + uploaded.
+2,12,22,32,42,52 14-21 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 download_day_ahead_60min_prices.py >> /var/log/ote.log 2>&1
 
 # OTE-CR - Download imbalance prices every 2 hours
 0 */2 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 download_imbalance_prices.py >> /var/log/ote.log 2>&1
@@ -32,8 +34,11 @@
 # OTE-CR - Download OTE trade balance reports every 2 hours (offset to minute 10)
 10 */2 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 ote_trade_balance_downloader.py >> /var/log/ote.log 2>&1
 
-# OTE-CR - Download DAM matching curves every 2h from 14:30-20:30 (published ~14:00, retry on failure)
-30 14,16,18,20 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 download_dam_curves.py >> /var/log/ote.log 2>&1
+# OTE-CR - Download DAM matching curves every 10 min from 14:00-21:59 (published ~14:00).
+# Chains upload + backfill_da_60min in the same run so da_period_summary/curve_depth
+# and their _60min aggregates land seconds after the source. Self-stops once
+# tomorrow's da_period_summary_60min rows exist (self-verifying guard).
+2,12,22,32,42,52 14-21 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 download_dam_curves.py >> /var/log/ote.log 2>&1
 
 # OTE-CR - Download IDA1 intraday auction prices (placeholder schedule)
 0 11,13,15 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 download_ida_prices.py --ida 1 >> /var/log/ote.log 2>&1

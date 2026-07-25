@@ -36,8 +36,31 @@ from common import (
     validate_date_range,
     print_banner,
     auto_determine_date_range,
-    run_upload_script
+    run_upload_script,
+    run_aggregator
 )
+
+
+def da_60min_present(delivery_date, logger):
+    """Return True if the derived 60-min DA aggregates already exist for a date.
+
+    Used as a self-verifying poll guard: we stop re-fetching only once the
+    *derived* output (da_period_summary_60min) is actually in the DB — not
+    merely when the source XML sits on disk. Any failure defaults to False so
+    the poll keeps trying rather than declaring premature success.
+    """
+    try:
+        from backfill._common import get_db_connection
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT COUNT(*) FROM da_period_summary_60min WHERE delivery_date = %s",
+                    (delivery_date,),
+                )
+                return cur.fetchone()[0] > 0
+    except Exception as e:
+        logger.warning(f"60min presence check failed ({e}); proceeding to fetch")
+        return False
 
 
 def build_download_url(date):
@@ -131,6 +154,16 @@ def main():
     if auto_mode:
         print_banner("OTE-CR DAM Matching Curve Downloader (AUTO)", debug_mode)
 
+        # Self-verifying poll guard: if tomorrow's derived 60-min aggregates are
+        # already in the DB, the fetch+upload+aggregate chain has fully run for
+        # today's publication — exit cheaply instead of re-uploading 30 days on
+        # every 10-min poll. If they are NOT present (source not yet published,
+        # or a partial/failed prior run), fall through and (re)do the work.
+        tomorrow = datetime.now() + timedelta(days=1)
+        if da_60min_present(tomorrow.date(), logger):
+            logger.info(f"DA 60min already present for {tomorrow.strftime('%Y-%m-%d')}; nothing to do")
+            sys.exit(0)
+
         date_pattern = r'(\d{2})_(\d{2})_(\d{4})_EN\.xml'
 
         start_date, end_date = auto_determine_date_range(
@@ -143,6 +176,10 @@ def main():
         )
 
         if start_date is None or end_date is None:
+            # Reached only when tomorrow's 60min is still missing (guard above)
+            # yet the source XML is already on disk — i.e. a prior partial/failed
+            # run. Re-upload the recent window, then aggregate tomorrow so the
+            # derived 60min tables recover in this same run.
             end_date_upload = datetime.now() - timedelta(days=1)
             start_date_upload = end_date_upload - timedelta(days=30)
             _, upload_lines = run_upload_script(
@@ -154,6 +191,8 @@ def main():
             )
             for line in upload_lines:
                 logger.info(line)
+            tomorrow = datetime.now() + timedelta(days=1)
+            run_aggregator('backfill.backfill_da_60min', tomorrow, tomorrow, logger, script_dir)
             sys.exit(0)
 
     else:
@@ -202,6 +241,13 @@ def main():
             upload_summary = next((l for l in upload_lines if 'upload:' in l.lower()), None)
             if upload_summary:
                 summary += f" | {upload_summary}"
+            # Chain the 60-min aggregation onto the same run so da_period_summary_60min
+            # and da_curve_depth_60min land seconds after the 15-min upload — the
+            # `--auto` cron never covers tomorrow's delivery_date on its own.
+            agg_ok, _ = run_aggregator(
+                'backfill.backfill_da_60min', start_date, end_date, logger, script_dir
+            )
+            summary += " | agg:ok" if agg_ok else " | agg:FAILED"
         else:
             summary += " | skipped upload"
         logger.info(summary)
