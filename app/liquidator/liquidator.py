@@ -6,9 +6,13 @@ For each expired position from the Trader API:
 - Parse contract_id into (trade_date, time_interval)
 - Look up OTE imbalance settlement price + CNB CZK/EUR rate from `finance`
 - Skip silently if either is missing (matches the manual UI behavior)
-- Skip if the position already has a successful liquidation log within 24h
 - POST to the Trader API and persist an audit row in
   "trader-app".manual_position_logs
+
+The liquidation decision depends only on the imbalance price and CNB rate
+being present; it never reads the audit log. Idempotency comes from the
+source of truth -- the Trader API stops returning a position in the
+expired list once it has been liquidated.
 """
 
 import json
@@ -123,25 +127,6 @@ def fetch_eur_czk_rate(conn, trade_date: date) -> Optional[float]:
     return float(row[0])
 
 
-def already_liquidated(conn, position_id: str) -> bool:
-    """Guard against re-POSTing if a prior run logged a 200 for this position.
-
-    Looks back 24h across all liquidation targets (cron + manual UI).
-    """
-    with conn.cursor() as cur:
-        cur.execute(
-            f"""
-            SELECT 1 FROM {LIQUIDATIONS_LOG_TABLE}
-            WHERE response_status = 200
-              AND created_at > NOW() - INTERVAL '24 hours'
-              AND response_body->>'position_id' = %s
-            LIMIT 1
-            """,
-            (position_id,),
-        )
-        return cur.fetchone() is not None
-
-
 def write_log(
     conn,
     *,
@@ -233,15 +218,6 @@ def process_position(
         return LiquidationResult(
             position_id, contract_id, side, "skipped_no_fx",
             detail=str(trade_date),
-        )
-
-    if already_liquidated(conn, position_id):
-        logger.info(
-            f"  Skipping {position_id} ({contract_id}): already liquidated "
-            f"in the last 24h"
-        )
-        return LiquidationResult(
-            position_id, contract_id, side, "skipped_idempotent"
         )
 
     liquidation_price = settlement / fx
