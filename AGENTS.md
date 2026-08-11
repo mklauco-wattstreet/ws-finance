@@ -1,16 +1,12 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
 
 ## ROLE
 Lead Data Engineer & ML Architect. Focus: **High-Precision Grid Imbalance Forecasting.**
 Supervised by a Senior Architect. Do not implement complex logic or structural changes without a confirmed plan.
 
 ---
-
-## Documentation Files
-- You must only create documentation files if explicitly requested by the user.
-- Documentation location is an Obsidian vault (uses wikilinks and frontmatter) in "/Users/mk/Documents/Obsidian/Watt Street/WS Finance Database".
 
 ## COMMON COMMANDS
 

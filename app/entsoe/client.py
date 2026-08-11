@@ -47,6 +47,7 @@ class EntsoeClient:
     DOC_TYPE_DAY_AHEAD_PRICES = "A44"  # 12.1.D Day-ahead prices
     DOC_TYPE_BID_DOCUMENT = "A24"     # 17.1.B Balancing energy bids (public API)
     DOC_TYPE_ACTIVATED_BALANCING_ENERGY = "A83"  # 17.1.F Activated balancing energy volumes
+    DOC_TYPE_PROCURED_CAPACITY = "A15"  # 12.3.F Procured Balancing Capacity
 
     # Process types for A65 differentiation
     PROCESS_TYPE_REALISED = "A16"  # Actual load
@@ -812,6 +813,72 @@ class EntsoeClient:
         except requests.RequestException as e:
             raise requests.RequestException(
                 f"Failed to fetch balancing energy for domain {control_area}: {self._sanitize_error(e)}"
+            )
+
+    def fetch_procured_capacity_for_domain(
+        self,
+        period_start: datetime,
+        period_end: datetime,
+        area_domain: str,
+        process_type: str,
+        offset: int = 0
+    ) -> str:
+        """
+        Fetch Procured Balancing Capacity (A15, 12.3.F) for an area.
+
+        Note: this endpoint uses ``Area_Domain`` (not ``controlArea_Domain``)
+        and requires ``type_MarketAgreement.Type=A01`` (daily). The API returns
+        a full-day document regardless of the requested sub-window, so callers
+        should request one day at a time per process_type.
+
+        High-liquidity days exceed the API's 100-instance (TimeSeries) cap and
+        must be paged via ``offset`` (0, 100, 200, …) until the API returns "No
+        matching data". NOTE: each offset page renumbers its TimeSeries mRIDs
+        from 1, so the caller must globally offset the per-offer identifier by
+        the page offset to keep them unique.
+
+        Args:
+            period_start: Start datetime
+            period_end: End datetime
+            area_domain: Area domain EIC code (e.g. CZ_BZN)
+            process_type: A51 (aFRR) or A47 (mFRR)
+            offset: Instance offset for paging (multiples of 100)
+
+        Returns:
+            str: XML content
+        """
+        self._validate_date_range(period_start, period_end)
+
+        params = {
+            "securityToken": self.security_token,
+            "documentType": self.DOC_TYPE_PROCURED_CAPACITY,
+            "Area_Domain": area_domain,
+            "processType": process_type,
+            "type_MarketAgreement.Type": "A01",
+            "periodStart": self._format_timestamp(period_start),
+            "periodEnd": self._format_timestamp(period_end),
+            # Always send offset (even 0): with an explicit offset the API caps
+            # the response at 100 instances instead of rejecting days with >100.
+            "offset": offset
+        }
+
+        query_string = "&".join([f"{key}={value}" for key, value in params.items()])
+        url = f"{self.base_url}?{query_string}"
+
+        try:
+            response = self.session.get(url, timeout=60)
+            response.raise_for_status()
+
+            content_type = response.headers.get('Content-Type', '')
+            if 'zip' in content_type or self._is_zip_content(response.content):
+                return self._unzip_content(response.content)
+            else:
+                return response.text
+
+        except requests.RequestException as e:
+            raise requests.RequestException(
+                f"Failed to fetch procured capacity ({process_type}) for domain "
+                f"{area_domain}: {self._sanitize_error(e)}"
             )
 
     def fetch_balancing_bids_for_domain(

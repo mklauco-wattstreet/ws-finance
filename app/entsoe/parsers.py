@@ -1819,6 +1819,118 @@ class DayAheadPricesParser(BaseParser):
         self._data.clear()
 
 
+class ProcuredCapacityParser(BaseParser):
+    """
+    Parser for ENTSO-E A15 (Procured Balancing Capacity [GL EB 12.3.F]).
+
+    The reserve type (aFRR / mFRR) is determined by the document processType,
+    which is fixed per fetch, so it is passed to the constructor rather than
+    read from the XML.
+
+    Each TimeSeries is one awarded offer (identified by its mRID -> offer_seq),
+    with an hourly (PT60M), curveType-A03 curve priced in 4-hour blocks.
+    Sparse points are forward-filled across all hourly slots of the day, and
+    zero-quantity hours are dropped. Output is one raw row per
+    (offer, hour); aggregation into wide summaries happens in the runner.
+
+    FlowDirection: A01 = up, A02 = down (A03 symmetric does not occur for
+    aFRR/mFRR and is skipped).
+
+    Returns dicts with keys:
+        trade_date, time_interval, reserve_type, direction, offer_seq,
+        quantity_mw, price_eur
+    """
+
+    DIRECTION_UP = 'A01'
+    DIRECTION_DOWN = 'A02'
+    DIRECTION_MAP = {DIRECTION_UP: 'up', DIRECTION_DOWN: 'down'}
+
+    def __init__(self, reserve_type: str):
+        """
+        Args:
+            reserve_type: 'afrr' or 'mfrr' (from the document processType).
+        """
+        super().__init__()
+        self.reserve_type = reserve_type
+        import logging
+        self.logger = logging.getLogger(__name__)
+
+    def parse_xml(self, xml_file_path: str) -> List[Dict[str, Any]]:
+        tree = ET.parse(xml_file_path)
+        root = tree.getroot()
+
+        rows: List[Dict[str, Any]] = []
+        for timeseries in root.findall('.//{*}TimeSeries'):
+            flow_elem = timeseries.find('.//{*}flowDirection.direction')
+            flow = flow_elem.text if flow_elem is not None else None
+            direction = self.DIRECTION_MAP.get(flow)
+            if direction is None:
+                # Symmetric (A03) or unknown direction — not expected for aFRR/mFRR.
+                continue
+
+            mrid_elem = timeseries.find('{*}mRID')
+            if mrid_elem is None or mrid_elem.text is None:
+                continue
+            try:
+                offer_seq = int(mrid_elem.text)
+            except ValueError:
+                continue
+
+            for period in timeseries.findall('{*}Period'):
+                rows.extend(self._process_period(period, direction, offer_seq))
+
+        return rows
+
+    def _process_period(
+        self, period: ET.Element, direction: str, offer_seq: int
+    ) -> List[Dict[str, Any]]:
+        """Forward-fill a sparse A03 curve into one row per non-zero hour."""
+        time_interval = period.find('{*}timeInterval')
+        period_start = self.parse_timestamp(time_interval.find('{*}start').text)
+        period_end = self.parse_timestamp(time_interval.find('{*}end').text)
+
+        resolution_elem = period.find('{*}resolution')
+        resolution = resolution_elem.text if resolution_elem is not None else 'PT60M'
+        res_minutes = self.get_resolution_minutes(resolution)
+
+        total_slots = int((period_end - period_start).total_seconds() // 60 // res_minutes)
+
+        # Collect sparse points keyed by 1-based position.
+        points: Dict[int, tuple] = {}
+        for point in period.findall('{*}Point'):
+            position = int(point.find('{*}position').text)
+            qty_elem = point.find('{*}quantity')
+            price_elem = point.find('{*}procurement_Price.amount')
+            qty = float(qty_elem.text) if qty_elem is not None else 0.0
+            price = float(price_elem.text) if price_elem is not None else None
+            points[position] = (qty, price)
+
+        rows: List[Dict[str, Any]] = []
+        current = None  # (qty, price) carried forward
+        for slot in range(1, total_slots + 1):
+            if slot in points:
+                current = points[slot]
+            if current is None:
+                continue
+            qty, price = current
+            if qty == 0:
+                continue
+
+            point_time_utc = period_start + timedelta(minutes=(slot - 1) * res_minutes)
+            point_time_local = self.convert_to_local_time(point_time_utc)
+            rows.append({
+                'trade_date': point_time_local.date(),
+                'time_interval': self.format_time_interval(point_time_local, res_minutes),
+                'reserve_type': self.reserve_type,
+                'direction': direction,
+                'offer_seq': offer_seq,
+                'quantity_mw': qty,
+                'price_eur': price,
+            })
+
+        return rows
+
+
 # Backward compatibility alias
 ImbalanceDataParser = ImbalanceParser
 

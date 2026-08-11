@@ -28,6 +28,14 @@
 # OTE-CR - Download intraday prices every 15 minutes
 */15 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 download_intraday_prices.py >> /var/log/ote.log 2>&1
 
+# OKTE-SK - Download Slovak intraday market (IDM) reports every 15 minutes.
+# One request returns a zip with both order books (15-min + hourly product).
+# Auto mode re-fetches a trailing 3 days, not just today: periods appear as they
+# trade AND a container outage would otherwise leave a permanent hole, since
+# nothing else ever revisits a past day. Same single request either way.
+# Offset to 14,29,44,59 so rows land before the downstream consumer at 1,16,31,46.
+14,29,44,59 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 download_okte_idm.py >> /var/log/okte.log 2>&1
+
 # OTE-CR - Download OTE daily settlement reports at 09:00
 0 09 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 ote_production.py >> /var/log/ote.log 2>&1
 
@@ -53,10 +61,18 @@
 # CEPS - Czech Grid Imbalance Data (via SOAP API)
 # ============================================================================
 
-# CEPS - Download and upload ALL datasets (imbalance, RE price, SVR activation, export/import SVR, generation)
+# CEPS - Download and upload ALL datasets EXCEPT imbalance (RE price, SVR activation, export/import SVR, generation)
 # Runs at minutes 14, 29, 44, 59 every hour — data ready before consumer at :01,:16,:31,:46
 # Uses SOAP API - completes in ~7 seconds (50-100x faster than Selenium)
+# imbalance is intentionally excluded here — it has its own 5-min job below. Do NOT
+# re-add it to this "all" run, or it will double-fetch at :14/:29/:44/:59 and risk
+# tripping the CEPS API's rate limiting.
 14,29,44,59 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m ceps.ceps_soap_pipeline --dataset all >> /var/log/ceps.log 2>&1
+
+# CEPS - System imbalance (ceps_actual_imbalance_1min) every 5 minutes — higher-frequency
+# signal, single lightweight SOAP call. All other CEPS/ENTSO-E/OTE data stays at 15min;
+# do NOT add other datasets to this cadence or we risk blocking the CEPS API.
+*/5 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m ceps.ceps_soap_pipeline --dataset imbalance >> /var/log/ceps_imbalance.log 2>&1
 
 # ============================================================================
 # ENTSO-E - Pan-European Data Pipelines (separate logs per runner)
@@ -98,6 +114,10 @@
 # ENTSO-E - Outages (A77 planned + A80 forced unavailability, CZ) every 15 min
 # Update-window poll catches new + revised + cancelled/withdrawn outages; rebuilds 15min/60min aggregates for [D-3,D+2]
 14,29,44,59 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.entsoe_outages_runner >> /var/log/entsoe_outages.log 2>&1
+
+# ENTSO-E - Procured Balancing Capacity (12.3.F, CZ aFRR+mFRR) 4x/day at :14
+# Daily day-ahead auction; runner self-aggregates raw/60min/15min for [D-1,D+1]
+14 8,12,16,20 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.entsoe_procured_capacity_runner >> /var/log/entsoe_procured_capacity.log 2>&1
 
 # ENTSO-E - Unified day-ahead prices every 2h from 14:00-20:00 (published ~13:00, retry on failure)
 0 14,16,18,20 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.entsoe_unified_day_ahead_prices_runner >> /var/log/entsoe_day_ahead.log 2>&1
@@ -156,6 +176,6 @@
 # ============================================================================
 
 # Rotate all logs daily at 03:00 - keep last 10000 lines (~4 days of logs)
-0 03 * * * for f in /var/log/ote.log /var/log/ceps.log /var/log/entsoe_*.log /var/log/cnb_fx.log /var/log/weather_*.log /var/log/liquidator.log /var/log/aggregator_*.log; do [ -f "$f" ] && tail -10000 "$f" > "$f.tmp" && mv "$f.tmp" "$f"; done 2>/dev/null
+0 03 * * * for f in /var/log/ote.log /var/log/ceps.log /var/log/ceps_imbalance.log /var/log/entsoe_*.log /var/log/cnb_fx.log /var/log/weather_*.log /var/log/liquidator.log /var/log/aggregator_*.log; do [ -f "$f" ] && tail -10000 "$f" > "$f.tmp" && mv "$f.tmp" "$f"; done 2>/dev/null
 
 # Empty line required at end of crontab file

@@ -83,8 +83,10 @@ DATASETS = {
 }
 
 # All datasets for --dataset all
+# 'imbalance' is intentionally excluded — it is fetched separately on its own
+# 5-minute cron schedule (see crontab), so it must not also be pulled in here.
 ALL_DATASETS = [
-    'imbalance', 're_price', 'svr_activation', 'export_import_svr',
+    're_price', 'svr_activation', 'export_import_svr',
     'generation_res', 'generation', 'generation_plan', 'estimated_imbalance_price'
 ]
 

@@ -5,6 +5,8 @@ These constants are used for cross-border physical flow queries (A11 document ty
 and unified generation queries (A75 document type).
 """
 
+from datetime import date
+
 # Czech Republic bidding zone
 CZ_BZN = "10YCZ-CEPS-----N"
 
@@ -114,3 +116,19 @@ ACTIVE_IMBALANCE_AREAS = [
 ACTIVE_OUTAGE_AREAS = [
     (1, CZ_BZN, "CZ", "CZ"),
 ]
+
+# Procured Balancing Capacity [GL EB 12.3.F] (documentType A15). CZ only.
+# Fetched per Area_Domain with type_MarketAgreement.Type=A01 (daily product).
+# CZ publishes aFRR (A51) and mFRR (A47); FCR/RR are out of scope.
+ACTIVE_PROCURED_CAPACITY_AREAS = [
+    (1, CZ_BZN, "CZ", "CZ"),
+]
+
+# processType -> internal reserve_type label. One API request per entry per day.
+PROCURED_CAPACITY_PROCESS_TYPES = {
+    "A51": "afrr",  # Automatic Frequency Restoration Reserve
+    "A47": "mfrr",  # Manual Frequency Restoration Reserve
+}
+
+# Procured capacity data is published from 2026-03-01; do not backfill earlier.
+PROCURED_CAPACITY_BACKFILL_FLOOR = date(2026, 3, 1)

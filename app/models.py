@@ -8,7 +8,7 @@ from decimal import Decimal
 from typing import Optional
 
 from sqlalchemy import (
-    Boolean, CheckConstraint, Date, DateTime, Integer, Numeric, SmallInteger, String,
+    BigInteger, Boolean, CheckConstraint, Date, DateTime, Integer, Numeric, SmallInteger, String,
     UniqueConstraint, PrimaryKeyConstraint
 )
 from sqlalchemy.dialects.postgresql import TIMESTAMP
@@ -1623,5 +1623,73 @@ class EntsoeOutages60min(Base):
     out_nuclear_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     out_hydro_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     out_other_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+
+
+class OktePricesIntradayMarket(Base):
+    """OKTE intraday continuous market, quarter-hourly product (MW).
+
+    Separate order book from OktePricesIntradayMarket60min - not an
+    aggregation of it. See migration 071.
+    """
+    __tablename__ = 'okte_prices_intraday_market'
+    __table_args__ = (
+        PrimaryKeyConstraint('id'),
+        UniqueConstraint('trade_date', 'period', name='okte_prices_intraday_market_trade_date_period_key'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, autoincrement=True)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    period: Mapped[int] = mapped_column(Integer, nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(20), nullable=False)
+    buy_orders_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 4))
+    sell_orders_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 4))
+    buy_trades_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 4))
+    sell_trades_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 4))
+    traded_quantity_diff_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 4))
+    avg_price_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    weighted_avg_price_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    min_price_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    max_price_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    last_price_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    total_traded_quantity_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 4))
+    simple_orders_vwap_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    simple_orders_quantity_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 4))
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+
+
+class OktePricesIntradayMarket60min(Base):
+    """OKTE intraday continuous market, hourly product (MWh).
+
+    Separate order book from OktePricesIntradayMarket - not an aggregation
+    of the 15-min product. See migration 071.
+    """
+    __tablename__ = 'okte_prices_intraday_market_60min'
+    __table_args__ = (
+        PrimaryKeyConstraint('id'),
+        UniqueConstraint('trade_date', 'period', name='okte_prices_intraday_market_60min_trade_date_period_key'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, autoincrement=True)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    period: Mapped[int] = mapped_column(Integer, nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(20), nullable=False)
+    buy_orders_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 4))
+    sell_orders_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 4))
+    buy_trades_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 4))
+    sell_trades_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 4))
+    traded_quantity_diff_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 4))
+    avg_price_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    weighted_avg_price_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    min_price_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    max_price_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    last_price_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    total_traded_quantity_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 4))
+    simple_orders_vwap_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    simple_orders_quantity_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 4))
     created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
     updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
