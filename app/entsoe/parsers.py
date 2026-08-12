@@ -1759,21 +1759,50 @@ class DayAheadPricesParser(BaseParser):
         return self._aggregate_to_records()
 
     def _process_price_period(self, period: ET.Element) -> None:
-        """Process a single Period element from A44 XML."""
+        """Process a single Period element from A44 XML.
+
+        ENTSO-E publication documents are step functions: when a price is
+        unchanged from the previous position, the Point is omitted entirely and
+        the consumer is expected to carry the previous value forward. Iterating
+        only the Points that are present therefore drops every repeated price,
+        which surfaced as random single missing periods in every bidding zone
+        (HU worst, since its prices repeat most often).
+
+        This mirrors the forward-fill already used by the imbalance-price
+        parser in this module.
+        """
         time_interval = period.find('{*}timeInterval')
         start_elem = time_interval.find('{*}start')
+        end_elem = time_interval.find('{*}end')
         period_start = self.parse_timestamp(start_elem.text)
+        period_end = self.parse_timestamp(end_elem.text)
 
         resolution_elem = period.find('{*}resolution')
         resolution = resolution_elem.text if resolution_elem is not None else 'PT60M'
         resolution_minutes = self.get_resolution_minutes(resolution)
 
+        period_duration_minutes = int((period_end - period_start).total_seconds() / 60)
+        num_intervals = period_duration_minutes // resolution_minutes
+
+        # position -> price, for the Points actually present in the document
+        points_by_position = {}
         for point in period.findall('{*}Point'):
             position = int(point.find('{*}position').text)
             price_elem = point.find('{*}price.amount')
-            price = float(price_elem.text) if price_elem is not None else None
+            points_by_position[position] = (
+                float(price_elem.text) if price_elem is not None else None
+            )
 
-            interval_idx = position - 1
+        # Walk every expected interval, carrying the last seen price forward.
+        # Starts as None so a genuinely absent leading Point stays NULL rather
+        # than being fabricated as 0.
+        last_price = None
+
+        for interval_idx in range(num_intervals):
+            position = interval_idx + 1
+            if position in points_by_position:
+                last_price = points_by_position[position]
+
             point_time_utc = period_start + timedelta(minutes=interval_idx * resolution_minutes)
             point_time_local = self.convert_to_local_time(point_time_utc)
             trade_date = point_time_local.date()
@@ -1785,12 +1814,11 @@ class DayAheadPricesParser(BaseParser):
             if key not in self._data:
                 self._data[key] = {
                     'time_interval': time_interval_str,
-                    'price_eur_mwh': price
+                    'price_eur_mwh': last_price
                 }
-            else:
-                # If we already have data, prefer non-null price
-                if price is not None:
-                    self._data[key]['price_eur_mwh'] = price
+            elif last_price is not None:
+                # Same slot seen twice (overlapping Periods) - prefer non-null
+                self._data[key]['price_eur_mwh'] = last_price
 
     def _aggregate_to_records(self) -> List[Dict[str, Any]]:
         """Convert intermediate data to final records."""
