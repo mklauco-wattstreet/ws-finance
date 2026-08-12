@@ -36,6 +36,12 @@
 # Offset to 14,29,44,59 so rows land before the downstream consumer at 1,16,31,46.
 14,29,44,59 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 download_okte_idm.py >> /var/log/okte.log 2>&1
 
+# OKTE-SK - Imbalance settlement (regulardaily) twice daily.
+# NOT a real-time feed: regulardaily is published at D+2, so a 15-min cadence
+# would poll hundreds of times for one daily change. Trailing 7-day window
+# (--days default) so the D+2 vintage always lands even after a short outage.
+14 07,19 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 download_okte_imbalance.py >> /var/log/okte.log 2>&1
+
 # OTE-CR - Download OTE daily settlement reports at 09:00
 0 09 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 ote_production.py >> /var/log/ote.log 2>&1
 

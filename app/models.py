@@ -1693,3 +1693,52 @@ class OktePricesIntradayMarket60min(Base):
     simple_orders_quantity_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 4))
     created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
     updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+
+
+class OktePricesImbalance(Base):
+    """OKTE (SK) imbalance settlement data, 15-minute periods.
+
+    Slovak counterpart to OtePricesImbalance. Source is the public ISZO endpoint
+    https://iszo.okte.sk/api/v1/SystemImbalance with evaluationType=regulardaily
+    (published at D+2). Only that vintage is stored — OKTE also republishes each
+    day as preliminarydaily/decadal/monthly/final with differing values.
+
+    Values are EUR / EUR-per-MWh, unlike the CZK-denominated Czech table.
+    """
+    __tablename__ = 'okte_prices_imbalance'
+    __table_args__ = (
+        PrimaryKeyConstraint('id'),
+        UniqueConstraint('trade_date', 'period', name='okte_prices_imbalance_trade_date_period_key'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, autoincrement=True)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    period: Mapped[int] = mapped_column(Integer, nullable=False)
+    evaluation_date: Mapped[Optional[date]] = mapped_column(Date)
+    emergency: Mapped[Optional[bool]] = mapped_column(Boolean)
+
+    # prices (EUR/MWh) — OKTE API code noted for traceability
+    settlement_price_imbalance_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 4))           # isp
+    system_imbalance_price_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 4))               # sipr
+    shared_regulation_electricity_cost_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 4))   # srec
+    shared_regulation_electricity_price_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 4))  # srecp
+
+    # imbalance volumes (MWh) — names identical to OtePricesImbalance
+    system_imbalance_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 4))                         # si
+    positive_imbalance_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 4))                       # pi
+    negative_imbalance_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 4))                       # ni
+
+    # imbalance payment (EUR) — mirrors cost_of_imbalance_czk
+    cost_of_imbalance_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 4))                        # psi
+
+    # regulation electricity volumes (MWh) and payments (EUR)
+    positive_regulation_electricity_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 4))          # pre
+    negative_regulation_electricity_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 4))          # nre
+    payment_positive_regulation_electricity_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 4))  # pspre
+    payment_negative_regulation_electricity_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 4))  # psnre
+    total_regulation_electricity_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 4))             # tre
+    total_cost_regulation_electricity_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 4))        # tcre
+
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
