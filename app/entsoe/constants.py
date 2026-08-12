@@ -92,10 +92,15 @@ ACTIVE_CURRENT_FORECAST_AREAS = [
 # Active areas for day-ahead prices fetching
 # Tuple format: (area_id, eic_code, display_label, country_code)
 # Day-ahead prices are per bidding zone (not per TSO like generation)
+# Note: CZ is absent by design - Czech day-ahead prices come straight from OTE
+# into ote_prices_day_ahead, not via ENTSO-E, so the "CZ first" ordering rule
+# that applies to the other ACTIVE_* lists has nothing to order here.
 ACTIVE_DAY_AHEAD_AREAS = [
     (9, HU_BZN, "HU", "HU"),
     (10, DE_LU_BZN, "DE-LU", "DE"),
     (3, AT_BZN, "AT", "AT"),
+    (5, SK_BZN, "SK", "SK"),
+    (4, PL_BZN, "PL", "PL"),
 ]
 
 # Active areas for imbalance prices fetching
