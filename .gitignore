@@ -52,3 +52,6 @@ app/IDA3/
 # CEPS
 app/ceps/_2025/
 app/ceps/_2026/
+
+# OKTE downloaded reports (regenerable; CZ equivalents were never tracked)
+app/okte/
