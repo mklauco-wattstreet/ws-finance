@@ -483,12 +483,26 @@ class LoadParser(BaseParser):
         period_duration_minutes = int((period_end - period_start).total_seconds() / 60)
         num_intervals = period_duration_minutes // resolution_minutes
 
+        # ENTSO-E omits a Point when the value is unchanged from the previous
+        # position (step function); iterating only the Points present drops
+        # every repeated value.
+        points_by_position = {}
         for point in period.findall('{*}Point'):
             position = int(point.find('{*}position').text)
             quantity_elem = point.find('{*}quantity')
-            quantity = float(quantity_elem.text) if quantity_elem is not None else None
+            points_by_position[position] = (
+                float(quantity_elem.text) if quantity_elem is not None else None
+            )
 
-            interval_idx = position - 1
+        last_quantity = None
+
+        for interval_idx in range(num_intervals):
+            position = interval_idx + 1
+            if position in points_by_position:
+                last_quantity = points_by_position[position]
+            if last_quantity is None:
+                continue
+
             point_time_utc = period_start + timedelta(minutes=interval_idx * resolution_minutes)
             point_time_local = self.convert_to_local_time(point_time_utc)
             trade_date = point_time_local.date()
@@ -499,7 +513,7 @@ class LoadParser(BaseParser):
                 'trade_date': trade_date,
                 'period': period_num,
                 'time_interval': time_interval_str,
-                'load_mw': quantity
+                'load_mw': last_quantity
             })
 
     def parse_actual_load_xml(self, xml_file_path: str) -> None:
@@ -532,12 +546,27 @@ class LoadParser(BaseParser):
         resolution = resolution_elem.text if resolution_elem is not None else 'PT15M'
         resolution_minutes = self.get_resolution_minutes(resolution)
 
+        period_duration_minutes = int((period_end - period_start).total_seconds() / 60)
+        num_intervals = period_duration_minutes // resolution_minutes
+
+        # Forward-fill omitted Points (ENTSO-E step-function semantics).
+        points_by_position = {}
         for point in period.findall('{*}Point'):
             position = int(point.find('{*}position').text)
             quantity_elem = point.find('{*}quantity')
-            quantity = float(quantity_elem.text) if quantity_elem is not None else None
+            points_by_position[position] = (
+                float(quantity_elem.text) if quantity_elem is not None else None
+            )
 
-            interval_idx = position - 1
+        last_quantity = None
+
+        for interval_idx in range(num_intervals):
+            position = interval_idx + 1
+            if position in points_by_position:
+                last_quantity = points_by_position[position]
+            if last_quantity is None:
+                continue
+
             point_time_utc = period_start + timedelta(minutes=interval_idx * resolution_minutes)
             point_time_local = self.convert_to_local_time(point_time_utc)
             trade_date = point_time_local.date()
@@ -552,10 +581,10 @@ class LoadParser(BaseParser):
                     'trade_date': trade_date,
                     'period': period_num,
                     'time_interval': time_interval_str,
-                    'load_mw': quantity
+                    'load_mw': last_quantity
                 }
             else:
-                target[key]['load_mw'] = quantity
+                target[key]['load_mw'] = last_quantity
 
     def combine_data(self) -> List[Dict]:
         """Combine actual and forecast load data."""
@@ -720,12 +749,33 @@ class GenerationParser(BaseParser):
             # Unmapped PSR type, skip
             return
 
+        period_duration_minutes = int((period_end - period_start).total_seconds() / 60)
+        num_intervals = period_duration_minutes // resolution_minutes
+
+        # ENTSO-E omits a Point when the value is unchanged from the previous
+        # position (step function); iterating only the Points present drops
+        # every repeated value. Fill forward across this Period only - it is
+        # scoped to a single psr_type, so one fuel's value can never smear
+        # onto another.
+        points_by_position = {}
         for point in period.findall('{*}Point'):
             position = int(point.find('{*}position').text)
             quantity_elem = point.find('{*}quantity')
-            quantity = float(quantity_elem.text) if quantity_elem is not None else 0.0
+            points_by_position[position] = (
+                float(quantity_elem.text) if quantity_elem is not None else 0.0
+            )
 
-            interval_idx = position - 1
+        last_quantity = None
+
+        for interval_idx in range(num_intervals):
+            position = interval_idx + 1
+            if position in points_by_position:
+                last_quantity = points_by_position[position]
+            if last_quantity is None:
+                # No Point seen yet - emit nothing rather than inventing a value
+                continue
+            quantity = last_quantity
+
             point_time_utc = period_start + timedelta(minutes=interval_idx * resolution_minutes)
             point_time_local = self.convert_to_local_time(point_time_utc)
             trade_date = point_time_local.date()
@@ -855,7 +905,9 @@ class GermanyWindParser(BaseParser):
         """Process a single Period element for wind generation."""
         time_interval = period.find('{*}timeInterval')
         start_elem = time_interval.find('{*}start')
+        end_elem = time_interval.find('{*}end')
         period_start = self.parse_timestamp(start_elem.text)
+        period_end = self.parse_timestamp(end_elem.text)
 
         resolution_elem = period.find('{*}resolution')
         resolution = resolution_elem.text if resolution_elem is not None else 'PT15M'
@@ -865,12 +917,29 @@ class GermanyWindParser(BaseParser):
         if column is None:
             return
 
+        period_duration_minutes = int((period_end - period_start).total_seconds() / 60)
+        num_intervals = period_duration_minutes // resolution_minutes
+
+        # Forward-fill omitted Points (see _process_generation_period). Scoped
+        # to this psr_type's Period, so no cross-fuel contamination.
+        points_by_position = {}
         for point in period.findall('{*}Point'):
             position = int(point.find('{*}position').text)
             quantity_elem = point.find('{*}quantity')
-            quantity = float(quantity_elem.text) if quantity_elem is not None else 0.0
+            points_by_position[position] = (
+                float(quantity_elem.text) if quantity_elem is not None else 0.0
+            )
 
-            interval_idx = position - 1
+        last_quantity = None
+
+        for interval_idx in range(num_intervals):
+            position = interval_idx + 1
+            if position in points_by_position:
+                last_quantity = points_by_position[position]
+            if last_quantity is None:
+                continue
+            quantity = last_quantity
+
             point_time_utc = period_start + timedelta(minutes=interval_idx * resolution_minutes)
             point_time_local = self.convert_to_local_time(point_time_utc)
             trade_date = point_time_local.date()
@@ -1049,15 +1118,31 @@ class CrossBorderFlowsParser(BaseParser):
         resolution = resolution_elem.text if resolution_elem is not None else 'PT15M'
         resolution_minutes = self.get_resolution_minutes(resolution)
 
+        period_duration_minutes = int((period_end - period_start).total_seconds() / 60)
+        num_intervals = period_duration_minutes // resolution_minutes
+
+        # Forward-fill omitted Points (ENTSO-E step-function semantics). Scoped
+        # to this Period, which carries a single direction/column.
+        points_by_position = {}
         for point in period.findall('{*}Point'):
             position = int(point.find('{*}position').text)
             quantity_elem = point.find('{*}quantity')
-            quantity = float(quantity_elem.text) if quantity_elem is not None else 0.0
+            points_by_position[position] = (
+                float(quantity_elem.text) if quantity_elem is not None else 0.0
+            )
+
+        last_quantity = None
+
+        for interval_idx in range(num_intervals):
+            position = interval_idx + 1
+            if position in points_by_position:
+                last_quantity = points_by_position[position]
+            if last_quantity is None:
+                continue
 
             # Apply direction (positive for import, negative for export)
-            flow_value = quantity * direction
+            flow_value = last_quantity * direction
 
-            interval_idx = position - 1
             point_time_utc = period_start + timedelta(minutes=interval_idx * resolution_minutes)
             point_time_local = self.convert_to_local_time(point_time_utc)
 
@@ -1213,7 +1298,9 @@ class GenerationForecastParser(BaseParser):
         """Process a single Period element from A69 XML."""
         time_interval = period.find('{*}timeInterval')
         start_elem = time_interval.find('{*}start')
+        end_elem = time_interval.find('{*}end')
         period_start = self.parse_timestamp(start_elem.text)
+        period_end = self.parse_timestamp(end_elem.text)
 
         resolution_elem = period.find('{*}resolution')
         resolution = resolution_elem.text if resolution_elem is not None else 'PT15M'
@@ -1223,12 +1310,29 @@ class GenerationForecastParser(BaseParser):
         if column is None:
             return
 
+        period_duration_minutes = int((period_end - period_start).total_seconds() / 60)
+        num_intervals = period_duration_minutes // resolution_minutes
+
+        # Forward-fill omitted Points (ENTSO-E step-function semantics). Scoped
+        # to this psr_type's Period, so no cross-fuel contamination.
+        points_by_position = {}
         for point in period.findall('{*}Point'):
             position = int(point.find('{*}position').text)
             quantity_elem = point.find('{*}quantity')
-            quantity = float(quantity_elem.text) if quantity_elem is not None else 0.0
+            points_by_position[position] = (
+                float(quantity_elem.text) if quantity_elem is not None else 0.0
+            )
 
-            interval_idx = position - 1
+        last_quantity = None
+
+        for interval_idx in range(num_intervals):
+            position = interval_idx + 1
+            if position in points_by_position:
+                last_quantity = points_by_position[position]
+            if last_quantity is None:
+                continue
+            quantity = last_quantity
+
             point_time_utc = period_start + timedelta(minutes=interval_idx * resolution_minutes)
             point_time_local = self.convert_to_local_time(point_time_utc)
             trade_date = point_time_local.date()
@@ -1366,22 +1470,38 @@ class BalancingEnergyParser(BaseParser):
         """Process a single Period element from A84 XML."""
         time_interval = period.find('{*}timeInterval')
         start_elem = time_interval.find('{*}start')
+        end_elem = time_interval.find('{*}end')
         period_start = self.parse_timestamp(start_elem.text)
+        period_end = self.parse_timestamp(end_elem.text)
 
         resolution_elem = period.find('{*}resolution')
         resolution = resolution_elem.text if resolution_elem is not None else 'PT15M'
         resolution_minutes = self.get_resolution_minutes(resolution)
 
+        period_duration_minutes = int((period_end - period_start).total_seconds() / 60)
+        num_intervals = period_duration_minutes // resolution_minutes
+
+        # Forward-fill omitted Points (ENTSO-E step-function semantics). Scoped
+        # to this Period, which carries a single business_type + flow_direction,
+        # so an aFRR price can never leak into an mFRR column.
+        points_by_position = {}
         for point in period.findall('{*}Point'):
             position = int(point.find('{*}position').text)
-
-            # Extract activation price (EUR/MWh)
             price_elem = point.find('{*}activation_Price.amount')
             if price_elem is None:
                 continue
-            price = float(price_elem.text)
+            points_by_position[position] = float(price_elem.text)
 
-            interval_idx = position - 1
+        last_price = None
+
+        for interval_idx in range(num_intervals):
+            position = interval_idx + 1
+            if position in points_by_position:
+                last_price = points_by_position[position]
+            if last_price is None:
+                continue
+            price = last_price
+
             point_time_utc = period_start + timedelta(minutes=interval_idx * resolution_minutes)
             point_time_local = self.convert_to_local_time(point_time_utc)
             trade_date = point_time_local.date()
@@ -1491,18 +1611,39 @@ class ScheduledGenerationParser(BaseParser):
         """Process a single Period element from A71 XML."""
         time_interval = period.find('{*}timeInterval')
         start_elem = time_interval.find('{*}start')
+        end_elem = time_interval.find('{*}end')
         period_start = self.parse_timestamp(start_elem.text)
+        period_end = self.parse_timestamp(end_elem.text)
 
         resolution_elem = period.find('{*}resolution')
         resolution = resolution_elem.text if resolution_elem is not None else 'PT15M'
         resolution_minutes = self.get_resolution_minutes(resolution)
 
+        period_duration_minutes = int((period_end - period_start).total_seconds() / 60)
+        num_intervals = period_duration_minutes // resolution_minutes
+
+        # Forward-fill omitted Points (ENTSO-E step-function semantics). Scoped
+        # to this Period; the caller accumulates across TimeSeries, and each
+        # series is independently a step function, so summing filled values is
+        # what the document actually means.
+        points_by_position = {}
         for point in period.findall('{*}Point'):
             position = int(point.find('{*}position').text)
             quantity_elem = point.find('{*}quantity')
-            quantity = float(quantity_elem.text) if quantity_elem is not None else 0.0
+            points_by_position[position] = (
+                float(quantity_elem.text) if quantity_elem is not None else 0.0
+            )
 
-            interval_idx = position - 1
+        last_quantity = None
+
+        for interval_idx in range(num_intervals):
+            position = interval_idx + 1
+            if position in points_by_position:
+                last_quantity = points_by_position[position]
+            if last_quantity is None:
+                continue
+            quantity = last_quantity
+
             point_time_utc = period_start + timedelta(minutes=interval_idx * resolution_minutes)
             point_time_local = self.convert_to_local_time(point_time_utc)
             trade_date = point_time_local.date()
@@ -1642,18 +1783,37 @@ class ScheduledExchangesParser(BaseParser):
         """Process a single Period element from A09 XML."""
         time_interval = period.find('{*}timeInterval')
         start_elem = time_interval.find('{*}start')
+        end_elem = time_interval.find('{*}end')
         period_start = self.parse_timestamp(start_elem.text)
+        period_end = self.parse_timestamp(end_elem.text)
 
         resolution_elem = period.find('{*}resolution')
         resolution = resolution_elem.text if resolution_elem is not None else 'PT60M'
         resolution_minutes = self.get_resolution_minutes(resolution)
 
+        period_duration_minutes = int((period_end - period_start).total_seconds() / 60)
+        num_intervals = period_duration_minutes // resolution_minutes
+
+        # Forward-fill omitted Points (ENTSO-E step-function semantics). Scoped
+        # to this Period, which carries a single border column + direction.
+        points_by_position = {}
         for point in period.findall('{*}Point'):
             position = int(point.find('{*}position').text)
             quantity_elem = point.find('{*}quantity')
-            quantity = float(quantity_elem.text) if quantity_elem is not None else 0.0
+            points_by_position[position] = (
+                float(quantity_elem.text) if quantity_elem is not None else 0.0
+            )
 
-            interval_idx = position - 1
+        last_quantity = None
+
+        for interval_idx in range(num_intervals):
+            position = interval_idx + 1
+            if position in points_by_position:
+                last_quantity = points_by_position[position]
+            if last_quantity is None:
+                continue
+            quantity = last_quantity
+
             point_time_utc = period_start + timedelta(minutes=interval_idx * resolution_minutes)
             point_time_local = self.convert_to_local_time(point_time_utc)
             trade_date = point_time_local.date()
