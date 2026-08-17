@@ -42,6 +42,13 @@
 # (--days default) so the D+2 vintage always lands even after a short outage.
 14 07,19 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 download_okte_imbalance.py >> /var/log/okte.log 2>&1
 
+# OKTE-SK - Intraday Auction (IDA1/IDA2/IDA3) prices, Europe/Prague times below.
+# IDA1 results publish ~15:12 D-1, IDA2 ~22:12 D-1, IDA3 ~10:12 D. Each auction
+# gets its hour plus a retry hour an hour later; a single fetch covers all three
+# auctions for whatever is available. Minute 20 lands well after the ~hh:12
+# publication and clear of the 14,29,44,59 pipeline slots.
+20 10,11,15,16,22,23 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 download_okte_ida.py >> /var/log/okte_ida.log 2>&1
+
 # OTE-CR - Download OTE daily settlement reports at 09:00
 0 09 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 ote_production.py >> /var/log/ote.log 2>&1
 
@@ -125,8 +132,8 @@
 # Daily day-ahead auction; runner self-aggregates raw/60min/15min for [D-1,D+1]
 14 8,12,16,20 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.entsoe_procured_capacity_runner >> /var/log/entsoe_procured_capacity.log 2>&1
 
-# ENTSO-E - Unified day-ahead prices every 2h from 14:00-20:00 (published ~13:00, retry on failure)
-0 14,16,18,20 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.entsoe_unified_day_ahead_prices_runner >> /var/log/entsoe_day_ahead.log 2>&1
+# ENTSO-E - Unified day-ahead prices every 15min from 14:00-20:59 (published ~13:00, retry on failure)
+2,17,32,47 14-20 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m runners.entsoe_unified_day_ahead_prices_runner >> /var/log/entsoe_day_ahead.log 2>&1
 
 # ============================================================================
 # CNB - Czech National Bank Exchange Rate
@@ -157,6 +164,7 @@
 15,30,45,0 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m backfill.backfill_ceps_60min --auto >> /var/log/aggregator_ceps_60min.log 2>&1
 15,30,45,0 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m backfill.backfill_ceps_1min_features_60min --auto >> /var/log/aggregator_ceps_1min_features_60min.log 2>&1
 15,30,45,0 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m backfill.backfill_entsoe_60min --auto >> /var/log/aggregator_entsoe_60min.log 2>&1
+15,30,45,0 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m backfill.backfill_okte_ida_60min --auto >> /var/log/aggregator_okte_ida_60min.log 2>&1
 # OTE imbalance settlement data is published with a multi-day lag, so a 6h --auto
 # window misses late-arriving days. Look back 14 days (idempotent re-aggregation).
 15,30,45,0 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && /usr/local/bin/python3 -m backfill.backfill_ote_imbalance_60min --auto --auto-days 14 >> /var/log/aggregator_ote_imbalance_60min.log 2>&1
@@ -182,6 +190,6 @@
 # ============================================================================
 
 # Rotate all logs daily at 03:00 - keep last 10000 lines (~4 days of logs)
-0 03 * * * for f in /var/log/ote.log /var/log/ceps.log /var/log/ceps_imbalance.log /var/log/entsoe_*.log /var/log/cnb_fx.log /var/log/weather_*.log /var/log/liquidator.log /var/log/aggregator_*.log; do [ -f "$f" ] && tail -10000 "$f" > "$f.tmp" && mv "$f.tmp" "$f"; done 2>/dev/null
+0 03 * * * for f in /var/log/ote.log /var/log/ceps.log /var/log/ceps_imbalance.log /var/log/entsoe_*.log /var/log/cnb_fx.log /var/log/weather_*.log /var/log/liquidator.log /var/log/okte_ida.log /var/log/aggregator_*.log; do [ -f "$f" ] && tail -10000 "$f" > "$f.tmp" && mv "$f.tmp" "$f"; done 2>/dev/null
 
 # Empty line required at end of crontab file

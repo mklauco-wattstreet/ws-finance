@@ -1742,3 +1742,65 @@ class OktePricesImbalance(Base):
 
     created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
     updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+
+
+class OktePricesIda(Base):
+    """OKTE (SK) Intraday Auction (IDA1/IDA2/IDA3) prices, 15-minute periods.
+
+    Slovak counterpart to OtePricesIda. Source is the public OKTE ISOT
+    endpoint https://isot.okte.sk/api/v1/ida/results. Only rows with
+    publicationStatus == "final" are stored. See migration 074.
+    """
+    __tablename__ = 'okte_prices_ida'
+    __table_args__ = (
+        PrimaryKeyConstraint('id'),
+        UniqueConstraint('trade_date', 'period', 'ida_idx', name='okte_prices_ida_trade_date_period_ida_idx_key'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(Integer, autoincrement=True)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    period: Mapped[int] = mapped_column(Integer, nullable=False)
+    ida_idx: Mapped[int] = mapped_column(Integer, nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    price_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2))
+    volume_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    saldo_dm_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    export_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    import_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    flow_sk_cz: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    flow_cz_sk: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    flow_sk_hu: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    flow_hu_sk: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    flow_sk_pl: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    flow_pl_sk: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+
+
+class OktePricesIda60min(Base):
+    """60-minute mirror of OktePricesIda. See migration 075."""
+    __tablename__ = 'okte_prices_ida_60min'
+    __table_args__ = (
+        PrimaryKeyConstraint('id'),
+        UniqueConstraint('trade_date', 'time_interval', 'ida_idx', name='okte_prices_ida_60min_trade_date_time_interval_ida_idx_key'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(Integer, autoincrement=True)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    ida_idx: Mapped[int] = mapped_column(Integer, nullable=False)
+    price_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2))
+    volume_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    saldo_dm_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    export_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    import_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    flow_sk_cz: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    flow_cz_sk: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    flow_sk_hu: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    flow_hu_sk: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    flow_sk_pl: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    flow_pl_sk: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')

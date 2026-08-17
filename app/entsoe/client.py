@@ -111,6 +111,16 @@ class EntsoeClient:
         """Remove security token from error messages."""
         return str(error).replace(self.security_token, "***")
 
+    @staticmethod
+    def _is_no_data_acknowledgement(response_text: str) -> bool:
+        """Detect ENTSO-E's 'no matching data' Acknowledgement_MarketDocument.
+
+        ENTSO-E sometimes signals "not published yet" as HTTP 400 with this
+        body instead of an empty HTTP 200, so it must be distinguished from a
+        genuine bad request before the caller treats it as a hard error.
+        """
+        return 'No matching data' in response_text or '<code>999</code>' in response_text
+
     def _format_timestamp(self, dt: datetime) -> str:
         """
         Format datetime to ENTSO-E API format (yyyyMMddHHmm).
@@ -1200,6 +1210,15 @@ class EntsoeClient:
             else:
                 return response.text
 
+        except requests.HTTPError as e:
+            if e.response is not None and e.response.status_code == 400 \
+                    and self._is_no_data_acknowledgement(e.response.text):
+                raise requests.RequestException(
+                    f"No matching data found for domain {in_domain}: {self._sanitize_error(e)}"
+                )
+            raise requests.RequestException(
+                f"Failed to fetch day-ahead prices for domain {in_domain}: {self._sanitize_error(e)}"
+            )
         except requests.RequestException as e:
             raise requests.RequestException(
                 f"Failed to fetch day-ahead prices for domain {in_domain}: {self._sanitize_error(e)}"
