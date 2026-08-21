@@ -1486,6 +1486,127 @@ class EntsoeImbalancePrices60Min(Base):
     updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
 
 
+class EntsoeIntradayTransferCapacity(Base):
+    """ENTSO-E intraday offered transfer capacity [12.1.A/B] (documentType A31).
+
+    One row per 15-min MTU x product (idct/ida1/ida2/ida3) x area. CZ-facing
+    border capacities in each direction (import/export) per neighbor, plus
+    totals. published_at is the max update_DateAndOrTime across borders for
+    idct (rolling revisions); NULL for ida1/ida2/ida3 (no revisions).
+    Partitioned by country_code (CZ active).
+    """
+    __tablename__ = 'entsoe_intraday_transfer_capacity'
+    __table_args__ = (
+        PrimaryKeyConstraint('trade_date', 'time_interval', 'area_id', 'country_code', 'product'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(Integer, autoincrement=True)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    period: Mapped[int] = mapped_column(Integer, nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    delivery_datetime: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    area_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    country_code: Mapped[str] = mapped_column(String(2), nullable=False)
+    product: Mapped[str] = mapped_column(String(4), nullable=False)  # 'idct' | 'ida1' | 'ida2' | 'ida3'
+    cap_import_de_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    cap_export_de_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    cap_import_at_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    cap_export_at_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    cap_import_pl_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    cap_export_pl_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    cap_import_sk_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    cap_export_sk_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    cap_import_total_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    cap_export_total_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    published_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True))
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+
+
+class EntsoeIntradayTransferCapacity60Min(Base):
+    """ENTSO-E intraday offered transfer capacity aggregated to 60-min hours.
+
+    Same shape as EntsoeIntradayTransferCapacity minus `period`. Partitioned
+    by country_code (CZ active).
+    """
+    __tablename__ = 'entsoe_intraday_transfer_capacity_60min'
+    __table_args__ = (
+        PrimaryKeyConstraint('trade_date', 'time_interval', 'area_id', 'country_code', 'product'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(Integer, autoincrement=True)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    delivery_datetime: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    area_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    country_code: Mapped[str] = mapped_column(String(2), nullable=False)
+    product: Mapped[str] = mapped_column(String(4), nullable=False)
+    cap_import_de_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    cap_export_de_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    cap_import_at_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    cap_export_at_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    cap_import_pl_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    cap_export_pl_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    cap_import_sk_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    cap_export_sk_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    cap_import_total_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    cap_export_total_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    published_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True))
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+
+
+class EntsoeCongestionIncome(Base):
+    """ENTSO-E congestion income [12.1.E] (documentType A25, businessType B10).
+
+    One row per 15-min MTU (or 60-min pre-2025-10-01) x area. Queried per
+    bidding zone with in_Domain = out_Domain. Partitioned by country_code
+    (CZ active).
+    """
+    __tablename__ = 'entsoe_congestion_income'
+    __table_args__ = (
+        PrimaryKeyConstraint('trade_date', 'time_interval', 'area_id', 'country_code'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(Integer, autoincrement=True)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    period: Mapped[int] = mapped_column(Integer, nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    delivery_datetime: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    area_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    country_code: Mapped[str] = mapped_column(String(2), nullable=False)
+    congestion_income_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 3))
+    source_resolution: Mapped[Optional[str]] = mapped_column(String(5))  # 'PT15M' | 'PT60M'
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+
+
+class EntsoeCongestionIncome60Min(Base):
+    """ENTSO-E congestion income aggregated to 60-min hours (SUM, not AVG —
+    this is a EUR amount per MTU, not a rate). Partitioned by country_code
+    (CZ active).
+    """
+    __tablename__ = 'entsoe_congestion_income_60min'
+    __table_args__ = (
+        PrimaryKeyConstraint('trade_date', 'time_interval', 'area_id', 'country_code'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(Integer, autoincrement=True)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    delivery_datetime: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    area_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    country_code: Mapped[str] = mapped_column(String(2), nullable=False)
+    congestion_income_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 3))
+    source_resolution: Mapped[Optional[str]] = mapped_column(String(5))
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+
+
 class EntsoeOutages(Base):
     """ENTSO-E outage events (A77 production/generation unavailability).
 

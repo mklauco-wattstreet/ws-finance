@@ -31,6 +31,8 @@ ENTSO-E provides the **pan-European view** of the electricity grid. While CEPS g
 | `entsoe_unified_balancing_runner` | A84 | `entsoe_balancing_energy` | CZ, DE, AT, PL, SK | `14,29,44,59 * * * *` |
 | `entsoe_unified_imbalance_runner` | A85/A86 | `entsoe_imbalance_prices` | CZ, DE, AT, PL, SK, HU | `14,29,44,59 * * * *` |
 | `entsoe_unified_day_ahead_prices_runner` | A44 | `entsoe_day_ahead_prices` | HU, DE-LU, AT | `0 14,16,18,20 * * *` |
+| `entsoe_intraday_capacity_runner` | A31 | `entsoe_intraday_transfer_capacity` | CZ (4 borders x 2 directions) | idct `14,29,44,59 * * * *`; ida1-3 `*/5 9-11,14-17,21-23 * * *` + `44 * * * *` |
+| `entsoe_congestion_income_runner` | A25/B10 | `entsoe_congestion_income` | CZ (bidding zone) | `14,29,44,59 * * * *` |
 
 > Cron lands at `14,29,44,59` so data is on disk before the downstream consumer at `01,16,31,46`. Day-ahead prices retry every 2h after the ~13:00 publication.
 
@@ -271,6 +273,52 @@ Day-ahead market clearing prices. HU, DE-LU (Germany-Luxembourg bidding zone), a
 | Column | Type | Description |
 |--------|------|-------------|
 | `price_eur_mwh` | NUMERIC(12,3) | Day-ahead clearing price in EUR/MWh |
+
+### entsoe_intraday_transfer_capacity (A31, 12.1.A/B)
+
+Offered intraday transfer capacity on the CZ borders, one row per 15-min MTU **per product**.
+Products: `idct` (SIDC continuous, `auction.Type=A08`), `ida1`/`ida2`/`ida3` (the three SIDC intraday
+auctions, `auction.Type=A01` + `classificationSequence` 1/2/3).
+
+Capacity is queried per border **direction**; `in_Domain` is the receiving zone. Germany is the **DE-LU
+bidding zone** (`10Y1001A1001A82H`), *not* the TenneT control area used by the A11 flow runner.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `product` | VARCHAR(4) | `idct` / `ida1` / `ida2` / `ida3` |
+| `cap_import_de_mw` | NUMERIC(12,3) | Capacity offered INTO CZ from DE-LU |
+| `cap_export_de_mw` | NUMERIC(12,3) | Capacity offered OUT OF CZ to DE-LU |
+| `cap_import_at_mw` / `cap_export_at_mw` | NUMERIC(12,3) | Same for Austria |
+| `cap_import_pl_mw` / `cap_export_pl_mw` | NUMERIC(12,3) | Same for Poland |
+| `cap_import_sk_mw` / `cap_export_sk_mw` | NUMERIC(12,3) | Same for Slovakia |
+| `cap_import_total_mw` / `cap_export_total_mw` | NUMERIC(12,3) | NULL-safe sum across the four borders |
+| `published_at` | TIMESTAMPTZ | `update_DateAndOrTime` — populated for `idct` only |
+
+Behaviour worth knowing:
+
+- **`idct` is revised continuously** through the delivery day, so it is re-fetched every 15 min and never
+  skipped. `ida1`/`ida2`/`ida3` are static once published; the runner runs one completeness `SELECT` per
+  product and skips the 8 HTTP calls when that product+day is already complete.
+- **`ida3` covers only 12:00-24:00** (48 MTUs). Missing morning rows for `ida3` are expected, not a gap.
+- Publication (approximate, observed): IDA1 ~15:00 D-1, IDA2 ~22:00 D-1, IDA3 ~10:00 D.
+- Default windows: `idct` fetches D..D+1 only (it is never revised for older days); `ida1/ida2/ida3`
+  fetch D-10..D+1, so a late publication is still picked up — complete days cost one SELECT, no API call.
+
+### entsoe_congestion_income (A25 / businessType B10, 12.1.E)
+
+Congestion income attributed to the CZ bidding zone under Core flow-based implicit allocation. Queried
+**per bidding zone** with `in_Domain = out_Domain = 10YCZ-CEPS-----N` — per-border queries return no data
+for Core borders.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `congestion_income_eur` | NUMERIC(14,3) | Congestion income for the MTU, in EUR |
+| `source_resolution` | VARCHAR(5) | `PT15M` (native) or `PT60M` (hourly value split into 4 quarters) |
+
+ENTSO-E published this hourly until 2025-10-01 and at 15-min resolution since. Hourly values are divided
+by 4 across the quarters, so quarter rows sum back to the published hourly amount (and the 60-min
+aggregator re-`SUM`s them). Data fills in through the delivery day and ENTSO-E sometimes publishes a day
+late, so the runner always re-fetches D-10..D (2 chunked requests).
 
 ---
 

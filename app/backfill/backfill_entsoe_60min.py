@@ -221,6 +221,66 @@ ON CONFLICT (trade_date, time_interval, area_id, country_code) DO UPDATE SET
 """
 
 
+# -------------------- entsoe_intraday_transfer_capacity_60min (partitioned by country_code) --------------------
+_CAPACITY_COLS = [
+    "cap_import_de_mw", "cap_export_de_mw",
+    "cap_import_at_mw", "cap_export_at_mw",
+    "cap_import_pl_mw", "cap_export_pl_mw",
+    "cap_import_sk_mw", "cap_export_sk_mw",
+    "cap_import_total_mw", "cap_export_total_mw",
+]
+INTRADAY_TRANSFER_CAPACITY_SQL = f"""
+INSERT INTO entsoe_intraday_transfer_capacity_60min (
+    trade_date, time_interval, delivery_datetime, area_id, country_code, product,
+    {", ".join(_CAPACITY_COLS)}, published_at
+)
+SELECT
+    trade_date,
+    {HOUR_INTERVAL_SQL},
+    date_trunc('hour', MIN(delivery_datetime)),
+    area_id,
+    country_code,
+    product,
+    {", ".join(f"AVG({c})" for c in _CAPACITY_COLS)},
+    MAX(published_at)
+FROM entsoe_intraday_transfer_capacity
+WHERE trade_date = %s
+GROUP BY trade_date, {HOUR_GROUP_SQL}, area_id, country_code, product
+{HOUR_COMPLETE_HAVING}
+ON CONFLICT (trade_date, time_interval, area_id, country_code, product) DO UPDATE SET
+    delivery_datetime = EXCLUDED.delivery_datetime,
+    {", ".join(f"{c} = EXCLUDED.{c}" for c in _CAPACITY_COLS)},
+    published_at = EXCLUDED.published_at,
+    updated_at = CURRENT_TIMESTAMP
+"""
+
+
+# -------------------- entsoe_congestion_income_60min (partitioned by country_code) --------------------
+CONGESTION_INCOME_SQL = f"""
+INSERT INTO entsoe_congestion_income_60min (
+    trade_date, time_interval, delivery_datetime, area_id, country_code,
+    congestion_income_eur, source_resolution
+)
+SELECT
+    trade_date,
+    {HOUR_INTERVAL_SQL},
+    date_trunc('hour', MIN(delivery_datetime)),
+    area_id,
+    country_code,
+    SUM(congestion_income_eur),
+    MAX(source_resolution)
+FROM entsoe_congestion_income
+WHERE trade_date = %s
+GROUP BY trade_date, {HOUR_GROUP_SQL}, area_id, country_code
+{HOUR_COMPLETE_HAVING}
+ON CONFLICT (trade_date, time_interval, area_id, country_code) DO UPDATE SET
+    delivery_datetime = EXCLUDED.delivery_datetime,
+    congestion_income_eur = EXCLUDED.congestion_income_eur,
+    source_resolution = EXCLUDED.source_resolution,
+    updated_at = CURRENT_TIMESTAMP
+"""
+
+
 def main():
     args = parse_args("ENTSO-E")
     logger = setup_logging("backfill_entsoe_60min", args.debug)
@@ -234,6 +294,8 @@ def main():
             ("entsoe_scheduled_cross_border_flows_60min", SCHEDULED_CROSS_BORDER_FLOWS_SQL),
             ("entsoe_day_ahead_prices_60min",             DAY_AHEAD_PRICES_SQL),
             ("entsoe_imbalance_prices_60min",             IMBALANCE_PRICES_SQL),
+            ("entsoe_intraday_transfer_capacity_60min",   INTRADAY_TRANSFER_CAPACITY_SQL),
+            ("entsoe_congestion_income_60min",            CONGESTION_INCOME_SQL),
         ],
         args=args,
         logger=logger,

@@ -6,6 +6,7 @@ This module provides robust functionality to fetch data from the ENTSO-E
 Transparency Platform API with retry logic and input validation.
 """
 
+import logging
 import sys
 import io
 import zipfile
@@ -21,6 +22,8 @@ import xml.etree.ElementTree as ET
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from config import ENTSOE_BASE_URL, ENTSOE_SECURITY_TOKEN, ENTSOE_CONTROL_AREA_DOMAIN
+
+logger = logging.getLogger(__name__)
 
 
 class EntsoeClient:
@@ -48,6 +51,8 @@ class EntsoeClient:
     DOC_TYPE_BID_DOCUMENT = "A24"     # 17.1.B Balancing energy bids (public API)
     DOC_TYPE_ACTIVATED_BALANCING_ENERGY = "A83"  # 17.1.F Activated balancing energy volumes
     DOC_TYPE_PROCURED_CAPACITY = "A15"  # 12.3.F Procured Balancing Capacity
+    DOC_TYPE_INTRADAY_TRANSFER_CAPACITY = "A31"  # 12.1.A/B Intraday offered capacity
+    DOC_TYPE_CONGESTION_INCOME = "A25"  # 12.1.E Congestion income
 
     # Process types for A65 differentiation
     PROCESS_TYPE_REALISED = "A16"  # Actual load
@@ -889,6 +894,151 @@ class EntsoeClient:
             raise requests.RequestException(
                 f"Failed to fetch procured capacity ({process_type}) for domain "
                 f"{area_domain}: {self._sanitize_error(e)}"
+            )
+
+    def fetch_intraday_offered_capacity(
+        self,
+        period_start: datetime,
+        period_end: datetime,
+        in_domain: str,
+        out_domain: str,
+        auction_type: str,
+        classification_sequence: Optional[int] = None
+    ) -> Optional[str]:
+        """
+        Fetch Intraday Offered Transfer Capacity (A31, 12.1.A/B) for one
+        border direction and product.
+
+        Note: requires ``contract_MarketAgreement.Type=A07`` (intraday).
+        ``auction_type`` is A08 for the continuous (idct) product or A01 for
+        implicit auction results (ida1/ida2/ida3); the ida* products also
+        require ``classification_sequence`` (1, 2, or 3) to select the
+        auction round.
+
+        Args:
+            period_start: Start datetime
+            period_end: End datetime
+            in_domain: Receiving (importing) zone EIC code
+            out_domain: Sending (exporting) zone EIC code
+            auction_type: A08 (idct) or A01 (ida1/ida2/ida3)
+            classification_sequence: Auction round 1/2/3 for ida1/ida2/ida3;
+                None for idct
+
+        Returns:
+            str: XML content, or None if the API returned a "no matching
+            data" acknowledgement (e.g. ida3 half-day window, no data yet
+            published for the requested window)
+        """
+        self._validate_date_range(period_start, period_end)
+
+        params = {
+            "securityToken": self.security_token,
+            "documentType": self.DOC_TYPE_INTRADAY_TRANSFER_CAPACITY,
+            "contract_MarketAgreement.Type": "A07",
+            "auction.Type": auction_type,
+            "in_Domain": in_domain,
+            "out_Domain": out_domain,
+            "periodStart": self._format_timestamp(period_start),
+            "periodEnd": self._format_timestamp(period_end)
+        }
+
+        if classification_sequence is not None:
+            params["classificationSequence_AttributeInstanceComponent.Position"] = classification_sequence
+
+        query_string = "&".join([f"{key}={value}" for key, value in params.items()])
+        url = f"{self.base_url}?{query_string}"
+
+        try:
+            response = self.session.get(url, timeout=60)
+            response.raise_for_status()
+
+            content_type = response.headers.get('Content-Type', '')
+            if 'zip' in content_type or self._is_zip_content(response.content):
+                return self._unzip_content(response.content)
+            else:
+                return response.text
+
+        except requests.HTTPError as e:
+            if e.response is not None and e.response.status_code == 400 \
+                    and self._is_no_data_acknowledgement(e.response.text):
+                logger.debug(
+                    "No matching intraday offered capacity data for "
+                    f"{in_domain} <- {out_domain} (auction.Type={auction_type}, "
+                    f"seq={classification_sequence})"
+                )
+                return None
+            raise requests.RequestException(
+                f"Failed to fetch intraday offered capacity for {in_domain} <- "
+                f"{out_domain}: {self._sanitize_error(e)}"
+            )
+        except requests.RequestException as e:
+            raise requests.RequestException(
+                f"Failed to fetch intraday offered capacity for {in_domain} <- "
+                f"{out_domain}: {self._sanitize_error(e)}"
+            )
+
+    def fetch_congestion_income_for_domain(
+        self,
+        period_start: datetime,
+        period_end: datetime,
+        area_code: str
+    ) -> Optional[str]:
+        """
+        Fetch Congestion Income (A25, 12.1.E) for a bidding zone.
+
+        Note: queried per bidding zone with in_Domain = out_Domain (CZ is in
+        the Core flow-based region; per-border queries return "no matching
+        data"). Do NOT send auction.Type — it makes the API demand
+        per-border domains and error. Requires
+        ``contract_MarketAgreement.Type=A01``.
+
+        Args:
+            period_start: Start datetime
+            period_end: End datetime
+            area_code: Bidding zone EIC code (used for both in_Domain and
+                out_Domain)
+
+        Returns:
+            str: XML content, or None if the API returned a "no matching
+            data" acknowledgement
+        """
+        self._validate_date_range(period_start, period_end)
+
+        params = {
+            "securityToken": self.security_token,
+            "documentType": self.DOC_TYPE_CONGESTION_INCOME,
+            "businessType": "B10",
+            "contract_MarketAgreement.Type": "A01",
+            "in_Domain": area_code,
+            "out_Domain": area_code,
+            "periodStart": self._format_timestamp(period_start),
+            "periodEnd": self._format_timestamp(period_end)
+        }
+
+        query_string = "&".join([f"{key}={value}" for key, value in params.items()])
+        url = f"{self.base_url}?{query_string}"
+
+        try:
+            response = self.session.get(url, timeout=60)
+            response.raise_for_status()
+
+            content_type = response.headers.get('Content-Type', '')
+            if 'zip' in content_type or self._is_zip_content(response.content):
+                return self._unzip_content(response.content)
+            else:
+                return response.text
+
+        except requests.HTTPError as e:
+            if e.response is not None and e.response.status_code == 400 \
+                    and self._is_no_data_acknowledgement(e.response.text):
+                logger.debug(f"No matching congestion income data for domain {area_code}")
+                return None
+            raise requests.RequestException(
+                f"Failed to fetch congestion income for domain {area_code}: {self._sanitize_error(e)}"
+            )
+        except requests.RequestException as e:
+            raise requests.RequestException(
+                f"Failed to fetch congestion income for domain {area_code}: {self._sanitize_error(e)}"
             )
 
     def fetch_balancing_bids_for_domain(

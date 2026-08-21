@@ -151,7 +151,8 @@ class BaseRunner(ABC):
         columns: List[str],
         records: List[Tuple],
         conflict_columns: List[str],
-        update_columns: Optional[List[str]] = None
+        update_columns: Optional[List[str]] = None,
+        skip_unchanged: bool = False
     ) -> int:
         """
         Perform bulk upsert using execute_values.
@@ -163,6 +164,10 @@ class BaseRunner(ABC):
             records: List of tuples with values
             conflict_columns: Columns for ON CONFLICT clause
             update_columns: Columns to update on conflict (default: all except conflict)
+            skip_unchanged: When True, guard the UPDATE with an
+                "IS DISTINCT FROM" clause over update_columns so re-upserting
+                identical rows does not bump updated_at (mirrors commit
+                5c19e38). Default False = no behaviour change.
 
         Returns:
             Number of records upserted
@@ -185,11 +190,17 @@ class BaseRunner(ABC):
         update_str = ", ".join([f"{c} = EXCLUDED.{c}" for c in update_columns])
         update_str += ", updated_at = CURRENT_TIMESTAMP"
 
+        where_str = ""
+        if skip_unchanged and update_columns:
+            where_str = "\n            WHERE " + "\n               OR ".join(
+                f"{table}.{c} IS DISTINCT FROM EXCLUDED.{c}" for c in update_columns
+            )
+
         query = f"""
             INSERT INTO {table} ({columns_str})
             VALUES %s
             ON CONFLICT ({conflict_str})
-            DO UPDATE SET {update_str}
+            DO UPDATE SET {update_str}{where_str}
         """
 
         cursor = conn.cursor()

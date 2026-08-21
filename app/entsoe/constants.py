@@ -137,3 +137,43 @@ PROCURED_CAPACITY_PROCESS_TYPES = {
 
 # Procured capacity data is published from 2026-03-01; do not backfill earlier.
 PROCURED_CAPACITY_BACKFILL_FLOOR = date(2026, 3, 1)
+
+# Intraday Offered Transfer Capacity [12.1.A/B] (documentType A31) border
+# directions from CZ. IMPORTANT: this uses the DE-LU BIDDING ZONE
+# (10Y1001A1001A82H), NOT the DE_TENNET control area used by CZ_NEIGHBORS /
+# the A11 cross-border flow runner — capacity is a bidding-zone-level product.
+CZ_CAPACITY_BORDERS = {
+    "de": DE_LU_BZN,
+    "at": AT_BZN,
+    "pl": PL_BZN,
+    "sk": SK_BZN,
+}
+
+# Intraday capacity products -> (auction.Type, classificationSequence position).
+# idct: continuous intraday capacity, auction.Type=A08, no classification
+#   sequence; documents carry update_DateAndOrTime.dateTime (rolling revisions
+#   during the delivery day).
+# ida1/ida2/ida3: implicit intraday auction results, auction.Type=A01 with
+#   classificationSequence_AttributeInstanceComponent.Position=1|2|3; these
+#   documents do NOT carry update_DateAndOrTime (no revisions).
+#   ida3 covers only the second half of the delivery day (Period timeInterval
+#   starts 10:00Z = 12:00 Prague, 48 positions) — that is normal, not a gap.
+INTRADAY_CAPACITY_PRODUCTS = {
+    "idct": ("A08", None),
+    "ida1": ("A01", 1),
+    "ida2": ("A01", 2),
+    "ida3": ("A01", 3),
+}
+
+# Active areas for intraday offered transfer capacity fetching. CZ only.
+ACTIVE_INTRADAY_CAPACITY_AREAS = [
+    (1, CZ_BZN, "CZ", "CZ"),
+]
+
+# Congestion income [12.1.E] (documentType A25, businessType B10). Queried
+# per bidding zone with in_Domain = out_Domain (CZ is in the Core
+# flow-based region, so per-border queries return "no matching data").
+# CZ only.
+ACTIVE_CONGESTION_INCOME_AREAS = [
+    (1, CZ_BZN, "CZ", "CZ"),
+]
