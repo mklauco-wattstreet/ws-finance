@@ -33,6 +33,11 @@ from config import DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT, DB_SCHEMA
 # Prague timezone for date conversions
 PRAGUE_TZ = zoneinfo.ZoneInfo("Europe/Prague")
 
+# Server-side guard against a connection holding an open transaction while it
+# waits on something external. Generous on purpose: it must never fire on
+# healthy work, only on a genuinely wedged session.
+IDLE_TX_TIMEOUT_MS = 15 * 60 * 1000  # 15 minutes
+
 
 class BaseRunner(ABC):
     """Base class for all ENTSO-E data runners.
@@ -60,7 +65,8 @@ class BaseRunner(ABC):
         debug: bool = False,
         dry_run: bool = False,
         start_date: Optional[date] = None,
-        end_date: Optional[date] = None
+        end_date: Optional[date] = None,
+        max_runtime: Optional[int] = None
     ):
         """
         Initialize runner.
@@ -70,6 +76,8 @@ class BaseRunner(ABC):
             dry_run: Fetch and parse but don't upload
             start_date: Optional start date for backfill (YYYY-MM-DD)
             end_date: Optional end date for backfill (YYYY-MM-DD)
+            max_runtime: Optional wall-clock budget in seconds. None (the
+                default) means no deadline, i.e. unchanged behaviour.
         """
         self.debug = debug
         self.dry_run = dry_run
@@ -77,7 +85,33 @@ class BaseRunner(ABC):
         self.end_date = end_date
         self.is_backfill = start_date is not None or end_date is not None
         self.country_stats = {}  # {country_code: record_count}
+        self.max_runtime = max_runtime
+        self._started_at = datetime.now(timezone.utc)
+        self.deadline_hit = False
         self.logger = self._setup_logging()
+
+    def deadline_exceeded(self) -> bool:
+        """True once the wall-clock budget from --max-runtime is spent.
+
+        Runners call this between units of work to stop STARTING new fetches;
+        it never interrupts work already in flight and never skips a unit that
+        was already fetched. Anything not reached this firing is picked up by
+        the next one - every upsert is ON CONFLICT idempotent, so a truncated
+        run costs latency, never correctness.
+        """
+        if self.max_runtime is None:
+            return False
+        elapsed = (datetime.now(timezone.utc) - self._started_at).total_seconds()
+        if elapsed >= self.max_runtime:
+            if not self.deadline_hit:
+                self.deadline_hit = True
+                self.logger.warning(
+                    f"{self.RUNNER_NAME}: max runtime {self.max_runtime}s reached "
+                    f"after {elapsed:.0f}s - stopping early, remaining work "
+                    f"resumes on the next run"
+                )
+            return True
+        return False
 
     def is_data_unavailable_error(self, error: Exception) -> bool:
         """Check if an exception indicates data is temporarily unavailable (not a real error)."""
@@ -133,8 +167,28 @@ class BaseRunner(ABC):
                 port=DB_PORT,
                 connect_timeout=10
             )
+            # Session setup runs in autocommit so it does NOT leave the backend
+            # sitting in an open transaction. psycopg2 defaults to
+            # autocommit=False, which made the SET below issue an implicit
+            # BEGIN that nothing ever committed - every connection showed up as
+            # "idle in transaction" from the moment it opened, and under a
+            # session-mode pgbouncer that pinned a pool slot for the whole
+            # process lifetime.
+            conn.autocommit = True
             with conn.cursor() as cur:
                 cur.execute(f"SET search_path TO {DB_SCHEMA}")
+                # Backstop for the pathology above: kill a session that has an
+                # open transaction and is doing nothing (e.g. a runner blocked
+                # on a hung ENTSO-E request). This never interrupts a RUNNING
+                # statement, so long legitimate queries (FDW sync, backfills)
+                # are unaffected. Deliberately NOT paired with a
+                # statement_timeout for that reason.
+                cur.execute(
+                    f"SET idle_in_transaction_session_timeout = {int(IDLE_TX_TIMEOUT_MS)}"
+                )
+            # Restore normal transactional behaviour: bulk_upsert() manages its
+            # own commit/rollback and its atomicity must not change.
+            conn.autocommit = False
             self.logger.debug(f"Connected to {DB_NAME}@{DB_HOST}:{DB_PORT}")
             yield conn
         except Exception as e:
@@ -402,6 +456,18 @@ class BaseRunner(ABC):
             metavar='YYYY-MM-DD',
             help='End date for backfill (defaults to today if --start is provided)'
         )
+        parser.add_argument(
+            '--max-runtime',
+            type=int,
+            default=None,
+            metavar='SECONDS',
+            help=(
+                'Wall-clock budget. Stop starting new work once exceeded and '
+                'exit cleanly; the remainder resumes on the next run. '
+                'Intended for cron so a degraded upstream cannot make a run '
+                'outlive its own schedule interval. Omit for backfills.'
+            )
+        )
         return parser
 
     @classmethod
@@ -432,7 +498,8 @@ class BaseRunner(ABC):
             debug=args.debug,
             dry_run=args.dry_run,
             start_date=start_date,
-            end_date=end_date
+            end_date=end_date,
+            max_runtime=args.max_runtime
         )
         success = runner.run()
         sys.exit(0 if success else 1)

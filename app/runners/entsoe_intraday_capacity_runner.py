@@ -156,13 +156,19 @@ class IntradayCapacityRunner(BaseRunner):
         expected = self._expected_interval_count(day, product)
         if expected <= 0:
             return True
-        with conn.cursor() as cur:
-            cur.execute(
-                f"SELECT COUNT(DISTINCT time_interval) FROM {self.TABLE_NAME} "
-                f"WHERE trade_date = %s AND area_id = %s AND country_code = %s AND product = %s",
-                (day, area_id, country_code, product)
-            )
-            (count,) = cur.fetchone()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"SELECT COUNT(DISTINCT time_interval) FROM {self.TABLE_NAME} "
+                    f"WHERE trade_date = %s AND area_id = %s AND country_code = %s AND product = %s",
+                    (day, area_id, country_code, product)
+                )
+                (count,) = cur.fetchone()
+        finally:
+            # This SELECT opens a read transaction that nothing else would
+            # close. Ending it here keeps the backend out of the
+            # "idle in transaction" state that pinned pgbouncer slots.
+            conn.rollback()
         return count >= expected
 
     # -------------------------------------------------------------- fetch
@@ -209,10 +215,15 @@ class IntradayCapacityRunner(BaseRunner):
         return results
 
     def _process_product_day(
-        self, conn, product: str, day: date,
+        self, product: str, day: date,
         area_id: int, area_code: str, country_code: str
     ) -> int:
-        """Fetch, parse, and upsert one product for a single local day."""
+        """Fetch, parse, and upsert one product for a single local day.
+
+        Takes no connection: the 8 HTTP requests happen with no database
+        connection held at all, and a short-lived connection is opened only
+        once there are rows to write.
+        """
         day_start_utc, day_end_utc = self._day_utc_bounds(day)
 
         fetch_results = self._fetch_product_borders(product, area_code, day_start_utc, day_end_utc)
@@ -241,40 +252,61 @@ class IntradayCapacityRunner(BaseRunner):
         rows = [tuple(record[col] for col in self.COLUMNS) for record in records]
 
         if not self.dry_run:
-            self.bulk_upsert(
-                conn, self.TABLE_NAME, self.COLUMNS, rows, self.CONFLICT_COLUMNS,
-                skip_unchanged=True,
-            )
+            with self.database_connection() as conn:
+                self.bulk_upsert(
+                    conn, self.TABLE_NAME, self.COLUMNS, rows, self.CONFLICT_COLUMNS,
+                    skip_unchanged=True,
+                )
         else:
             self.logger.info(f"    DRY RUN - would upsert {len(rows)} rows for {product} {day}")
 
         self.track_country(country_code, len(rows))
         return len(rows)
 
-    def _process_day(
-        self, conn, day: date, area_id: int, area_code: str, country_code: str
-    ) -> int:
-        """Process every requested product for a single local day."""
-        total = 0
-        for product in self.products:
-            if product not in REVISABLE_PRODUCTS:
-                try:
-                    if self._is_product_complete(conn, day, area_id, country_code, product):
-                        self.logger.debug(f"  {product} {day}: already complete, skipping fetch")
-                        continue
-                except Exception as e:
-                    # Completeness check failing must not block fetching.
-                    self.logger.warning(f"  {product} {day}: completeness check failed ({e}), fetching anyway")
+    def _plan_work(
+        self, windows, area_id: int, country_code: str
+    ) -> List[Tuple[date, str]]:
+        """Decide which (day, product) pairs still need fetching.
 
-            try:
-                total += self._process_product_day(conn, product, day, area_id, area_code, country_code)
-            except Exception as e:
-                self.logger.error(f"  {product} {day} failed: {e}")
-                if self.debug:
-                    import traceback
-                    traceback.print_exc()
+        Pure database work: runs every completeness SELECT in one short-lived
+        connection which is closed before the first HTTP request, so no
+        transaction is ever held open across an ENTSO-E call.
 
-        return total
+        Deciding up front is equivalent to the old just-in-time check. The
+        SELECT is keyed on (trade_date, area_id, country_code, product) and
+        each pair is visited exactly once, so no upsert performed later in
+        this run can change the answer for a pair still to be evaluated.
+
+        Newest day first: under --max-runtime the tail of the list is what
+        gets dropped, and today/tomorrow are worth far more than a
+        ten-day-old gap. With a healthy API the whole list is processed and
+        the order has no effect on what ends up stored.
+        """
+        work: List[Tuple[date, str]] = []
+        with self.database_connection() as conn:
+            for period_start, period_end in windows:
+                for day in self._iter_local_days(period_start, period_end):
+                    for product in self.products:
+                        if product not in REVISABLE_PRODUCTS:
+                            try:
+                                if self._is_product_complete(conn, day, area_id, country_code, product):
+                                    self.logger.debug(f"  {product} {day}: already complete, skipping fetch")
+                                    continue
+                            except Exception as e:
+                                # Completeness check failing must not block fetching.
+                                self.logger.warning(
+                                    f"  {product} {day}: completeness check failed ({e}), fetching anyway"
+                                )
+                                # Clear a possibly-aborted transaction so the
+                                # remaining checks can still run.
+                                try:
+                                    conn.rollback()
+                                except Exception:
+                                    pass
+                        work.append((day, product))
+
+        work.sort(key=lambda item: item[0], reverse=True)
+        return work
 
     # ---------------------------------------------------------------- run
     def run(self) -> bool:
@@ -294,10 +326,24 @@ class IntradayCapacityRunner(BaseRunner):
             else:
                 windows = [self._default_window()]
 
-            with self.database_connection() as conn:
-                for period_start, period_end in windows:
-                    for day in self._iter_local_days(period_start, period_end):
-                        total_records += self._process_day(conn, day, area_id, area_code, country_code)
+            work = self._plan_work(windows, area_id, country_code)
+            if not work:
+                self.logger.debug(
+                    "Nothing to fetch - every requested product/day is already complete"
+                )
+
+            for day, product in work:
+                if self.deadline_exceeded():
+                    break
+                try:
+                    total_records += self._process_product_day(
+                        product, day, area_id, area_code, country_code
+                    )
+                except Exception as e:
+                    self.logger.error(f"  {product} {day} failed: {e}")
+                    if self.debug:
+                        import traceback
+                        traceback.print_exc()
 
             self.logger.debug("")
             self.logger.info(self.format_summary(total_records))
@@ -355,6 +401,7 @@ class IntradayCapacityRunner(BaseRunner):
             dry_run=args.dry_run,
             start_date=start_date,
             end_date=end_date,
+            max_runtime=args.max_runtime,
             products=products,
         )
         success = runner.run()

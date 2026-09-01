@@ -63,12 +63,20 @@ class EntsoeClient:
     # Maximum date range allowed by API
     MAX_DATE_RANGE_DAYS = 7
 
+    # (connect, read) in seconds. The read half is deliberately left at the
+    # historical 60s so no request that succeeds today can start failing; the
+    # connect half is new and makes a dead/refusing socket fail in 10s instead
+    # of hanging for a full 60s per attempt.
+    # NOTE: requests' read timeout is the gap between received bytes, not the
+    # total response time, so a slow-but-progressing download is unaffected.
+    REQUEST_TIMEOUT = (10, 60)
+
     def __init__(
         self,
         security_token: Optional[str] = None,
         control_area_domain: Optional[str] = None,
         base_url: Optional[str] = None,
-        max_retries: int = 3,
+        max_retries: int = 2,
         backoff_factor: float = 1.0
     ):
         """
@@ -78,7 +86,10 @@ class EntsoeClient:
             security_token: API security token (defaults to env var)
             control_area_domain: Control area domain code (defaults to env var)
             base_url: API base URL (defaults to env var)
-            max_retries: Maximum number of retry attempts (default 3)
+            max_retries: Maximum number of retry attempts (default 2, i.e. 3
+                attempts total). Bounds the worst case for one call at
+                ~3 min instead of ~4 min when upstream is timing out; a
+                healthy API answers on the first attempt regardless.
             backoff_factor: Backoff factor for exponential delay (default 1.0)
         """
         self.base_url = base_url or ENTSOE_BASE_URL
@@ -259,7 +270,7 @@ class EntsoeClient:
         psr_type: Optional[str] = None,
         in_domain: Optional[str] = None,
         out_domain: Optional[str] = None,
-        timeout: int = 60
+        timeout: tuple = None
     ) -> str:
         """
         Fetch data from ENTSO-E API with validation and retry.
@@ -272,7 +283,7 @@ class EntsoeClient:
             psr_type: Optional PSR type for generation
             in_domain: Optional in_Domain for A11 cross-border flows
             out_domain: Optional out_Domain for A11 cross-border flows
-            timeout: Request timeout in seconds
+            timeout: Optional (connect, read) override; defaults to REQUEST_TIMEOUT
 
         Returns:
             str: XML content (unzipped if necessary)
@@ -290,7 +301,7 @@ class EntsoeClient:
         )
 
         try:
-            response = self.session.get(url, timeout=timeout)
+            response = self.session.get(url, timeout=timeout or self.REQUEST_TIMEOUT)
             response.raise_for_status()
 
             # Check if response is zipped
@@ -492,7 +503,7 @@ class EntsoeClient:
         url = f"{self.base_url}?{query_string}"
 
         try:
-            response = self.session.get(url, timeout=60)
+            response = self.session.get(url, timeout=self.REQUEST_TIMEOUT)
             response.raise_for_status()
 
             content_type = response.headers.get('Content-Type', '')
@@ -672,7 +683,7 @@ class EntsoeClient:
         url = f"{self.base_url}?{query_string}"
 
         try:
-            response = self.session.get(url, timeout=60)
+            response = self.session.get(url, timeout=self.REQUEST_TIMEOUT)
             response.raise_for_status()
 
             content_type = response.headers.get('Content-Type', '')
@@ -718,7 +729,7 @@ class EntsoeClient:
         url = f"{self.base_url}?{query_string}"
 
         try:
-            response = self.session.get(url, timeout=60)
+            response = self.session.get(url, timeout=self.REQUEST_TIMEOUT)
             response.raise_for_status()
 
             content_type = response.headers.get('Content-Type', '')
@@ -771,7 +782,7 @@ class EntsoeClient:
         url = f"{self.base_url}?{query_string}"
 
         try:
-            response = self.session.get(url, timeout=60)
+            response = self.session.get(url, timeout=self.REQUEST_TIMEOUT)
             response.raise_for_status()
 
             content_type = response.headers.get('Content-Type', '')
@@ -816,7 +827,7 @@ class EntsoeClient:
         url = f"{self.base_url}?{query_string}"
 
         try:
-            response = self.session.get(url, timeout=60)
+            response = self.session.get(url, timeout=self.REQUEST_TIMEOUT)
             response.raise_for_status()
 
             content_type = response.headers.get('Content-Type', '')
@@ -881,7 +892,7 @@ class EntsoeClient:
         url = f"{self.base_url}?{query_string}"
 
         try:
-            response = self.session.get(url, timeout=60)
+            response = self.session.get(url, timeout=self.REQUEST_TIMEOUT)
             response.raise_for_status()
 
             content_type = response.headers.get('Content-Type', '')
@@ -949,7 +960,7 @@ class EntsoeClient:
         url = f"{self.base_url}?{query_string}"
 
         try:
-            response = self.session.get(url, timeout=60)
+            response = self.session.get(url, timeout=self.REQUEST_TIMEOUT)
             response.raise_for_status()
 
             content_type = response.headers.get('Content-Type', '')
@@ -1019,7 +1030,7 @@ class EntsoeClient:
         url = f"{self.base_url}?{query_string}"
 
         try:
-            response = self.session.get(url, timeout=60)
+            response = self.session.get(url, timeout=self.REQUEST_TIMEOUT)
             response.raise_for_status()
 
             content_type = response.headers.get('Content-Type', '')
@@ -1075,7 +1086,7 @@ class EntsoeClient:
         url = f"{self.base_url}?{query_string}"
 
         try:
-            response = self.session.get(url, timeout=60)
+            response = self.session.get(url, timeout=self.REQUEST_TIMEOUT)
             response.raise_for_status()
 
             content_type = response.headers.get('Content-Type', '')
@@ -1123,7 +1134,7 @@ class EntsoeClient:
         url = f"{self.base_url}?{query_string}"
 
         try:
-            response = self.session.get(url, timeout=60)
+            response = self.session.get(url, timeout=self.REQUEST_TIMEOUT)
             response.raise_for_status()
 
             content_type = response.headers.get('Content-Type', '')
@@ -1169,7 +1180,7 @@ class EntsoeClient:
         url = f"{self.base_url}?{query_string}"
 
         try:
-            response = self.session.get(url, timeout=60)
+            response = self.session.get(url, timeout=self.REQUEST_TIMEOUT)
             response.raise_for_status()
 
             content_type = response.headers.get('Content-Type', '')
@@ -1215,7 +1226,7 @@ class EntsoeClient:
         url = f"{self.base_url}?{query_string}"
 
         try:
-            response = self.session.get(url, timeout=60)
+            response = self.session.get(url, timeout=self.REQUEST_TIMEOUT)
             response.raise_for_status()
 
             content_type = response.headers.get('Content-Type', '')
@@ -1260,7 +1271,7 @@ class EntsoeClient:
         url = f"{self.base_url}?{query_string}"
 
         try:
-            response = self.session.get(url, timeout=60)
+            response = self.session.get(url, timeout=self.REQUEST_TIMEOUT)
             response.raise_for_status()
 
             content_type = response.headers.get('Content-Type', '')
@@ -1305,7 +1316,7 @@ class EntsoeClient:
         url = f"{self.base_url}?{query_string}"
 
         try:
-            response = self.session.get(url, timeout=60)
+            response = self.session.get(url, timeout=self.REQUEST_TIMEOUT)
             response.raise_for_status()
 
             content_type = response.headers.get('Content-Type', '')
@@ -1351,7 +1362,7 @@ class EntsoeClient:
         url = f"{self.base_url}?{query_string}"
 
         try:
-            response = self.session.get(url, timeout=60)
+            response = self.session.get(url, timeout=self.REQUEST_TIMEOUT)
             response.raise_for_status()
 
             content_type = response.headers.get('Content-Type', '')

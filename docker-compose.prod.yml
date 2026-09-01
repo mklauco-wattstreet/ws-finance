@@ -17,9 +17,9 @@ services:
     #   mem_reservation — soft floor the scheduler tries to honour.
     # Right-size with: docker stats --no-stream entsoe-ote-data-uploader
     # (sample across a :59->:00 burst and during a backfill), then tighten.
-    cpus: '1.00'
-    mem_limit: 3g
-    mem_reservation: 1g
+    cpus: '2.00'
+    mem_limit: 6g
+    mem_reservation: 2g
     # Remove extra_hosts in production (override to empty)
     extra_hosts: []
     # SENTRY_DSN is loaded from .env on the production host (see .env.production.example)
