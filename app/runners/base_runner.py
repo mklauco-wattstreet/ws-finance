@@ -14,8 +14,10 @@ Features:
 import sentry_init  # noqa: F401 - must be first to capture errors
 sentry_init.set_module("entsoe")
 import sys
+import re
 import logging
 import argparse
+import traceback as _traceback
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone, date
@@ -37,6 +39,51 @@ PRAGUE_TZ = zoneinfo.ZoneInfo("Europe/Prague")
 # waits on something external. Generous on purpose: it must never fire on
 # healthy work, only on a genuinely wedged session.
 IDLE_TX_TIMEOUT_MS = 15 * 60 * 1000  # 15 minutes
+
+
+# ENTSO-E request URLs carry the API token as a query parameter. urllib3 logs
+# the full URL in its "Retrying (...)" message at WARNING level, so raising the
+# urllib3 logger to WARNING does NOT suppress it - the token reached the logs in
+# cleartext. Redact at the handler instead, so no library can leak it.
+_SECRET_QS_RE = re.compile(r"(securityToken=)[^&\s'\"<>]+", re.IGNORECASE)
+
+
+class SecretRedactingFilter(logging.Filter):
+    """Strip API tokens out of log records before any handler formats them.
+
+    Attached to HANDLERS rather than loggers on purpose: a filter on a logger
+    only sees records logged directly to it, never records propagated up from
+    child loggers such as urllib3. A handler filter sees everything it emits.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            message = record.getMessage()
+        except Exception:
+            # Never let redaction break logging itself.
+            return True
+        redacted = _SECRET_QS_RE.sub(r"\1***", message)
+        if redacted != message:
+            # Collapse msg+args into the redacted text: the token usually sits
+            # in record.args (urllib3 passes the URL as a format argument), so
+            # rewriting record.msg alone would not catch it.
+            record.msg = redacted
+            record.args = None
+        # Exception text is rendered by the FORMATTER, which runs after
+        # filters - so record.exc_text is still empty here on the first pass
+        # and a traceback carrying the token would slip through. Render it
+        # ourselves, redacted; the formatter then reuses this cached value.
+        if record.exc_info and not getattr(record, "exc_text", None):
+            try:
+                rendered = "".join(_traceback.format_exception(*record.exc_info))
+                if rendered.endswith("\n"):
+                    rendered = rendered[:-1]
+                record.exc_text = _SECRET_QS_RE.sub(r"\1***", rendered)
+            except Exception:
+                pass
+        elif getattr(record, "exc_text", None):
+            record.exc_text = _SECRET_QS_RE.sub(r"\1***", record.exc_text)
+        return True
 
 
 class BaseRunner(ABC):
@@ -139,10 +186,18 @@ class BaseRunner(ABC):
             datefmt='%Y-%m-%d %H:%M:%S'
         )
 
-        # SECURITY: Suppress urllib3/requests debug logging to prevent
-        # API tokens from appearing in logs (they log full URLs with query params)
+        # Quieten urllib3/requests DEBUG chatter. NOTE: this alone does NOT
+        # protect the token - urllib3's retry message is itself logged at
+        # WARNING and passes straight through. The redaction filter below is
+        # what actually prevents the leak.
         logging.getLogger("urllib3").setLevel(logging.WARNING)
         logging.getLogger("requests").setLevel(logging.WARNING)
+
+        # SECURITY: redact API tokens on every root handler, so records from
+        # any library (urllib3 included) are scrubbed before being formatted.
+        for handler in logging.getLogger().handlers:
+            if not any(isinstance(f, SecretRedactingFilter) for f in handler.filters):
+                handler.addFilter(SecretRedactingFilter())
 
         return logging.getLogger(self.RUNNER_NAME)
 

@@ -174,13 +174,19 @@ class IntradayCapacityRunner(BaseRunner):
     # -------------------------------------------------------------- fetch
     def _fetch_product_borders(
         self, product: str, area_code: str, period_start: datetime, period_end: datetime
-    ) -> List[Tuple[str, str, Optional[str]]]:
+    ) -> Tuple[List[Tuple[str, str, Optional[str]]], bool]:
         """Fetch all 8 border-direction XML responses for one product/day.
 
         Returns:
-            List of (border_key, direction, xml_or_None) tuples. A single
-            border failing is logged and yields (key, direction, None); it
-            must not abort the run.
+            (results, truncated) where results is a list of
+            (border_key, direction, xml_or_None) tuples and truncated is True
+            if the wall-clock deadline cut the loop short. A single border
+            failing is logged and yields (key, direction, None); it must not
+            abort the run.
+
+            When truncated is True the caller MUST discard the whole
+            product/day - see _process_product_day() for why a partial border
+            set cannot be written.
         """
         auction_type, classification_sequence = INTRADAY_CAPACITY_PRODUCTS[product]
         results: List[Tuple[str, str, Optional[str]]] = []
@@ -190,6 +196,12 @@ class IntradayCapacityRunner(BaseRunner):
                 ("import", (area_code, neighbor_eic)),
                 ("export", (neighbor_eic, area_code)),
             ):
+                if self.deadline_exceeded():
+                    self.logger.info(
+                        f"{self.RUNNER_NAME}: deadline reached mid-{product} - "
+                        f"discarding this product/day, it will be refetched next run"
+                    )
+                    return results, True
                 try:
                     self.logger.debug(
                         f"    Fetching {product} {border_key}/{direction} "
@@ -212,7 +224,7 @@ class IntradayCapacityRunner(BaseRunner):
                     self.logger.warning(f"    Failed {product} {border_key}/{direction}: {e}")
                     results.append((border_key, direction, None))
 
-        return results
+        return results, False
 
     def _process_product_day(
         self, product: str, day: date,
@@ -226,7 +238,18 @@ class IntradayCapacityRunner(BaseRunner):
         """
         day_start_utc, day_end_utc = self._day_utc_bounds(day)
 
-        fetch_results = self._fetch_product_borders(product, area_code, day_start_utc, day_end_utc)
+        fetch_results, truncated = self._fetch_product_borders(
+            product, area_code, day_start_utc, day_end_utc
+        )
+
+        if truncated:
+            # cap_*_total_mw is summed over whatever borders the parser saw, so
+            # writing a half-fetched product/day would store a partial sum as
+            # if it were the real total - and skip_unchanged would happily
+            # overwrite a correct row with it. Discard instead: the
+            # completeness gate still sees the day as incomplete and the next
+            # run refetches it whole.
+            return 0
 
         parser = IntradayTransferCapacityParser(area_id=area_id, country_code=country_code)
         any_data = False
