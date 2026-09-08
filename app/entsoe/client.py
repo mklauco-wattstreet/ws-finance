@@ -127,6 +127,29 @@ class EntsoeClient:
         """Remove security token from error messages."""
         return str(error).replace(self.security_token, "***")
 
+    def _fetch_error(self, error: Exception, message: str) -> requests.RequestException:
+        """Build the exception a fetcher raises, classifying "no data yet".
+
+        ENTSO-E signals "not published yet" as HTTP 400 carrying an
+        Acknowledgement_MarketDocument rather than an empty 200. Left
+        unclassified, that is indistinguishable from a genuine bad request, so
+        a bidding zone that is simply late gets logged at ERROR every 15
+        minutes forever. Tagging the message makes
+        BaseRunner.is_data_unavailable_error() recognise it and log at INFO.
+
+        Genuine 400s (a rejected EIC code, a malformed parameter) keep their
+        original message and stay visible as errors.
+        """
+        response = getattr(error, "response", None)
+        if response is not None and response.status_code == 400:
+            try:
+                body = response.text
+            except Exception:
+                body = ""
+            if self._is_no_data_acknowledgement(body):
+                return requests.RequestException(f"No matching data - {message}")
+        return requests.RequestException(message)
+
     @staticmethod
     def _is_no_data_acknowledgement(response_text: str) -> bool:
         """Detect ENTSO-E's 'no matching data' Acknowledgement_MarketDocument.
@@ -315,7 +338,8 @@ class EntsoeClient:
                 return response.text
 
         except requests.RequestException as e:
-            raise requests.RequestException(
+            raise self._fetch_error(
+                e,
                 f"Failed to fetch data from ENTSO-E API after retries: {self._sanitize_error(e)}"
             )
 
@@ -513,7 +537,8 @@ class EntsoeClient:
                 return response.text
 
         except requests.RequestException as e:
-            raise requests.RequestException(
+            raise self._fetch_error(
+                e,
                 f"Failed to fetch generation data for domain {in_domain}: {self._sanitize_error(e)}"
             )
 
@@ -693,7 +718,8 @@ class EntsoeClient:
                 return response.text
 
         except requests.RequestException as e:
-            raise requests.RequestException(
+            raise self._fetch_error(
+                e,
                 f"Failed to fetch actual load for domain {out_bidding_zone}: {self._sanitize_error(e)}"
             )
 
@@ -739,7 +765,8 @@ class EntsoeClient:
                 return response.text
 
         except requests.RequestException as e:
-            raise requests.RequestException(
+            raise self._fetch_error(
+                e,
                 f"Failed to fetch load forecast for domain {out_bidding_zone}: {self._sanitize_error(e)}"
             )
 
@@ -792,7 +819,8 @@ class EntsoeClient:
                 return response.text
 
         except requests.RequestException as e:
-            raise requests.RequestException(
+            raise self._fetch_error(
+                e,
                 f"Failed to fetch generation forecast for domain {in_domain}: {self._sanitize_error(e)}"
             )
 
@@ -837,7 +865,8 @@ class EntsoeClient:
                 return response.text
 
         except requests.RequestException as e:
-            raise requests.RequestException(
+            raise self._fetch_error(
+                e,
                 f"Failed to fetch balancing energy for domain {control_area}: {self._sanitize_error(e)}"
             )
 
@@ -902,7 +931,8 @@ class EntsoeClient:
                 return response.text
 
         except requests.RequestException as e:
-            raise requests.RequestException(
+            raise self._fetch_error(
+                e,
                 f"Failed to fetch procured capacity ({process_type}) for domain "
                 f"{area_domain}: {self._sanitize_error(e)}"
             )
@@ -978,12 +1008,14 @@ class EntsoeClient:
                     f"seq={classification_sequence})"
                 )
                 return None
-            raise requests.RequestException(
+            raise self._fetch_error(
+                e,
                 f"Failed to fetch intraday offered capacity for {in_domain} <- "
                 f"{out_domain}: {self._sanitize_error(e)}"
             )
         except requests.RequestException as e:
-            raise requests.RequestException(
+            raise self._fetch_error(
+                e,
                 f"Failed to fetch intraday offered capacity for {in_domain} <- "
                 f"{out_domain}: {self._sanitize_error(e)}"
             )
@@ -1044,11 +1076,13 @@ class EntsoeClient:
                     and self._is_no_data_acknowledgement(e.response.text):
                 logger.debug(f"No matching congestion income data for domain {area_code}")
                 return None
-            raise requests.RequestException(
+            raise self._fetch_error(
+                e,
                 f"Failed to fetch congestion income for domain {area_code}: {self._sanitize_error(e)}"
             )
         except requests.RequestException as e:
-            raise requests.RequestException(
+            raise self._fetch_error(
+                e,
                 f"Failed to fetch congestion income for domain {area_code}: {self._sanitize_error(e)}"
             )
 
@@ -1096,7 +1130,8 @@ class EntsoeClient:
                 return response.text
 
         except requests.RequestException as e:
-            raise requests.RequestException(
+            raise self._fetch_error(
+                e,
                 f"Failed to fetch balancing bids for domain {control_area}: {self._sanitize_error(e)}"
             )
 
@@ -1144,7 +1179,8 @@ class EntsoeClient:
                 return response.text
 
         except requests.RequestException as e:
-            raise requests.RequestException(
+            raise self._fetch_error(
+                e,
                 f"Failed to fetch activated balancing volumes for domain {control_area}: {self._sanitize_error(e)}"
             )
 
@@ -1190,7 +1226,8 @@ class EntsoeClient:
                 return response.text
 
         except requests.RequestException as e:
-            raise requests.RequestException(
+            raise self._fetch_error(
+                e,
                 f"Failed to fetch CBMP for domain {control_area}: {self._sanitize_error(e)}"
             )
 
@@ -1236,7 +1273,8 @@ class EntsoeClient:
                 return response.text
 
         except requests.RequestException as e:
-            raise requests.RequestException(
+            raise self._fetch_error(
+                e,
                 f"Failed to fetch scheduled generation for domain {in_domain}: {self._sanitize_error(e)}"
             )
 
@@ -1281,7 +1319,8 @@ class EntsoeClient:
                 return response.text
 
         except requests.RequestException as e:
-            raise requests.RequestException(
+            raise self._fetch_error(
+                e,
                 f"Failed to fetch imbalance prices for domain {control_area}: {self._sanitize_error(e)}"
             )
 
@@ -1326,7 +1365,8 @@ class EntsoeClient:
                 return response.text
 
         except requests.RequestException as e:
-            raise requests.RequestException(
+            raise self._fetch_error(
+                e,
                 f"Failed to fetch imbalance volumes for domain {control_area}: {self._sanitize_error(e)}"
             )
 
@@ -1374,14 +1414,17 @@ class EntsoeClient:
         except requests.HTTPError as e:
             if e.response is not None and e.response.status_code == 400 \
                     and self._is_no_data_acknowledgement(e.response.text):
-                raise requests.RequestException(
+                raise self._fetch_error(
+                    e,
                     f"No matching data found for domain {in_domain}: {self._sanitize_error(e)}"
                 )
-            raise requests.RequestException(
+            raise self._fetch_error(
+                e,
                 f"Failed to fetch day-ahead prices for domain {in_domain}: {self._sanitize_error(e)}"
             )
         except requests.RequestException as e:
-            raise requests.RequestException(
+            raise self._fetch_error(
+                e,
                 f"Failed to fetch day-ahead prices for domain {in_domain}: {self._sanitize_error(e)}"
             )
 

@@ -34,6 +34,23 @@ class UnifiedImbalanceRunner(BaseRunner):
 
     RUNNER_NAME = "ENTSO-E Unified Imbalance Prices Runner"
 
+    # The one Sentry cron monitor the free plan allows goes on this runner:
+    # it is the CZ-first pipeline a downstream prediction service depends on,
+    # so it is the pipeline whose silence matters most. The schedule below
+    # must stay in sync with the crontab entry for this runner.
+    CRON_MONITOR_SLUG = "entsoe-imbalance"
+    CRON_MONITOR_CONFIG = {
+        "schedule": {"type": "crontab", "value": "14,29,44,59 * * * *"},
+        "timezone": "Europe/Prague",
+        "checkin_margin": 5,      # minutes late before the run counts as missed
+        "max_runtime": 13,        # minutes before the run counts as timed out
+        # Do not open an issue on a single blip: ENTSO-E has short outages
+        # several times a month. Four consecutive misses is a real one hour of
+        # missing data and worth waking up for.
+        "failure_issue_threshold": 4,
+        "recovery_threshold": 2,
+    }
+
     # Table configuration - partitioned by country_code
     TABLE_NAME = "entsoe_imbalance_prices"
     COLUMNS = [
@@ -176,10 +193,10 @@ class UnifiedImbalanceRunner(BaseRunner):
             if self.is_data_unavailable_error(e):
                 self.logger.info(f"{self.RUNNER_NAME}: {country_code} not available for [{period_start.strftime('%Y-%m-%d %H:%M')}-{period_end.strftime('%Y-%m-%d %H:%M')}]")
             else:
-                self.logger.error(f"  Failed {country_code}: {e}")
-                if self.debug:
-                    import traceback
-                    traceback.print_exc()
+                # WARNING, not ERROR: one upstream outage x 6 countries x 4
+                # runs/hour x ~14 runners would otherwise flood Sentry. The
+                # aggregate is emitted once per run by print_footer().
+                self.record_area_failure(country_code, e)
             return 0
 
     def _process_chunk(self, period_start, period_end, conn=None) -> int:

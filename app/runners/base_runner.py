@@ -86,6 +86,46 @@ class SecretRedactingFilter(logging.Filter):
         return True
 
 
+def _cron_checkin_start(slug, monitor_config):
+    """Open a Sentry cron check-in; returns the id, or None when inactive.
+
+    Cron monitors are the right way to learn that a pipeline stopped
+    producing data. They cost no error quota, unlike the flood of per-country
+    ERROR logs that used to serve this purpose - and unlike those, they also
+    fire when the runner never starts at all (container down, crontab broken),
+    which is the failure mode a log line can never report.
+    """
+    if not slug or not sentry_init.SENTRY_DSN:
+        return None
+    try:
+        from sentry_sdk.crons import capture_checkin
+        from sentry_sdk.crons.consts import MonitorStatus
+        return capture_checkin(
+            monitor_slug=slug,
+            status=MonitorStatus.IN_PROGRESS,
+            monitor_config=monitor_config,
+        )
+    except Exception:
+        # Monitoring must never take the pipeline down with it.
+        return None
+
+
+def _cron_checkin_finish(slug, check_in_id, ok: bool) -> None:
+    """Close a check-in opened by _cron_checkin_start."""
+    if not check_in_id or not slug:
+        return
+    try:
+        from sentry_sdk.crons import capture_checkin
+        from sentry_sdk.crons.consts import MonitorStatus
+        capture_checkin(
+            monitor_slug=slug,
+            check_in_id=check_in_id,
+            status=MonitorStatus.OK if ok else MonitorStatus.ERROR,
+        )
+    except Exception:
+        return
+
+
 class BaseRunner(ABC):
     """Base class for all ENTSO-E data runners.
 
@@ -106,6 +146,13 @@ class BaseRunner(ABC):
 
     # Maximum chunk size for API requests (ENTSO-E limit)
     MAX_CHUNK_DAYS = 7
+
+    # Sentry cron monitor. Set on ONE runner only - the free plan includes a
+    # single cron monitor. CRON_MONITOR_CONFIG is upserted on the first
+    # check-in, so the monitor never has to be created by hand in the UI; it
+    # must mirror the runner's crontab entry.
+    CRON_MONITOR_SLUG = None
+    CRON_MONITOR_CONFIG = None
 
     def __init__(
         self,
@@ -132,6 +179,7 @@ class BaseRunner(ABC):
         self.end_date = end_date
         self.is_backfill = start_date is not None or end_date is not None
         self.country_stats = {}  # {country_code: record_count}
+        self.area_failures = {}  # {country_code: last error string}
         self.max_runtime = max_runtime
         self._started_at = datetime.now(timezone.utc)
         self.deadline_hit = False
@@ -169,6 +217,43 @@ class BaseRunner(ABC):
     def track_country(self, country_code: str, count: int):
         """Track records processed per country for summary logging."""
         self.country_stats[country_code] = self.country_stats.get(country_code, 0) + count
+
+    def record_area_failure(self, country_code: str, error: Exception) -> None:
+        """Record a per-area fetch/parse failure WITHOUT raising it to ERROR.
+
+        A runner loops over six countries and fires four times an hour, so a
+        single upstream outage would emit hundreds of ERROR records - and the
+        Sentry logging integration turns every one of them into a billed
+        issue. Log at WARNING here (breadcrumb, still in the container log)
+        and let print_footer emit at most one aggregate line per run.
+        """
+        self.area_failures[country_code] = str(error)
+        self.logger.warning(f"  Failed {country_code}: {error}")
+        if self.debug:
+            import traceback
+            traceback.print_exc()
+
+    def _log_failure_summary(self) -> None:
+        """Emit at most one aggregate line for the areas that failed.
+
+        ERROR only when the run produced nothing at all - that is the case
+        worth an issue. A partial run (some countries landed) stays at
+        WARNING: the missing areas are re-fetched by the next firing, since
+        every upsert is ON CONFLICT idempotent.
+        """
+        if not self.area_failures:
+            return
+        failed = ", ".join(sorted(self.area_failures))
+        sample = self.area_failures[sorted(self.area_failures)[0]]
+        got_records = any(n > 0 for n in self.country_stats.values())
+        message = (
+            f"{self.RUNNER_NAME}: {len(self.area_failures)} area(s) failed "
+            f"[{failed}] - first error: {sample}"
+        )
+        if got_records:
+            self.logger.warning(message)
+        else:
+            self.logger.error(message)
 
     def format_summary(self, total: int) -> str:
         """Format one-line summary with per-country breakdown."""
@@ -428,8 +513,12 @@ class BaseRunner(ABC):
         pass
 
     def print_footer(self, success: bool = True) -> None:
-        """Print runner footer (no-op, kept for API compatibility)."""
-        pass
+        """Emit the aggregated per-area failure summary, if any.
+
+        Every runner already calls this on both the success and the failure
+        path, which makes it the one place guaranteed to run once per firing.
+        """
+        self._log_failure_summary()
 
     def _areas_with_data(self, conn, target_date, areas) -> set:
         """Return set of area_ids that already have data for target_date."""
@@ -556,5 +645,14 @@ class BaseRunner(ABC):
             end_date=end_date,
             max_runtime=args.max_runtime
         )
-        success = runner.run()
+        # Check in only for scheduled runs: a backfill or a dry-run is not the
+        # cadence the monitor is watching and would report a false "on time".
+        slug = None if (start_date or end_date or args.dry_run) else cls.CRON_MONITOR_SLUG
+        check_in_id = _cron_checkin_start(slug, cls.CRON_MONITOR_CONFIG)
+        try:
+            success = runner.run()
+        except BaseException:
+            _cron_checkin_finish(slug, check_in_id, ok=False)
+            raise
+        _cron_checkin_finish(slug, check_in_id, ok=success)
         sys.exit(0 if success else 1)
