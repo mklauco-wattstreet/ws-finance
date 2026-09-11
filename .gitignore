@@ -38,6 +38,7 @@ app/2028/
 
 # browser
 browser-profile/
+browser-profile.bak-*/
 _helpers
 
 # OTE and ENTSOE data files

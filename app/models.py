@@ -267,6 +267,36 @@ class OteTradeBalance(Base):
     uploaded_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default='CURRENT_TIMESTAMP')
 
 
+class OteIntradayLimitUtilization(Base):
+    """OTE portal "Fin. security trend for limit IM" - per-order utilization of the
+    intraday-market financial-security limit (migration 079).
+
+    Key is (event_timestamp, order_id): the XLSX export carries millisecond
+    timestamps and the same order_id recurs (place / modify / cancel).
+    event_timestamp is Europe/Prague wall-clock as printed by the portal.
+    """
+    __tablename__ = 'ote_intraday_limit_utilization'
+    __table_args__ = (
+        PrimaryKeyConstraint('id', name='ote_intraday_limit_utilization_pkey'),
+        UniqueConstraint('event_timestamp', 'order_id', name='ote_intraday_limit_utilization_event_order_key'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(Integer, autoincrement=True)
+    event_timestamp: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    order_type: Mapped[str] = mapped_column(String(10), nullable=False)
+    order_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    delivery_date: Mapped[date] = mapped_column(Date, nullable=False)
+    utilization_change_commodity: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 4))
+    utilization_change_imbalance: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 4))
+    utilization_change_total: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 4))
+    utilization_total: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 2))
+    limit_total: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 2))
+    limit_available: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 2))
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+
+
 class EntsoeLoad(Base):
     """ENTSO-E load data (actual and forecast, 15-minute intervals).
 
