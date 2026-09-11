@@ -51,8 +51,8 @@ COL_LIMIT_AVAILABLE = 31
 
 COLUMNS = (
     "event_timestamp", "order_type", "order_id", "delivery_date",
-    "utilization_change_commodity", "utilization_change_imbalance",
-    "utilization_change_total", "utilization_total", "limit_total", "limit_available",
+    "utilization_change_commodity_czk", "utilization_change_imbalance_czk",
+    "utilization_change_total_czk", "utilization_total_czk", "limit_total_czk", "limit_available_czk",
 )
 UPDATE_COLUMNS = COLUMNS[1:2] + COLUMNS[3:]
 
