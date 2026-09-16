@@ -2,6 +2,11 @@
 """
 OTE Portal Trade Balance Downloader
 Downloads trade balance reports from the OTE portal.
+
+In production the report is fetched by ote_portal_session.py, which imports
+download_trade_balance() / upload_to_database() from here and shares one
+login with the intraday limit report. This script remains the standalone
+entry point and owns the certificate import (--setup).
 """
 
 import sentry_init  # noqa: F401 - must be first to capture errors

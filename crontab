@@ -52,17 +52,14 @@
 # OTE-CR - Download OTE daily settlement reports at 09:00
 0 09 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 ote_production.py >> /var/log/ote.log 2>&1
 
-# OTE-CR - Download OTE trade balance reports every 2 hours (offset to minute 10)
-10 */2 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 ote_trade_balance_downloader.py >> /var/log/ote.log 2>&1
-
-# OTE-CR - Intraday-market financial-security limit utilization ("Fin. security trend for limit IM")
-# Selenium portal login + server-side report generation (~30 s+ per day), so only twice a day:
-# 12:30 snapshots today's events so far, 00:30 closes the previous day. The report period
-# filters on the order event timestamp, so the 00:30 --yesterday run is the complete day.
-# Chromium shares /app/browser-profile with the trade balance job (:10 every 2h) and daily
-# payments (09:00) - keep these slots clear of them. flock guards against a hung run overlapping.
-30 12 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && flock -n /tmp/ote_intraday_limit.lock /usr/local/bin/python3 ote_intraday_limit_downloader.py >> /var/log/ote.log 2>&1
-30 00 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && flock -n /tmp/ote_intraday_limit.lock /usr/local/bin/python3 ote_intraday_limit_downloader.py --yesterday >> /var/log/ote.log 2>&1
+# OTE-CR - Portal session every 2 hours (offset to minute 10): ONE certificate login, then
+# trade balance (D-1..D+1) and the intraday-market limit utilization ("Fin. security trend
+# for limit IM", today's events). The 00:10 run also fetches the limit report for yesterday,
+# which closes that day (the report period filters on the order event timestamp).
+# Chromium shares /app/browser-profile with the daily payments job (09:00) - keep clear of it.
+# flock guards against a hung run overlapping the next slot.
+10 2-22/2 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && flock -n /tmp/ote_portal_session.lock /usr/local/bin/python3 ote_portal_session.py >> /var/log/ote.log 2>&1
+10 0 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && flock -n /tmp/ote_portal_session.lock /usr/local/bin/python3 ote_portal_session.py --limit-yesterday >> /var/log/ote.log 2>&1
 
 # OTE-CR - Download DAM matching curves every 10 min from 14:00-21:59 (published ~14:00).
 # Chains upload + backfill_da_60min in the same run so da_period_summary/curve_depth

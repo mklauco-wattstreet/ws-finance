@@ -10,6 +10,10 @@ sets the date range, exports XLSX, stores it under
 /app/ote_files/YYYY/MM/Intraday_limit_<from>_<to>_<stamp>.xlsx and hands it to
 upload_intraday_limit.py.
 
+In production this report is fetched by ote_portal_session.py, which shares
+one login with the trade balance report. This script is the standalone /
+manual-backfill entry point and exposes run_report() for the session runner.
+
 Usage:
     python3 ote_intraday_limit_downloader.py [--today | --yesterday | --start YYYY-MM-DD --end YYYY-MM-DD]
                                             [--dry-run] [--debug] [--timeout SECONDS]
@@ -37,6 +41,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.common.exceptions import TimeoutException
@@ -57,6 +62,14 @@ def navigate_to_financial_security(driver, logger):
     """Sidebar: Risk Manag. > Financial security. Falls back to the direct URL."""
     wait = WebDriverWait(driver, 15)
     link_xpath = f"//a[@href='{FINANCIAL_SECURITY_PATH}']"
+
+    # A modal left open by a previous report in the same session (e.g. the
+    # trade balance export dialog) would swallow the sidebar click.
+    try:
+        driver.find_element(By.TAG_NAME, "body").send_keys(Keys.ESCAPE)
+        time.sleep(0.3)
+    except Exception:
+        pass
 
     driver.implicitly_wait(2)
     try:
@@ -207,6 +220,35 @@ def upload_to_database(xlsx_path, logger, debug):
         return False
 
 
+def run_report(driver, logger, date_from, date_to, timeout=300, dry_run=False, debug=False):
+    """Fetch one date range in an already logged-in session and upload it.
+
+    Returns the stored XLSX path; raises RuntimeError on any failed step so
+    the caller (main() or ote_portal_session.py) decides how to report it.
+    """
+    navigate_to_financial_security(driver, logger)
+    if not select_report(driver, logger):
+        raise RuntimeError("OTE IntradayLimit: report selection failed")
+    if not set_date_range(driver, logger, date_from, date_to):
+        raise RuntimeError("OTE IntradayLimit: date range not set")
+    if not ensure_excel_export(driver, logger):
+        raise RuntimeError("OTE IntradayLimit: Excel export type not selected")
+
+    downloaded = generate_and_download(driver, logger, timeout)
+    if not downloaded:
+        take_screenshot(driver, "download_timeout")
+        raise RuntimeError("OTE IntradayLimit: no XLSX arrived")
+
+    stored = store_file(downloaded, date_from, date_to, logger)
+    if dry_run:
+        logger.info(f"OTE IntradayLimit: dry run, downloaded {stored}")
+    elif upload_to_database(stored, logger, debug):
+        logger.info(f"OTE IntradayLimit: downloaded and uploaded {stored}")
+    else:
+        raise RuntimeError("OTE IntradayLimit: download OK, upload failed")
+    return stored
+
+
 def parse_args():
     p = argparse.ArgumentParser(description="Download OTE 'Fin. security trend for limit IM' report")
     g = p.add_mutually_exclusive_group()
@@ -260,27 +302,8 @@ def main():
         if not ote_portal.login_to_portal(driver, logger):
             raise RuntimeError("OTE IntradayLimit: login failed")
 
-        navigate_to_financial_security(driver, logger)
-        if not select_report(driver, logger):
-            raise RuntimeError("OTE IntradayLimit: report selection failed")
-        if not set_date_range(driver, logger, args.date_from, args.date_to):
-            raise RuntimeError("OTE IntradayLimit: date range not set")
-        if not ensure_excel_export(driver, logger):
-            raise RuntimeError("OTE IntradayLimit: Excel export type not selected")
-
-        downloaded = generate_and_download(driver, logger, args.timeout)
-        if not downloaded:
-            take_screenshot(driver, "download_timeout")
-            raise RuntimeError("OTE IntradayLimit: no XLSX arrived")
-
-        stored = store_file(downloaded, args.date_from, args.date_to, logger)
-
-        if args.dry_run:
-            logger.info(f"OTE IntradayLimit: dry run, downloaded {stored}")
-        elif upload_to_database(stored, logger, args.debug):
-            logger.info(f"OTE IntradayLimit: downloaded and uploaded {stored}")
-        else:
-            raise RuntimeError("OTE IntradayLimit: download OK, upload failed")
+        run_report(driver, logger, args.date_from, args.date_to,
+                   timeout=args.timeout, dry_run=args.dry_run, debug=args.debug)
 
     except SystemExit:
         raise
