@@ -17,6 +17,7 @@ from pathlib import Path
 from datetime import datetime, time
 import psycopg2
 from psycopg2 import extras
+import warnings
 import pandas as pd
 
 # Import database configuration and logging
@@ -136,7 +137,10 @@ def read_trade_balance_file(file_path, delivery_date):
     print(f"  Reading file: {file_path.name}")
 
     # Read Excel file with multi-level headers
-    df = pd.read_excel(file_path, sheet_name=0, header=[0, 1])
+    with warnings.catch_warnings():
+        # the portal's XLSX has no default style; openpyxl warns and applies its own
+        warnings.simplefilter("ignore", UserWarning)
+        df = pd.read_excel(file_path, sheet_name=0, header=[0, 1])
 
     print(f"  Found {len(df)} rows in Excel")
 
