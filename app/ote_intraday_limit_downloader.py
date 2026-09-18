@@ -51,11 +51,30 @@ from config import OTE_LOCAL_STORAGE_PASSWORD
 import ote_portal
 from ote_portal import take_screenshot
 
-REPORT_CODE = "financial_security_trend_offline_main"
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class ReportSpec:
+    """One entry of the Financial security page's report dropdown."""
+    code: str            # data-menu-item-value of the dropdown option / reportCode value
+    file_prefix: str     # stored as /app/ote_files/YYYY/MM/<file_prefix>_<from>_<to>_<stamp>.xlsx
+    upload_script: str   # uploader invoked with the stored file
+    label: str           # log prefix
+
+
+LIMIT_IM = ReportSpec(
+    code="financial_security_trend_offline_main",
+    file_prefix="Intraday_limit",
+    upload_script="/app/scripts/upload_intraday_limit.py",
+    label="OTE IntradayLimit",
+)
+
+REPORT_CODE = LIMIT_IM.code
 FINANCIAL_SECURITY_PATH = "/sfvot/app/financial_security"
 FINANCIAL_SECURITY_URL = f"https://portal.ote-cr.cz{FINANCIAL_SECURITY_PATH}"
 OTE_FILES_DIR = Path("/app/ote_files")
-UPLOAD_SCRIPT = "/app/scripts/upload_intraday_limit.py"
+UPLOAD_SCRIPT = LIMIT_IM.upload_script
 
 
 def navigate_to_financial_security(driver, logger):
@@ -98,11 +117,11 @@ def navigate_to_financial_security(driver, logger):
     take_screenshot(driver, "financial_security_page")
 
 
-def select_report(driver, logger):
+def select_report(driver, logger, report_code=REPORT_CODE):
     wait = WebDriverWait(driver, 15)
     current = driver.find_element(By.NAME, "reportCode").get_attribute("value")
-    if current == REPORT_CODE:
-        logger.debug("Report already selected")
+    if current == report_code:
+        logger.debug(f"Report {report_code} already selected")
         return True
 
     selector = wait.until(EC.element_to_be_clickable((
@@ -113,17 +132,17 @@ def select_report(driver, logger):
     take_screenshot(driver, "report_dropdown_open")
 
     option = wait.until(EC.element_to_be_clickable((
-        By.XPATH, f"//div[@role='listitem' and @data-menu-item-value='{REPORT_CODE}']",
+        By.XPATH, f"//div[@role='listitem' and @data-menu-item-value='{report_code}']",
     )))
     option.click()
     time.sleep(0.5)
 
     current = driver.find_element(By.NAME, "reportCode").get_attribute("value")
     take_screenshot(driver, "report_selected")
-    if current != REPORT_CODE:
-        logger.error(f"Report select failed: reportCode={current!r}")
+    if current != report_code:
+        logger.error(f"Report select failed: reportCode={current!r}, wanted {report_code!r}")
         return False
-    logger.debug("Selected 'Fin. security trend for limit IM'")
+    logger.debug(f"Selected report {report_code}")
     return True
 
 
@@ -195,18 +214,18 @@ def generate_and_download(driver, logger, timeout):
     return ote_portal.wait_for_new_download(existing, ".xlsx", timeout, logger, driver=driver)
 
 
-def store_file(downloaded, date_from, date_to, logger):
+def store_file(downloaded, date_from, date_to, logger, prefix=LIMIT_IM.file_prefix):
     dest_dir = OTE_FILES_DIR / f"{date_from.year}" / f"{date_from.month:02d}"
     dest_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    dest = dest_dir / f"Intraday_limit_{date_from:%Y%m%d}_{date_to:%Y%m%d}_{stamp}.xlsx"
+    dest = dest_dir / f"{prefix}_{date_from:%Y%m%d}_{date_to:%Y%m%d}_{stamp}.xlsx"
     shutil.move(str(downloaded), str(dest))
     logger.info(f"File saved: {dest} ({dest.stat().st_size} bytes)")
     return dest
 
 
-def upload_to_database(xlsx_path, logger, debug):
-    cmd = ["/usr/local/bin/python3", UPLOAD_SCRIPT, str(xlsx_path)]
+def upload_to_database(xlsx_path, logger, debug, script=UPLOAD_SCRIPT):
+    cmd = ["/usr/local/bin/python3", script, str(xlsx_path)]
     if debug:
         cmd.append("--debug")
     try:
@@ -220,32 +239,34 @@ def upload_to_database(xlsx_path, logger, debug):
         return False
 
 
-def run_report(driver, logger, date_from, date_to, timeout=300, dry_run=False, debug=False):
-    """Fetch one date range in an already logged-in session and upload it.
+def run_report(driver, logger, date_from, date_to, timeout=300, dry_run=False, debug=False,
+               spec=LIMIT_IM):
+    """Fetch one date range of one Financial security report in an already
+    logged-in session and upload it.
 
     Returns the stored XLSX path; raises RuntimeError on any failed step so
     the caller (main() or ote_portal_session.py) decides how to report it.
     """
     navigate_to_financial_security(driver, logger)
-    if not select_report(driver, logger):
-        raise RuntimeError("OTE IntradayLimit: report selection failed")
+    if not select_report(driver, logger, spec.code):
+        raise RuntimeError(f"{spec.label}: report selection failed")
     if not set_date_range(driver, logger, date_from, date_to):
-        raise RuntimeError("OTE IntradayLimit: date range not set")
+        raise RuntimeError(f"{spec.label}: date range not set")
     if not ensure_excel_export(driver, logger):
-        raise RuntimeError("OTE IntradayLimit: Excel export type not selected")
+        raise RuntimeError(f"{spec.label}: Excel export type not selected")
 
     downloaded = generate_and_download(driver, logger, timeout)
     if not downloaded:
         take_screenshot(driver, "download_timeout")
-        raise RuntimeError("OTE IntradayLimit: no XLSX arrived")
+        raise RuntimeError(f"{spec.label}: no XLSX arrived")
 
-    stored = store_file(downloaded, date_from, date_to, logger)
+    stored = store_file(downloaded, date_from, date_to, logger, spec.file_prefix)
     if dry_run:
-        logger.info(f"OTE IntradayLimit: dry run, downloaded {stored}")
-    elif upload_to_database(stored, logger, debug):
-        logger.info(f"OTE IntradayLimit: downloaded and uploaded {stored}")
+        logger.info(f"{spec.label}: dry run, downloaded {stored}")
+    elif upload_to_database(stored, logger, debug, spec.upload_script):
+        logger.info(f"{spec.label}: downloaded and uploaded {stored}")
     else:
-        raise RuntimeError("OTE IntradayLimit: download OK, upload failed")
+        raise RuntimeError(f"{spec.label}: download OK, upload failed")
     return stored
 
 

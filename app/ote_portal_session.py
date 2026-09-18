@@ -13,6 +13,8 @@ Reports (run in this order):
     intraday_limit  ote_intraday_limit_downloader.run_report
                     today's events -> ote_intraday_limit_utilization;
                     with --limit-yesterday also yesterday's (closes the day)
+    fs_trend        same page, report "Fin. security trend"
+                    -> ote_financial_security_trend; same day logic
 
 Daily payments (ote_production.py) stay separate: the settlement is
 aggregated once, in the morning for the previous day, so one 09:00 login
@@ -40,7 +42,14 @@ from ote_portal import take_screenshot
 import ote_trade_balance_downloader as trade_balance
 import ote_intraday_limit_downloader as intraday_limit
 
-ALL_REPORTS = ("trade_balance", "intraday_limit")
+ALL_REPORTS = ("trade_balance", "intraday_limit", "fs_trend")
+
+FS_TREND = intraday_limit.ReportSpec(
+    code="financial_security_trend_main",
+    file_prefix="FS_trend",
+    upload_script="/app/scripts/upload_financial_security_trend.py",
+    label="OTE FSTrend",
+)
 
 
 def run_trade_balance(driver, logger, args):
@@ -55,19 +64,31 @@ def run_trade_balance(driver, logger, args):
     logger.info(f"OTE TradeBalance: downloaded and uploaded {path}")
 
 
-def run_intraday_limit(driver, logger, args):
+def _fs_days(args):
     today = datetime.now().date()
     days = [today]
     if args.limit_yesterday:
         days.insert(0, today - timedelta(days=1))
-    for day in days:
+    return days
+
+
+def run_intraday_limit(driver, logger, args):
+    for day in _fs_days(args):
         intraday_limit.run_report(driver, logger, day, day,
                                   timeout=args.timeout, dry_run=args.dry_run, debug=args.debug)
+
+
+def run_fs_trend(driver, logger, args):
+    for day in _fs_days(args):
+        intraday_limit.run_report(driver, logger, day, day,
+                                  timeout=args.timeout, dry_run=args.dry_run, debug=args.debug,
+                                  spec=FS_TREND)
 
 
 REPORT_RUNNERS = {
     "trade_balance": run_trade_balance,
     "intraday_limit": run_intraday_limit,
+    "fs_trend": run_fs_trend,
 }
 
 
@@ -76,7 +97,7 @@ def parse_args():
     p.add_argument("--reports", default=",".join(ALL_REPORTS),
                    help=f"comma-separated subset of {','.join(ALL_REPORTS)} (default: all)")
     p.add_argument("--limit-yesterday", action="store_true",
-                   help="intraday_limit: also fetch yesterday's events (closing the day)")
+                   help="intraday_limit and fs_trend: also fetch yesterday's events (closing the day)")
     p.add_argument("--timeout", type=int, default=300,
                    help="seconds to wait for a generated report file")
     p.add_argument("--dry-run", action="store_true", help="download only, skip DB uploads")
