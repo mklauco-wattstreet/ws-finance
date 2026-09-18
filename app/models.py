@@ -297,6 +297,40 @@ class OteIntradayLimitUtilization(Base):
     updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
 
 
+class OteFinancialSecurityTrend(Base):
+    """OTE portal "Fin. security trend" - ledger of the participant's overall
+    financial security (migration 081). One event (event_timestamp + trade_id)
+    spans several rows, one per utilization bucket; each carries that bucket's
+    change and a snapshot of every limit after it. Whole-second Europe/Prague
+    wall-clock timestamps.
+    """
+    __tablename__ = 'ote_financial_security_trend'
+    __table_args__ = (
+        PrimaryKeyConstraint('id', name='ote_financial_security_trend_pkey'),
+        UniqueConstraint('event_timestamp', 'utilization_type', 'trade_id',
+                         name='ote_financial_security_trend_event_type_trade_key'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(Integer, autoincrement=True)
+    event_timestamp: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    utilization_type: Mapped[str] = mapped_column(String(10), nullable=False)
+    trade_type: Mapped[str] = mapped_column(String(10), nullable=False)
+    trade_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    delivery_date: Mapped[Optional[date]] = mapped_column(Date)
+    trade_price: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 2))
+    trade_currency: Mapped[Optional[str]] = mapped_column(String(3))
+    utilization_czk: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 2))
+    total_utilization_by_type_czk: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 2))
+    total_utilization_czk: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 2))
+    static_limit_czk: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 2))
+    dynamic_limit_czk: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 2))
+    total_limit_czk: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 2))
+    free_resources_czk: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 2))
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+
+
 class EntsoeLoad(Base):
     """ENTSO-E load data (actual and forecast, 15-minute intervals).
 
