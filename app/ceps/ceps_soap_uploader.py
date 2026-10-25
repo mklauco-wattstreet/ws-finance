@@ -5,12 +5,17 @@ CEPS SOAP Data Uploader
 Uploads parsed XML data to PostgreSQL with UPSERT logic.
 Uses INSERT ... ON CONFLICT DO UPDATE for safe backfills.
 Aggregates 1-minute data to 15-minute intervals.
+
+Every table is keyed on delivery_datetime (UTC instant); trade_date,
+time_interval and the 1-min delivery_timestamp are local descriptive values
+(see ceps/ceps_time.py). Affected intervals are passed around as sets of UTC
+quarter-hour starts.
 """
 
 import sys
 from pathlib import Path
-from datetime import datetime
-from typing import List, Dict, Set
+from datetime import datetime, timedelta
+from typing import List, Dict, Sequence, Set, Tuple
 import psycopg2
 from psycopg2.extras import execute_values
 
@@ -18,320 +23,168 @@ from psycopg2.extras import execute_values
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from config import DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT
+from ceps.ceps_time import (
+    affected_quarters, bucket_start_sql, instant_window, local_date_sql,
+    local_dates, local_label_sql, local_window,
+)
 from ceps.preprocess_ceps_data import aggregate_1min_features, aggregate_derived_features
+from dst_calendar import PRAGUE_TZ, local_label
+
+# (1-min source column, 15-min mean column, 15-min median column, 15-min last column)
+AggColumns = Sequence[Tuple[str, str, str, str]]
+
+IMBALANCE_COLUMNS: AggColumns = [
+    ('system_imbalance_mw', 'system_imbalance_mean_mw', 'system_imbalance_median_mw',
+     'system_imbalance_last_mw'),
+]
+RE_PRICE_COLUMNS: AggColumns = [
+    (f'price_{p}_eur_mwh', f'price_{p}_mean_eur_mwh', f'price_{p}_median_eur_mwh',
+     f'price_{p}_last_at_interval_eur_mwh')
+    for p in ('afrr_plus', 'afrr_minus', 'mfrr_plus', 'mfrr_minus', 'mfrr_5')
+]
+SVR_ACTIVATION_COLUMNS: AggColumns = [
+    (f'{p}_mw', f'{p}_mean_mw', f'{p}_median_mw', f'{p}_last_at_interval_mw')
+    for p in ('afrr_plus', 'afrr_minus', 'mfrr_plus', 'mfrr_minus', 'mfrr_5')
+]
+EXPORT_IMPORT_SVR_COLUMNS: AggColumns = [
+    (f'{p}_mw', f'{p}_mean_mw', f'{p}_median_mw', f'{p}_last_at_interval_mw')
+    for p in ('imbalance_netting', 'mari_mfrr', 'picasso_afrr')
+] + [
+    ('sum_exchange_european_platforms_mw', 'sum_exchange_mean_mw', 'sum_exchange_median_mw',
+     'sum_exchange_last_at_interval_mw'),
+]
+GENERATION_RES_COLUMNS: AggColumns = [
+    (f'{p}_mw', f'{p}_mean_mw', f'{p}_median_mw', f'{p}_last_at_interval_mw')
+    for p in ('wind', 'solar')
+]
 
 
-def get_affected_intervals(records: List[Dict]) -> Set[tuple]:
+def get_affected_intervals(records: List[Dict]) -> Set[datetime]:
+    """UTC starts of the 15-min intervals that need re-aggregation."""
+    return affected_quarters(records)
+
+
+def _aggregate_1min_to_15min(table_1min: str, table_15min: str, columns: AggColumns,
+                             affected_intervals: Set[datetime], conn,
+                             last_order: str = 'delivery_datetime') -> int:
+    """Aggregate a 1-min table into its 15-min table for the affected intervals.
+
+    Buckets on the UTC instant, so the two passes of the fall-back hour stay
+    separate. mean / median / last value per source column; the last value is
+    taken by `last_order` DESC.
     """
-    Get unique (trade_date, time_interval) pairs from records.
-    Used to determine which 15min intervals need re-aggregation.
-    Time interval format: "HH:MM-HH:MM" (e.g., "14:00-14:15")
-    """
-    intervals = set()
-    for r in records:
-        ts = r['delivery_timestamp']
-        trade_date = ts.strftime('%Y-%m-%d')
-        interval_minute = (ts.minute // 15) * 15
-        next_minute = (interval_minute + 15) % 60
-        next_hour = ts.hour + (1 if interval_minute == 45 else 0)
-        if next_hour == 24:
-            next_hour = 0
-        time_interval = f"{ts.hour:02d}:{interval_minute:02d}-{next_hour:02d}:{next_minute:02d}"
-        intervals.add((trade_date, time_interval))
-    return intervals
-
-
-def aggregate_imbalance_15min(affected_intervals: Set[tuple], conn, logger) -> int:
-    """Aggregate imbalance data for affected 15-minute intervals."""
     if not affected_intervals:
         return 0
 
-    dates = sorted(set(d for d, _ in affected_intervals))
-    min_date, max_date = dates[0], dates[-1]
+    lo_utc, hi_utc = instant_window(affected_intervals)
+    lo_local, hi_local = local_window(lo_utc, hi_utc)
 
-    query = """
+    targets = [c for _src, *aggs in columns for c in aggs]
+    selects = []
+    for src, mean_col, median_col, last_col in columns:
+        selects += [
+            f"AVG({src})",
+            f"PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY {src})",
+            f"(ARRAY_AGG({src} ORDER BY {last_order} DESC))[1]",
+        ]
+    updates = ",\n            ".join(f"{c} = EXCLUDED.{c}" for c in targets)
+    changed = "\n           OR ".join(
+        f"finance.{table_15min}.{c} IS DISTINCT FROM EXCLUDED.{c}" for c in targets + ['time_interval']
+    )
+
+    query = f"""
         WITH interval_data AS (
             SELECT
-                delivery_timestamp::date AS trade_date,
-                DATE_TRUNC('hour', delivery_timestamp) +
-                    INTERVAL '15 minutes' * FLOOR(EXTRACT(MINUTE FROM delivery_timestamp) / 15) AS interval_start,
-                system_imbalance_mw
-            FROM finance.ceps_actual_imbalance_1min
-            WHERE delivery_timestamp >= %s AND delivery_timestamp < %s::date + INTERVAL '1 day'
+                {bucket_start_sql()} AS interval_start,
+                delivery_datetime,
+                {", ".join(src for src, *_ in columns)}
+            FROM finance.{table_1min}
+            WHERE delivery_timestamp >= %s AND delivery_timestamp < %s
+              AND delivery_datetime >= %s AND delivery_datetime < %s
         )
-        INSERT INTO finance.ceps_actual_imbalance_15min
-            (trade_date, time_interval, system_imbalance_mean_mw, system_imbalance_median_mw, system_imbalance_last_mw)
+        INSERT INTO finance.{table_15min}
+            (trade_date, time_interval, delivery_datetime, {", ".join(targets)})
         SELECT
-            trade_date,
-            TO_CHAR(interval_start, 'HH24:MI') || '-' || TO_CHAR(interval_start + INTERVAL '15 minutes', 'HH24:MI') AS time_interval,
-            AVG(system_imbalance_mw),
-            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY system_imbalance_mw),
-            (ARRAY_AGG(system_imbalance_mw ORDER BY interval_start DESC))[1]
+            {local_date_sql('interval_start')},
+            {local_label_sql('interval_start')},
+            interval_start,
+            {", ".join(selects)}
         FROM interval_data
-        WHERE (trade_date, TO_CHAR(interval_start, 'HH24:MI') || '-' || TO_CHAR(interval_start + INTERVAL '15 minutes', 'HH24:MI')) IN %s
-        GROUP BY trade_date, interval_start
-        ON CONFLICT (trade_date, time_interval) DO UPDATE SET
-            system_imbalance_mean_mw = EXCLUDED.system_imbalance_mean_mw,
-            system_imbalance_median_mw = EXCLUDED.system_imbalance_median_mw,
-            system_imbalance_last_mw = EXCLUDED.system_imbalance_last_mw,
+        WHERE interval_start = ANY(%s)
+        GROUP BY interval_start
+        ON CONFLICT (delivery_datetime, trade_date) DO UPDATE SET
+            time_interval = EXCLUDED.time_interval,
+            {updates},
             updated_at = CURRENT_TIMESTAMP
-        WHERE finance.ceps_actual_imbalance_15min.system_imbalance_mean_mw IS DISTINCT FROM EXCLUDED.system_imbalance_mean_mw
-           OR finance.ceps_actual_imbalance_15min.system_imbalance_median_mw IS DISTINCT FROM EXCLUDED.system_imbalance_median_mw
-           OR finance.ceps_actual_imbalance_15min.system_imbalance_last_mw IS DISTINCT FROM EXCLUDED.system_imbalance_last_mw
+        WHERE {changed}
     """
 
     with conn.cursor() as cur:
-        cur.execute(query, (min_date, max_date, tuple(affected_intervals)))
+        cur.execute(query, (lo_local, hi_local, lo_utc, hi_utc, list(affected_intervals)))
         rows = cur.rowcount
         conn.commit()
 
     return rows
 
 
-def aggregate_re_price_15min(affected_intervals: Set[tuple], conn, logger) -> int:
+def aggregate_imbalance_15min(affected_intervals: Set[datetime], conn, logger) -> int:
+    """Aggregate imbalance data for affected 15-minute intervals.
+
+    system_imbalance_last_mw keeps its historical definition: ordered by the
+    interval start, which is constant within the group, so in practice it is
+    the first minute of the interval, not the last.
+    """
+    return _aggregate_1min_to_15min('ceps_actual_imbalance_1min', 'ceps_actual_imbalance_15min',
+                                    IMBALANCE_COLUMNS, affected_intervals, conn,
+                                    last_order='interval_start')
+
+
+def aggregate_re_price_15min(affected_intervals: Set[datetime], conn, logger) -> int:
     """Aggregate RE price data for affected 15-minute intervals."""
-    if not affected_intervals:
-        return 0
-
-    dates = sorted(set(d for d, _ in affected_intervals))
-    min_date, max_date = dates[0], dates[-1]
-
-    query = """
-        WITH interval_data AS (
-            SELECT
-                delivery_timestamp::date AS trade_date,
-                DATE_TRUNC('hour', delivery_timestamp) +
-                    INTERVAL '15 minutes' * FLOOR(EXTRACT(MINUTE FROM delivery_timestamp) / 15) AS interval_start,
-                delivery_timestamp,
-                price_afrr_plus_eur_mwh, price_afrr_minus_eur_mwh,
-                price_mfrr_plus_eur_mwh, price_mfrr_minus_eur_mwh, price_mfrr_5_eur_mwh
-            FROM finance.ceps_actual_re_price_1min
-            WHERE delivery_timestamp >= %s AND delivery_timestamp < %s::date + INTERVAL '1 day'
-        )
-        INSERT INTO finance.ceps_actual_re_price_15min
-            (trade_date, time_interval,
-             price_afrr_plus_mean_eur_mwh, price_afrr_minus_mean_eur_mwh,
-             price_mfrr_plus_mean_eur_mwh, price_mfrr_minus_mean_eur_mwh, price_mfrr_5_mean_eur_mwh,
-             price_afrr_plus_median_eur_mwh, price_afrr_minus_median_eur_mwh,
-             price_mfrr_plus_median_eur_mwh, price_mfrr_minus_median_eur_mwh, price_mfrr_5_median_eur_mwh,
-             price_afrr_plus_last_at_interval_eur_mwh, price_afrr_minus_last_at_interval_eur_mwh,
-             price_mfrr_plus_last_at_interval_eur_mwh, price_mfrr_minus_last_at_interval_eur_mwh, price_mfrr_5_last_at_interval_eur_mwh)
-        SELECT
-            trade_date,
-            TO_CHAR(interval_start, 'HH24:MI') || '-' || TO_CHAR(interval_start + INTERVAL '15 minutes', 'HH24:MI') AS time_interval,
-            AVG(price_afrr_plus_eur_mwh), AVG(price_afrr_minus_eur_mwh),
-            AVG(price_mfrr_plus_eur_mwh), AVG(price_mfrr_minus_eur_mwh), AVG(price_mfrr_5_eur_mwh),
-            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY price_afrr_plus_eur_mwh),
-            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY price_afrr_minus_eur_mwh),
-            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY price_mfrr_plus_eur_mwh),
-            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY price_mfrr_minus_eur_mwh),
-            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY price_mfrr_5_eur_mwh),
-            (ARRAY_AGG(price_afrr_plus_eur_mwh ORDER BY delivery_timestamp DESC))[1],
-            (ARRAY_AGG(price_afrr_minus_eur_mwh ORDER BY delivery_timestamp DESC))[1],
-            (ARRAY_AGG(price_mfrr_plus_eur_mwh ORDER BY delivery_timestamp DESC))[1],
-            (ARRAY_AGG(price_mfrr_minus_eur_mwh ORDER BY delivery_timestamp DESC))[1],
-            (ARRAY_AGG(price_mfrr_5_eur_mwh ORDER BY delivery_timestamp DESC))[1]
-        FROM interval_data
-        WHERE (trade_date, TO_CHAR(interval_start, 'HH24:MI') || '-' || TO_CHAR(interval_start + INTERVAL '15 minutes', 'HH24:MI')) IN %s
-        GROUP BY trade_date, interval_start
-        ON CONFLICT (trade_date, time_interval) DO UPDATE SET
-            price_afrr_plus_mean_eur_mwh = EXCLUDED.price_afrr_plus_mean_eur_mwh,
-            price_afrr_minus_mean_eur_mwh = EXCLUDED.price_afrr_minus_mean_eur_mwh,
-            price_mfrr_plus_mean_eur_mwh = EXCLUDED.price_mfrr_plus_mean_eur_mwh,
-            price_mfrr_minus_mean_eur_mwh = EXCLUDED.price_mfrr_minus_mean_eur_mwh,
-            price_mfrr_5_mean_eur_mwh = EXCLUDED.price_mfrr_5_mean_eur_mwh,
-            price_afrr_plus_median_eur_mwh = EXCLUDED.price_afrr_plus_median_eur_mwh,
-            price_afrr_minus_median_eur_mwh = EXCLUDED.price_afrr_minus_median_eur_mwh,
-            price_mfrr_plus_median_eur_mwh = EXCLUDED.price_mfrr_plus_median_eur_mwh,
-            price_mfrr_minus_median_eur_mwh = EXCLUDED.price_mfrr_minus_median_eur_mwh,
-            price_mfrr_5_median_eur_mwh = EXCLUDED.price_mfrr_5_median_eur_mwh,
-            price_afrr_plus_last_at_interval_eur_mwh = EXCLUDED.price_afrr_plus_last_at_interval_eur_mwh,
-            price_afrr_minus_last_at_interval_eur_mwh = EXCLUDED.price_afrr_minus_last_at_interval_eur_mwh,
-            price_mfrr_plus_last_at_interval_eur_mwh = EXCLUDED.price_mfrr_plus_last_at_interval_eur_mwh,
-            price_mfrr_minus_last_at_interval_eur_mwh = EXCLUDED.price_mfrr_minus_last_at_interval_eur_mwh,
-            price_mfrr_5_last_at_interval_eur_mwh = EXCLUDED.price_mfrr_5_last_at_interval_eur_mwh,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE finance.ceps_actual_re_price_15min.price_afrr_plus_mean_eur_mwh IS DISTINCT FROM EXCLUDED.price_afrr_plus_mean_eur_mwh
-           OR finance.ceps_actual_re_price_15min.price_afrr_minus_mean_eur_mwh IS DISTINCT FROM EXCLUDED.price_afrr_minus_mean_eur_mwh
-           OR finance.ceps_actual_re_price_15min.price_mfrr_plus_mean_eur_mwh IS DISTINCT FROM EXCLUDED.price_mfrr_plus_mean_eur_mwh
-           OR finance.ceps_actual_re_price_15min.price_mfrr_minus_mean_eur_mwh IS DISTINCT FROM EXCLUDED.price_mfrr_minus_mean_eur_mwh
-           OR finance.ceps_actual_re_price_15min.price_mfrr_5_mean_eur_mwh IS DISTINCT FROM EXCLUDED.price_mfrr_5_mean_eur_mwh
-           OR finance.ceps_actual_re_price_15min.price_afrr_plus_median_eur_mwh IS DISTINCT FROM EXCLUDED.price_afrr_plus_median_eur_mwh
-           OR finance.ceps_actual_re_price_15min.price_afrr_minus_median_eur_mwh IS DISTINCT FROM EXCLUDED.price_afrr_minus_median_eur_mwh
-           OR finance.ceps_actual_re_price_15min.price_mfrr_plus_median_eur_mwh IS DISTINCT FROM EXCLUDED.price_mfrr_plus_median_eur_mwh
-           OR finance.ceps_actual_re_price_15min.price_mfrr_minus_median_eur_mwh IS DISTINCT FROM EXCLUDED.price_mfrr_minus_median_eur_mwh
-           OR finance.ceps_actual_re_price_15min.price_mfrr_5_median_eur_mwh IS DISTINCT FROM EXCLUDED.price_mfrr_5_median_eur_mwh
-           OR finance.ceps_actual_re_price_15min.price_afrr_plus_last_at_interval_eur_mwh IS DISTINCT FROM EXCLUDED.price_afrr_plus_last_at_interval_eur_mwh
-           OR finance.ceps_actual_re_price_15min.price_afrr_minus_last_at_interval_eur_mwh IS DISTINCT FROM EXCLUDED.price_afrr_minus_last_at_interval_eur_mwh
-           OR finance.ceps_actual_re_price_15min.price_mfrr_plus_last_at_interval_eur_mwh IS DISTINCT FROM EXCLUDED.price_mfrr_plus_last_at_interval_eur_mwh
-           OR finance.ceps_actual_re_price_15min.price_mfrr_minus_last_at_interval_eur_mwh IS DISTINCT FROM EXCLUDED.price_mfrr_minus_last_at_interval_eur_mwh
-           OR finance.ceps_actual_re_price_15min.price_mfrr_5_last_at_interval_eur_mwh IS DISTINCT FROM EXCLUDED.price_mfrr_5_last_at_interval_eur_mwh
-    """
-
-    with conn.cursor() as cur:
-        cur.execute(query, (min_date, max_date, tuple(affected_intervals)))
-        rows = cur.rowcount
-        conn.commit()
-
-    return rows
+    return _aggregate_1min_to_15min('ceps_actual_re_price_1min', 'ceps_actual_re_price_15min',
+                                    RE_PRICE_COLUMNS, affected_intervals, conn)
 
 
-def aggregate_svr_activation_15min(affected_intervals: Set[tuple], conn, logger) -> int:
+def aggregate_svr_activation_15min(affected_intervals: Set[datetime], conn, logger) -> int:
     """Aggregate SVR activation data for affected 15-minute intervals."""
-    if not affected_intervals:
-        return 0
-
-    dates = sorted(set(d for d, _ in affected_intervals))
-    min_date, max_date = dates[0], dates[-1]
-
-    query = """
-        WITH interval_data AS (
-            SELECT
-                delivery_timestamp::date AS trade_date,
-                DATE_TRUNC('hour', delivery_timestamp) +
-                    INTERVAL '15 minutes' * FLOOR(EXTRACT(MINUTE FROM delivery_timestamp) / 15) AS interval_start,
-                delivery_timestamp,
-                afrr_plus_mw, afrr_minus_mw, mfrr_plus_mw, mfrr_minus_mw, mfrr_5_mw
-            FROM finance.ceps_svr_activation_1min
-            WHERE delivery_timestamp >= %s AND delivery_timestamp < %s::date + INTERVAL '1 day'
-        )
-        INSERT INTO finance.ceps_svr_activation_15min
-            (trade_date, time_interval,
-             afrr_plus_mean_mw, afrr_minus_mean_mw, mfrr_plus_mean_mw, mfrr_minus_mean_mw, mfrr_5_mean_mw,
-             afrr_plus_median_mw, afrr_minus_median_mw, mfrr_plus_median_mw, mfrr_minus_median_mw, mfrr_5_median_mw,
-             afrr_plus_last_at_interval_mw, afrr_minus_last_at_interval_mw, mfrr_plus_last_at_interval_mw, mfrr_minus_last_at_interval_mw, mfrr_5_last_at_interval_mw)
-        SELECT
-            trade_date,
-            TO_CHAR(interval_start, 'HH24:MI') || '-' || TO_CHAR(interval_start + INTERVAL '15 minutes', 'HH24:MI') AS time_interval,
-            AVG(afrr_plus_mw), AVG(afrr_minus_mw), AVG(mfrr_plus_mw), AVG(mfrr_minus_mw), AVG(mfrr_5_mw),
-            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY afrr_plus_mw),
-            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY afrr_minus_mw),
-            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY mfrr_plus_mw),
-            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY mfrr_minus_mw),
-            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY mfrr_5_mw),
-            (ARRAY_AGG(afrr_plus_mw ORDER BY delivery_timestamp DESC))[1],
-            (ARRAY_AGG(afrr_minus_mw ORDER BY delivery_timestamp DESC))[1],
-            (ARRAY_AGG(mfrr_plus_mw ORDER BY delivery_timestamp DESC))[1],
-            (ARRAY_AGG(mfrr_minus_mw ORDER BY delivery_timestamp DESC))[1],
-            (ARRAY_AGG(mfrr_5_mw ORDER BY delivery_timestamp DESC))[1]
-        FROM interval_data
-        WHERE (trade_date, TO_CHAR(interval_start, 'HH24:MI') || '-' || TO_CHAR(interval_start + INTERVAL '15 minutes', 'HH24:MI')) IN %s
-        GROUP BY trade_date, interval_start
-        ON CONFLICT (trade_date, time_interval) DO UPDATE SET
-            afrr_plus_mean_mw = EXCLUDED.afrr_plus_mean_mw,
-            afrr_minus_mean_mw = EXCLUDED.afrr_minus_mean_mw,
-            mfrr_plus_mean_mw = EXCLUDED.mfrr_plus_mean_mw,
-            mfrr_minus_mean_mw = EXCLUDED.mfrr_minus_mean_mw,
-            mfrr_5_mean_mw = EXCLUDED.mfrr_5_mean_mw,
-            afrr_plus_median_mw = EXCLUDED.afrr_plus_median_mw,
-            afrr_minus_median_mw = EXCLUDED.afrr_minus_median_mw,
-            mfrr_plus_median_mw = EXCLUDED.mfrr_plus_median_mw,
-            mfrr_minus_median_mw = EXCLUDED.mfrr_minus_median_mw,
-            mfrr_5_median_mw = EXCLUDED.mfrr_5_median_mw,
-            afrr_plus_last_at_interval_mw = EXCLUDED.afrr_plus_last_at_interval_mw,
-            afrr_minus_last_at_interval_mw = EXCLUDED.afrr_minus_last_at_interval_mw,
-            mfrr_plus_last_at_interval_mw = EXCLUDED.mfrr_plus_last_at_interval_mw,
-            mfrr_minus_last_at_interval_mw = EXCLUDED.mfrr_minus_last_at_interval_mw,
-            mfrr_5_last_at_interval_mw = EXCLUDED.mfrr_5_last_at_interval_mw,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE finance.ceps_svr_activation_15min.afrr_plus_mean_mw IS DISTINCT FROM EXCLUDED.afrr_plus_mean_mw
-           OR finance.ceps_svr_activation_15min.afrr_minus_mean_mw IS DISTINCT FROM EXCLUDED.afrr_minus_mean_mw
-           OR finance.ceps_svr_activation_15min.mfrr_plus_mean_mw IS DISTINCT FROM EXCLUDED.mfrr_plus_mean_mw
-           OR finance.ceps_svr_activation_15min.mfrr_minus_mean_mw IS DISTINCT FROM EXCLUDED.mfrr_minus_mean_mw
-           OR finance.ceps_svr_activation_15min.mfrr_5_mean_mw IS DISTINCT FROM EXCLUDED.mfrr_5_mean_mw
-           OR finance.ceps_svr_activation_15min.afrr_plus_median_mw IS DISTINCT FROM EXCLUDED.afrr_plus_median_mw
-           OR finance.ceps_svr_activation_15min.afrr_minus_median_mw IS DISTINCT FROM EXCLUDED.afrr_minus_median_mw
-           OR finance.ceps_svr_activation_15min.mfrr_plus_median_mw IS DISTINCT FROM EXCLUDED.mfrr_plus_median_mw
-           OR finance.ceps_svr_activation_15min.mfrr_minus_median_mw IS DISTINCT FROM EXCLUDED.mfrr_minus_median_mw
-           OR finance.ceps_svr_activation_15min.mfrr_5_median_mw IS DISTINCT FROM EXCLUDED.mfrr_5_median_mw
-           OR finance.ceps_svr_activation_15min.afrr_plus_last_at_interval_mw IS DISTINCT FROM EXCLUDED.afrr_plus_last_at_interval_mw
-           OR finance.ceps_svr_activation_15min.afrr_minus_last_at_interval_mw IS DISTINCT FROM EXCLUDED.afrr_minus_last_at_interval_mw
-           OR finance.ceps_svr_activation_15min.mfrr_plus_last_at_interval_mw IS DISTINCT FROM EXCLUDED.mfrr_plus_last_at_interval_mw
-           OR finance.ceps_svr_activation_15min.mfrr_minus_last_at_interval_mw IS DISTINCT FROM EXCLUDED.mfrr_minus_last_at_interval_mw
-           OR finance.ceps_svr_activation_15min.mfrr_5_last_at_interval_mw IS DISTINCT FROM EXCLUDED.mfrr_5_last_at_interval_mw
-    """
-
-    with conn.cursor() as cur:
-        cur.execute(query, (min_date, max_date, tuple(affected_intervals)))
-        rows = cur.rowcount
-        conn.commit()
-
-    return rows
+    return _aggregate_1min_to_15min('ceps_svr_activation_1min', 'ceps_svr_activation_15min',
+                                    SVR_ACTIVATION_COLUMNS, affected_intervals, conn)
 
 
-def aggregate_export_import_svr_15min(affected_intervals: Set[tuple], conn, logger) -> int:
+def aggregate_export_import_svr_15min(affected_intervals: Set[datetime], conn, logger) -> int:
     """Aggregate Export/Import SVR data for affected 15-minute intervals."""
-    if not affected_intervals:
-        return 0
+    return _aggregate_1min_to_15min('ceps_export_import_svr_1min', 'ceps_export_import_svr_15min',
+                                    EXPORT_IMPORT_SVR_COLUMNS, affected_intervals, conn)
 
-    dates = sorted(set(d for d, _ in affected_intervals))
-    min_date, max_date = dates[0], dates[-1]
 
-    query = """
-        WITH interval_data AS (
-            SELECT
-                delivery_timestamp::date AS trade_date,
-                DATE_TRUNC('hour', delivery_timestamp) +
-                    INTERVAL '15 minutes' * FLOOR(EXTRACT(MINUTE FROM delivery_timestamp) / 15) AS interval_start,
-                delivery_timestamp,
-                imbalance_netting_mw, mari_mfrr_mw, picasso_afrr_mw, sum_exchange_european_platforms_mw
-            FROM finance.ceps_export_import_svr_1min
-            WHERE delivery_timestamp >= %s AND delivery_timestamp < %s::date + INTERVAL '1 day'
-        )
-        INSERT INTO finance.ceps_export_import_svr_15min
-            (trade_date, time_interval,
-             imbalance_netting_mean_mw, mari_mfrr_mean_mw, picasso_afrr_mean_mw, sum_exchange_mean_mw,
-             imbalance_netting_median_mw, mari_mfrr_median_mw, picasso_afrr_median_mw, sum_exchange_median_mw,
-             imbalance_netting_last_at_interval_mw, mari_mfrr_last_at_interval_mw, picasso_afrr_last_at_interval_mw, sum_exchange_last_at_interval_mw)
-        SELECT
-            trade_date,
-            TO_CHAR(interval_start, 'HH24:MI') || '-' || TO_CHAR(interval_start + INTERVAL '15 minutes', 'HH24:MI') AS time_interval,
-            AVG(imbalance_netting_mw), AVG(mari_mfrr_mw), AVG(picasso_afrr_mw), AVG(sum_exchange_european_platforms_mw),
-            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY imbalance_netting_mw),
-            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY mari_mfrr_mw),
-            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY picasso_afrr_mw),
-            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY sum_exchange_european_platforms_mw),
-            (ARRAY_AGG(imbalance_netting_mw ORDER BY delivery_timestamp DESC))[1],
-            (ARRAY_AGG(mari_mfrr_mw ORDER BY delivery_timestamp DESC))[1],
-            (ARRAY_AGG(picasso_afrr_mw ORDER BY delivery_timestamp DESC))[1],
-            (ARRAY_AGG(sum_exchange_european_platforms_mw ORDER BY delivery_timestamp DESC))[1]
-        FROM interval_data
-        WHERE (trade_date, TO_CHAR(interval_start, 'HH24:MI') || '-' || TO_CHAR(interval_start + INTERVAL '15 minutes', 'HH24:MI')) IN %s
-        GROUP BY trade_date, interval_start
-        ON CONFLICT (trade_date, time_interval) DO UPDATE SET
-            imbalance_netting_mean_mw = EXCLUDED.imbalance_netting_mean_mw,
-            mari_mfrr_mean_mw = EXCLUDED.mari_mfrr_mean_mw,
-            picasso_afrr_mean_mw = EXCLUDED.picasso_afrr_mean_mw,
-            sum_exchange_mean_mw = EXCLUDED.sum_exchange_mean_mw,
-            imbalance_netting_median_mw = EXCLUDED.imbalance_netting_median_mw,
-            mari_mfrr_median_mw = EXCLUDED.mari_mfrr_median_mw,
-            picasso_afrr_median_mw = EXCLUDED.picasso_afrr_median_mw,
-            sum_exchange_median_mw = EXCLUDED.sum_exchange_median_mw,
-            imbalance_netting_last_at_interval_mw = EXCLUDED.imbalance_netting_last_at_interval_mw,
-            mari_mfrr_last_at_interval_mw = EXCLUDED.mari_mfrr_last_at_interval_mw,
-            picasso_afrr_last_at_interval_mw = EXCLUDED.picasso_afrr_last_at_interval_mw,
-            sum_exchange_last_at_interval_mw = EXCLUDED.sum_exchange_last_at_interval_mw,
+def aggregate_generation_res_15min(affected_intervals: Set[datetime], conn, logger) -> int:
+    """Aggregate Generation RES data for affected 15-minute intervals."""
+    return _aggregate_1min_to_15min('ceps_generation_res_1min', 'ceps_generation_res_15min',
+                                    GENERATION_RES_COLUMNS, affected_intervals, conn)
+
+
+def _upsert_1min(table: str, value_cols: Sequence[str], records: List[Dict], conn) -> None:
+    """Bulk upsert 1-min records keyed on (delivery_datetime, delivery_timestamp)."""
+    values = [
+        (r['delivery_datetime'], r['delivery_timestamp'], *(r[c] for c in value_cols))
+        for r in records
+    ]
+    updates = ",\n            ".join(f"{c} = EXCLUDED.{c}" for c in value_cols)
+    changed = "\n           OR ".join(
+        f"finance.{table}.{c} IS DISTINCT FROM EXCLUDED.{c}" for c in value_cols
+    )
+    query = f"""
+        INSERT INTO finance.{table} (delivery_datetime, delivery_timestamp, {", ".join(value_cols)})
+        VALUES %s
+        ON CONFLICT (delivery_datetime, delivery_timestamp)
+        DO UPDATE SET
+            {updates},
             updated_at = CURRENT_TIMESTAMP
-        WHERE finance.ceps_export_import_svr_15min.imbalance_netting_mean_mw IS DISTINCT FROM EXCLUDED.imbalance_netting_mean_mw
-           OR finance.ceps_export_import_svr_15min.mari_mfrr_mean_mw IS DISTINCT FROM EXCLUDED.mari_mfrr_mean_mw
-           OR finance.ceps_export_import_svr_15min.picasso_afrr_mean_mw IS DISTINCT FROM EXCLUDED.picasso_afrr_mean_mw
-           OR finance.ceps_export_import_svr_15min.sum_exchange_mean_mw IS DISTINCT FROM EXCLUDED.sum_exchange_mean_mw
-           OR finance.ceps_export_import_svr_15min.imbalance_netting_median_mw IS DISTINCT FROM EXCLUDED.imbalance_netting_median_mw
-           OR finance.ceps_export_import_svr_15min.mari_mfrr_median_mw IS DISTINCT FROM EXCLUDED.mari_mfrr_median_mw
-           OR finance.ceps_export_import_svr_15min.picasso_afrr_median_mw IS DISTINCT FROM EXCLUDED.picasso_afrr_median_mw
-           OR finance.ceps_export_import_svr_15min.sum_exchange_median_mw IS DISTINCT FROM EXCLUDED.sum_exchange_median_mw
-           OR finance.ceps_export_import_svr_15min.imbalance_netting_last_at_interval_mw IS DISTINCT FROM EXCLUDED.imbalance_netting_last_at_interval_mw
-           OR finance.ceps_export_import_svr_15min.mari_mfrr_last_at_interval_mw IS DISTINCT FROM EXCLUDED.mari_mfrr_last_at_interval_mw
-           OR finance.ceps_export_import_svr_15min.picasso_afrr_last_at_interval_mw IS DISTINCT FROM EXCLUDED.picasso_afrr_last_at_interval_mw
-           OR finance.ceps_export_import_svr_15min.sum_exchange_last_at_interval_mw IS DISTINCT FROM EXCLUDED.sum_exchange_last_at_interval_mw
+        WHERE {changed}
     """
-
     with conn.cursor() as cur:
-        cur.execute(query, (min_date, max_date, tuple(affected_intervals)))
-        rows = cur.rowcount
+        execute_values(cur, query, values)
         conn.commit()
-
-    return rows
 
 
 def upsert_imbalance_data(records: List[Dict], conn, logger) -> int:
@@ -342,21 +195,7 @@ def upsert_imbalance_data(records: List[Dict], conn, logger) -> int:
     # Get affected intervals before insert
     affected_intervals = get_affected_intervals(records)
 
-    # Prepare data for bulk insert
-    values = [(r['delivery_timestamp'], r['system_imbalance_mw']) for r in records]
-
-    query_1min = """
-        INSERT INTO finance.ceps_actual_imbalance_1min (delivery_timestamp, system_imbalance_mw)
-        VALUES %s
-        ON CONFLICT (delivery_timestamp)
-        DO UPDATE SET system_imbalance_mw = EXCLUDED.system_imbalance_mw, updated_at = CURRENT_TIMESTAMP
-        WHERE finance.ceps_actual_imbalance_1min.system_imbalance_mw IS DISTINCT FROM EXCLUDED.system_imbalance_mw
-    """
-
-    with conn.cursor() as cur:
-        execute_values(cur, query_1min, values)
-        conn.commit()
-
+    _upsert_1min('ceps_actual_imbalance_1min', ['system_imbalance_mw'], records, conn)
     logger.debug(f"  Upserted {len(records):,} to ceps_actual_imbalance_1min")
 
     # Aggregate affected intervals
@@ -381,36 +220,7 @@ def upsert_re_price_data(records: List[Dict], conn, logger) -> int:
 
     affected_intervals = get_affected_intervals(records)
 
-    values = [
-        (r['delivery_timestamp'], r['price_afrr_plus_eur_mwh'], r['price_afrr_minus_eur_mwh'],
-         r['price_mfrr_plus_eur_mwh'], r['price_mfrr_minus_eur_mwh'], r['price_mfrr_5_eur_mwh'])
-        for r in records
-    ]
-
-    query_1min = """
-        INSERT INTO finance.ceps_actual_re_price_1min
-            (delivery_timestamp, price_afrr_plus_eur_mwh, price_afrr_minus_eur_mwh,
-             price_mfrr_plus_eur_mwh, price_mfrr_minus_eur_mwh, price_mfrr_5_eur_mwh)
-        VALUES %s
-        ON CONFLICT (delivery_timestamp)
-        DO UPDATE SET
-            price_afrr_plus_eur_mwh = EXCLUDED.price_afrr_plus_eur_mwh,
-            price_afrr_minus_eur_mwh = EXCLUDED.price_afrr_minus_eur_mwh,
-            price_mfrr_plus_eur_mwh = EXCLUDED.price_mfrr_plus_eur_mwh,
-            price_mfrr_minus_eur_mwh = EXCLUDED.price_mfrr_minus_eur_mwh,
-            price_mfrr_5_eur_mwh = EXCLUDED.price_mfrr_5_eur_mwh,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE finance.ceps_actual_re_price_1min.price_afrr_plus_eur_mwh IS DISTINCT FROM EXCLUDED.price_afrr_plus_eur_mwh
-           OR finance.ceps_actual_re_price_1min.price_afrr_minus_eur_mwh IS DISTINCT FROM EXCLUDED.price_afrr_minus_eur_mwh
-           OR finance.ceps_actual_re_price_1min.price_mfrr_plus_eur_mwh IS DISTINCT FROM EXCLUDED.price_mfrr_plus_eur_mwh
-           OR finance.ceps_actual_re_price_1min.price_mfrr_minus_eur_mwh IS DISTINCT FROM EXCLUDED.price_mfrr_minus_eur_mwh
-           OR finance.ceps_actual_re_price_1min.price_mfrr_5_eur_mwh IS DISTINCT FROM EXCLUDED.price_mfrr_5_eur_mwh
-    """
-
-    with conn.cursor() as cur:
-        execute_values(cur, query_1min, values)
-        conn.commit()
-
+    _upsert_1min('ceps_actual_re_price_1min', [src for src, *_ in RE_PRICE_COLUMNS], records, conn)
     logger.debug(f" Upserted {len(records):,} records to ceps_actual_re_price_1min")
 
     agg_count = aggregate_re_price_15min(affected_intervals, conn, logger)
@@ -430,35 +240,7 @@ def upsert_svr_activation_data(records: List[Dict], conn, logger) -> int:
 
     affected_intervals = get_affected_intervals(records)
 
-    values = [
-        (r['delivery_timestamp'], r['afrr_plus_mw'], r['afrr_minus_mw'],
-         r['mfrr_plus_mw'], r['mfrr_minus_mw'], r['mfrr_5_mw'])
-        for r in records
-    ]
-
-    query_1min = """
-        INSERT INTO finance.ceps_svr_activation_1min
-            (delivery_timestamp, afrr_plus_mw, afrr_minus_mw, mfrr_plus_mw, mfrr_minus_mw, mfrr_5_mw)
-        VALUES %s
-        ON CONFLICT (delivery_timestamp)
-        DO UPDATE SET
-            afrr_plus_mw = EXCLUDED.afrr_plus_mw,
-            afrr_minus_mw = EXCLUDED.afrr_minus_mw,
-            mfrr_plus_mw = EXCLUDED.mfrr_plus_mw,
-            mfrr_minus_mw = EXCLUDED.mfrr_minus_mw,
-            mfrr_5_mw = EXCLUDED.mfrr_5_mw,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE finance.ceps_svr_activation_1min.afrr_plus_mw IS DISTINCT FROM EXCLUDED.afrr_plus_mw
-           OR finance.ceps_svr_activation_1min.afrr_minus_mw IS DISTINCT FROM EXCLUDED.afrr_minus_mw
-           OR finance.ceps_svr_activation_1min.mfrr_plus_mw IS DISTINCT FROM EXCLUDED.mfrr_plus_mw
-           OR finance.ceps_svr_activation_1min.mfrr_minus_mw IS DISTINCT FROM EXCLUDED.mfrr_minus_mw
-           OR finance.ceps_svr_activation_1min.mfrr_5_mw IS DISTINCT FROM EXCLUDED.mfrr_5_mw
-    """
-
-    with conn.cursor() as cur:
-        execute_values(cur, query_1min, values)
-        conn.commit()
-
+    _upsert_1min('ceps_svr_activation_1min', [src for src, *_ in SVR_ACTIVATION_COLUMNS], records, conn)
     logger.debug(f" Upserted {len(records):,} records to ceps_svr_activation_1min")
 
     agg_count = aggregate_svr_activation_15min(affected_intervals, conn, logger)
@@ -478,34 +260,8 @@ def upsert_export_import_svr_data(records: List[Dict], conn, logger) -> int:
 
     affected_intervals = get_affected_intervals(records)
 
-    values = [
-        (r['delivery_timestamp'], r['imbalance_netting_mw'], r['mari_mfrr_mw'],
-         r['picasso_afrr_mw'], r['sum_exchange_european_platforms_mw'])
-        for r in records
-    ]
-
-    query_1min = """
-        INSERT INTO finance.ceps_export_import_svr_1min
-            (delivery_timestamp, imbalance_netting_mw, mari_mfrr_mw,
-             picasso_afrr_mw, sum_exchange_european_platforms_mw)
-        VALUES %s
-        ON CONFLICT (delivery_timestamp)
-        DO UPDATE SET
-            imbalance_netting_mw = EXCLUDED.imbalance_netting_mw,
-            mari_mfrr_mw = EXCLUDED.mari_mfrr_mw,
-            picasso_afrr_mw = EXCLUDED.picasso_afrr_mw,
-            sum_exchange_european_platforms_mw = EXCLUDED.sum_exchange_european_platforms_mw,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE finance.ceps_export_import_svr_1min.imbalance_netting_mw IS DISTINCT FROM EXCLUDED.imbalance_netting_mw
-           OR finance.ceps_export_import_svr_1min.mari_mfrr_mw IS DISTINCT FROM EXCLUDED.mari_mfrr_mw
-           OR finance.ceps_export_import_svr_1min.picasso_afrr_mw IS DISTINCT FROM EXCLUDED.picasso_afrr_mw
-           OR finance.ceps_export_import_svr_1min.sum_exchange_european_platforms_mw IS DISTINCT FROM EXCLUDED.sum_exchange_european_platforms_mw
-    """
-
-    with conn.cursor() as cur:
-        execute_values(cur, query_1min, values)
-        conn.commit()
-
+    _upsert_1min('ceps_export_import_svr_1min', [src for src, *_ in EXPORT_IMPORT_SVR_COLUMNS],
+                 records, conn)
     logger.debug(f" Upserted {len(records):,} records to ceps_export_import_svr_1min")
 
     agg_count = aggregate_export_import_svr_15min(affected_intervals, conn, logger)
@@ -518,63 +274,6 @@ def upsert_export_import_svr_data(records: List[Dict], conn, logger) -> int:
     return len(records)
 
 
-def aggregate_generation_res_15min(affected_intervals: Set[tuple], conn, logger) -> int:
-    """Aggregate Generation RES data for affected 15-minute intervals."""
-    if not affected_intervals:
-        return 0
-
-    dates = sorted(set(d for d, _ in affected_intervals))
-    min_date, max_date = dates[0], dates[-1]
-
-    query = """
-        WITH interval_data AS (
-            SELECT
-                delivery_timestamp::date AS trade_date,
-                DATE_TRUNC('hour', delivery_timestamp) +
-                    INTERVAL '15 minutes' * FLOOR(EXTRACT(MINUTE FROM delivery_timestamp) / 15) AS interval_start,
-                delivery_timestamp,
-                wind_mw, solar_mw
-            FROM finance.ceps_generation_res_1min
-            WHERE delivery_timestamp >= %s AND delivery_timestamp < %s::date + INTERVAL '1 day'
-        )
-        INSERT INTO finance.ceps_generation_res_15min
-            (trade_date, time_interval,
-             wind_mean_mw, wind_median_mw, wind_last_at_interval_mw,
-             solar_mean_mw, solar_median_mw, solar_last_at_interval_mw)
-        SELECT
-            trade_date,
-            TO_CHAR(interval_start, 'HH24:MI') || '-' || TO_CHAR(interval_start + INTERVAL '15 minutes', 'HH24:MI') AS time_interval,
-            AVG(wind_mw), PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY wind_mw),
-            (ARRAY_AGG(wind_mw ORDER BY delivery_timestamp DESC))[1],
-            AVG(solar_mw), PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY solar_mw),
-            (ARRAY_AGG(solar_mw ORDER BY delivery_timestamp DESC))[1]
-        FROM interval_data
-        WHERE (trade_date, TO_CHAR(interval_start, 'HH24:MI') || '-' || TO_CHAR(interval_start + INTERVAL '15 minutes', 'HH24:MI')) IN %s
-        GROUP BY trade_date, interval_start
-        ON CONFLICT (trade_date, time_interval) DO UPDATE SET
-            wind_mean_mw = EXCLUDED.wind_mean_mw,
-            wind_median_mw = EXCLUDED.wind_median_mw,
-            wind_last_at_interval_mw = EXCLUDED.wind_last_at_interval_mw,
-            solar_mean_mw = EXCLUDED.solar_mean_mw,
-            solar_median_mw = EXCLUDED.solar_median_mw,
-            solar_last_at_interval_mw = EXCLUDED.solar_last_at_interval_mw,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE finance.ceps_generation_res_15min.wind_mean_mw IS DISTINCT FROM EXCLUDED.wind_mean_mw
-           OR finance.ceps_generation_res_15min.wind_median_mw IS DISTINCT FROM EXCLUDED.wind_median_mw
-           OR finance.ceps_generation_res_15min.wind_last_at_interval_mw IS DISTINCT FROM EXCLUDED.wind_last_at_interval_mw
-           OR finance.ceps_generation_res_15min.solar_mean_mw IS DISTINCT FROM EXCLUDED.solar_mean_mw
-           OR finance.ceps_generation_res_15min.solar_median_mw IS DISTINCT FROM EXCLUDED.solar_median_mw
-           OR finance.ceps_generation_res_15min.solar_last_at_interval_mw IS DISTINCT FROM EXCLUDED.solar_last_at_interval_mw
-    """
-
-    with conn.cursor() as cur:
-        cur.execute(query, (min_date, max_date, tuple(affected_intervals)))
-        rows = cur.rowcount
-        conn.commit()
-
-    return rows
-
-
 def upsert_generation_res_data(records: List[Dict], conn, logger) -> int:
     """Upload Generation RES data with UPSERT logic and aggregate to 15min."""
     if not records:
@@ -582,28 +281,7 @@ def upsert_generation_res_data(records: List[Dict], conn, logger) -> int:
 
     affected_intervals = get_affected_intervals(records)
 
-    values = [
-        (r['delivery_timestamp'], r['wind_mw'], r['solar_mw'])
-        for r in records
-    ]
-
-    query_1min = """
-        INSERT INTO finance.ceps_generation_res_1min
-            (delivery_timestamp, wind_mw, solar_mw)
-        VALUES %s
-        ON CONFLICT (delivery_timestamp)
-        DO UPDATE SET
-            wind_mw = EXCLUDED.wind_mw,
-            solar_mw = EXCLUDED.solar_mw,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE finance.ceps_generation_res_1min.wind_mw IS DISTINCT FROM EXCLUDED.wind_mw
-           OR finance.ceps_generation_res_1min.solar_mw IS DISTINCT FROM EXCLUDED.solar_mw
-    """
-
-    with conn.cursor() as cur:
-        execute_values(cur, query_1min, values)
-        conn.commit()
-
+    _upsert_1min('ceps_generation_res_1min', [src for src, *_ in GENERATION_RES_COLUMNS], records, conn)
     logger.debug(f" Upserted {len(records):,} records to ceps_generation_res_1min")
 
     agg_count = aggregate_generation_res_15min(affected_intervals, conn, logger)
@@ -618,17 +296,37 @@ def upsert_generation_res_data(records: List[Dict], conn, logger) -> int:
 
 def get_15min_interval(ts: datetime) -> tuple:
     """
-    Convert timestamp to (trade_date, time_interval) for native 15-min data.
-    Time interval format: "HH:MM-HH:MM" (e.g., "14:00-14:15")
+    Convert an aware timestamp to (trade_date, time_interval) for native 15-min data.
+    Both are local Prague values; time_interval is "HH:MM-HH:MM" (e.g., "14:00-14:15").
     """
-    trade_date = ts.strftime('%Y-%m-%d')
-    interval_minute = (ts.minute // 15) * 15
-    next_minute = (interval_minute + 15) % 60
-    next_hour = ts.hour + (1 if interval_minute == 45 else 0)
-    if next_hour == 24:
-        next_hour = 0
-    time_interval = f"{ts.hour:02d}:{interval_minute:02d}-{next_hour:02d}:{next_minute:02d}"
-    return (trade_date, time_interval)
+    start = ts.astimezone(PRAGUE_TZ)
+    return (start.strftime('%Y-%m-%d'), local_label(ts, 15, midnight='00:00'))
+
+
+def _upsert_native_15min(table: str, value_cols: Sequence[str], records: List[Dict], conn) -> None:
+    """Bulk upsert native 15-min records keyed on (delivery_datetime, trade_date)."""
+    values = []
+    for r in records:
+        trade_date, time_interval = get_15min_interval(r['delivery_datetime'])
+        values.append((trade_date, time_interval, r['delivery_datetime'], *(r[c] for c in value_cols)))
+    updates = ",\n            ".join(f"{c} = EXCLUDED.{c}" for c in value_cols)
+    changed = "\n           OR ".join(
+        f"finance.{table}.{c} IS DISTINCT FROM EXCLUDED.{c}" for c in list(value_cols) + ['time_interval']
+    )
+    query = f"""
+        INSERT INTO finance.{table}
+            (trade_date, time_interval, delivery_datetime, {", ".join(value_cols)})
+        VALUES %s
+        ON CONFLICT (delivery_datetime, trade_date)
+        DO UPDATE SET
+            time_interval = EXCLUDED.time_interval,
+            {updates},
+            updated_at = CURRENT_TIMESTAMP
+        WHERE {changed}
+    """
+    with conn.cursor() as cur:
+        execute_values(cur, query, values)
+        conn.commit()
 
 
 def upsert_generation_data(records: List[Dict], conn, logger) -> int:
@@ -639,51 +337,14 @@ def upsert_generation_data(records: List[Dict], conn, logger) -> int:
     if not records:
         return 0
 
-    values = []
-    for r in records:
-        trade_date, time_interval = get_15min_interval(r['delivery_timestamp'])
-        values.append((
-            trade_date, time_interval,
-            r['tpp_mw'], r['ccgt_mw'], r['npp_mw'], r['hpp_mw'],
-            r['pspp_mw'], r['altpp_mw'], r['appp_mw'], r['wpp_mw'], r['pvpp_mw']
-        ))
-
-    query = """
-        INSERT INTO finance.ceps_generation_15min
-            (trade_date, time_interval, tpp_mw, ccgt_mw, npp_mw, hpp_mw,
-             pspp_mw, altpp_mw, appp_mw, wpp_mw, pvpp_mw)
-        VALUES %s
-        ON CONFLICT (trade_date, time_interval)
-        DO UPDATE SET
-            tpp_mw = EXCLUDED.tpp_mw,
-            ccgt_mw = EXCLUDED.ccgt_mw,
-            npp_mw = EXCLUDED.npp_mw,
-            hpp_mw = EXCLUDED.hpp_mw,
-            pspp_mw = EXCLUDED.pspp_mw,
-            altpp_mw = EXCLUDED.altpp_mw,
-            appp_mw = EXCLUDED.appp_mw,
-            wpp_mw = EXCLUDED.wpp_mw,
-            pvpp_mw = EXCLUDED.pvpp_mw,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE finance.ceps_generation_15min.tpp_mw IS DISTINCT FROM EXCLUDED.tpp_mw
-           OR finance.ceps_generation_15min.ccgt_mw IS DISTINCT FROM EXCLUDED.ccgt_mw
-           OR finance.ceps_generation_15min.npp_mw IS DISTINCT FROM EXCLUDED.npp_mw
-           OR finance.ceps_generation_15min.hpp_mw IS DISTINCT FROM EXCLUDED.hpp_mw
-           OR finance.ceps_generation_15min.pspp_mw IS DISTINCT FROM EXCLUDED.pspp_mw
-           OR finance.ceps_generation_15min.altpp_mw IS DISTINCT FROM EXCLUDED.altpp_mw
-           OR finance.ceps_generation_15min.appp_mw IS DISTINCT FROM EXCLUDED.appp_mw
-           OR finance.ceps_generation_15min.wpp_mw IS DISTINCT FROM EXCLUDED.wpp_mw
-           OR finance.ceps_generation_15min.pvpp_mw IS DISTINCT FROM EXCLUDED.pvpp_mw
-    """
-
-    with conn.cursor() as cur:
-        execute_values(cur, query, values)
-        conn.commit()
-
+    _upsert_native_15min(
+        'ceps_generation_15min',
+        ['tpp_mw', 'ccgt_mw', 'npp_mw', 'hpp_mw', 'pspp_mw', 'altpp_mw', 'appp_mw', 'wpp_mw', 'pvpp_mw'],
+        records, conn,
+    )
     logger.debug(f" Upserted {len(records):,} records to ceps_generation_15min")
 
-    affected_intervals = set(get_15min_interval(r['delivery_timestamp']) for r in records)
-    derived_count = aggregate_derived_features(affected_intervals, conn, logger)
+    derived_count = aggregate_derived_features(get_affected_intervals(records), conn, logger)
     if derived_count:
         logger.debug(f" Computed {derived_count:,} derived feature intervals")
 
@@ -698,30 +359,10 @@ def upsert_generation_plan_data(records: List[Dict], conn, logger) -> int:
     if not records:
         return 0
 
-    values = []
-    for r in records:
-        trade_date, time_interval = get_15min_interval(r['delivery_timestamp'])
-        values.append((trade_date, time_interval, r['total_mw']))
-
-    query = """
-        INSERT INTO finance.ceps_generation_plan_15min
-            (trade_date, time_interval, total_mw)
-        VALUES %s
-        ON CONFLICT (trade_date, time_interval)
-        DO UPDATE SET
-            total_mw = EXCLUDED.total_mw,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE finance.ceps_generation_plan_15min.total_mw IS DISTINCT FROM EXCLUDED.total_mw
-    """
-
-    with conn.cursor() as cur:
-        execute_values(cur, query, values)
-        conn.commit()
-
+    _upsert_native_15min('ceps_generation_plan_15min', ['total_mw'], records, conn)
     logger.debug(f" Upserted {len(records):,} records to ceps_generation_plan_15min")
 
-    affected_intervals = set(get_15min_interval(r['delivery_timestamp']) for r in records)
-    derived_count = aggregate_derived_features(affected_intervals, conn, logger)
+    derived_count = aggregate_derived_features(get_affected_intervals(records), conn, logger)
     if derived_count:
         logger.debug(f" Computed {derived_count:,} derived feature intervals")
 
@@ -734,7 +375,8 @@ def upsert_estimated_imbalance_price_data(records: List[Dict], conn, logger) -> 
     Native 15-min data - no aggregation needed.
 
     This dataset uses trade_date and time_interval directly from the parser
-    (unique structure compared to other datasets).
+    (unique structure compared to other datasets); the parser resolves each
+    label to its delivery_datetime.
 
     CEPS publishes the last period's price as 0.00 as a temporary placeholder.
     This disrupts statistics, so we replace the trailing 0.00 per day with NULL.
@@ -746,20 +388,19 @@ def upsert_estimated_imbalance_price_data(records: List[Dict], conn, logger) -> 
 
     values = []
     for r in records:
-        values.append((r['trade_date'], r['time_interval'], r['estimated_price_czk_mwh']))
+        values.append([r['trade_date'], r['time_interval'], r['delivery_datetime'],
+                       r['estimated_price_czk_mwh']])
 
     # Null-out the last period's 0.00 per trade_date (temporary placeholder from CEPS)
-    # Group by trade_date, find the last record, replace 0.00 with None
-    from collections import OrderedDict
-    by_date = OrderedDict()
-    for i, (td, ti, price) in enumerate(values):
-        by_date.setdefault(td, []).append(i)
+    last_by_date = {}
+    for v in values:
+        if v[0] not in last_by_date or v[2] > last_by_date[v[0]][2]:
+            last_by_date[v[0]] = v
 
     nullified = 0
-    for td, indices in by_date.items():
-        last_idx = indices[-1]
-        if values[last_idx][2] == 0.0:
-            values[last_idx] = (values[last_idx][0], values[last_idx][1], None)
+    for v in last_by_date.values():
+        if v[3] == 0.0:
+            v[3] = None
             nullified += 1
 
     if nullified:
@@ -767,28 +408,29 @@ def upsert_estimated_imbalance_price_data(records: List[Dict], conn, logger) -> 
 
     query = """
         INSERT INTO finance.ceps_estimated_imbalance_price_15min
-            (trade_date, time_interval, estimated_price_czk_mwh)
+            (trade_date, time_interval, delivery_datetime, estimated_price_czk_mwh)
         VALUES %s
-        ON CONFLICT (trade_date, time_interval)
+        ON CONFLICT (delivery_datetime, trade_date)
         DO UPDATE SET
+            time_interval = EXCLUDED.time_interval,
             estimated_price_czk_mwh = EXCLUDED.estimated_price_czk_mwh,
             updated_at = CURRENT_TIMESTAMP
         WHERE finance.ceps_estimated_imbalance_price_15min.estimated_price_czk_mwh
               IS DISTINCT FROM EXCLUDED.estimated_price_czk_mwh
+           OR finance.ceps_estimated_imbalance_price_15min.time_interval
+              IS DISTINCT FROM EXCLUDED.time_interval
     """
 
     with conn.cursor() as cur:
-        execute_values(cur, query, values)
+        execute_values(cur, query, [tuple(v) for v in values])
         conn.commit()
 
     logger.debug(f" Upserted {len(records):,} records to ceps_estimated_imbalance_price_15min")
 
     # Compute 60-min averages for affected hours
-    affected_hours = set()
-    for td, ti, _ in values:
-        hour = ti[:2]  # extract "HH" from "HH:MM-HH:MM"
-        affected_hours.add((td, hour))
-
+    affected_hours = {
+        v[2].replace(minute=0, second=0, microsecond=0) for v in values
+    }
     if affected_hours:
         updated = _update_estimated_price_60min(affected_hours, conn, logger)
         if updated:
@@ -797,45 +439,35 @@ def upsert_estimated_imbalance_price_data(records: List[Dict], conn, logger) -> 
     return len(records)
 
 
-def _update_estimated_price_60min(affected_hours: set, conn, logger) -> int:
+def _update_estimated_price_60min(affected_hours: Set[datetime], conn, logger) -> int:
     """
     Compute estimated_price_czk_mwh_60min as average of available 15-min
     prices within each affected hour and update the rows.
 
-    Each hour has 4 intervals (xx:00, xx:15, xx:30, xx:45).
+    `affected_hours` are UTC hour starts; each hour is its 4 intervals by
+    instant, so the two passes of the fall-back hour are averaged separately.
     If the hour is incomplete, averages from existing non-NULL data points.
     """
-    updated = 0
+    dates = local_dates(affected_hours)
+    dates = sorted(set(dates) | {d - timedelta(days=1) for d in dates} | {d + timedelta(days=1) for d in dates})
     with conn.cursor() as cur:
-        for trade_date, hour in affected_hours:
-            hour_start = f"{hour}:00"
-            hour_patterns = [f"{hour}:{m:02d}-" for m in (0, 15, 30, 45)]
-
-            cur.execute("""
-                SELECT AVG(estimated_price_czk_mwh)
-                FROM finance.ceps_estimated_imbalance_price_15min
-                WHERE trade_date = %s
-                  AND (time_interval LIKE %s OR time_interval LIKE %s
-                       OR time_interval LIKE %s OR time_interval LIKE %s)
-                  AND estimated_price_czk_mwh IS NOT NULL
-            """, (trade_date, hour_patterns[0] + '%', hour_patterns[1] + '%',
-                  hour_patterns[2] + '%', hour_patterns[3] + '%'))
-
-            row = cur.fetchone()
-            avg_price = row[0] if row else None
-
-            if avg_price is not None:
-                cur.execute("""
-                    UPDATE finance.ceps_estimated_imbalance_price_15min
-                    SET estimated_price_czk_mwh_60min = %s
-                    WHERE trade_date = %s
-                      AND (time_interval LIKE %s OR time_interval LIKE %s
-                           OR time_interval LIKE %s OR time_interval LIKE %s)
-                """, (avg_price, trade_date,
-                      hour_patterns[0] + '%', hour_patterns[1] + '%',
-                      hour_patterns[2] + '%', hour_patterns[3] + '%'))
-                updated += cur.rowcount
-
+        cur.execute("""
+            WITH hours AS (
+                SELECT h, AVG(p.estimated_price_czk_mwh) AS avg_price
+                FROM unnest(%s::timestamptz[]) AS h
+                JOIN finance.ceps_estimated_imbalance_price_15min p
+                  ON p.delivery_datetime >= h AND p.delivery_datetime < h + interval '1 hour'
+                 AND p.trade_date = ANY(%s)
+                WHERE p.estimated_price_czk_mwh IS NOT NULL
+                GROUP BY h
+            )
+            UPDATE finance.ceps_estimated_imbalance_price_15min t
+            SET estimated_price_czk_mwh_60min = hours.avg_price
+            FROM hours
+            WHERE t.trade_date = ANY(%s)
+              AND t.delivery_datetime >= hours.h AND t.delivery_datetime < hours.h + interval '1 hour'
+        """, (list(affected_hours), dates, dates))
+        updated = cur.rowcount
         conn.commit()
     return updated
 

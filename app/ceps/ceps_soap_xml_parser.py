@@ -5,9 +5,20 @@ CEPS SOAP XML Parser
 Parses XML responses from CEPS SOAP API and converts to structured data records.
 """
 
+import sys
+import logging
 import xml.etree.ElementTree as ET
-from datetime import datetime
+from datetime import date, datetime, timezone
+from pathlib import Path
 from typing import List, Dict, Optional
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from dst_calendar import (
+    PRAGUE_TZ, AmbiguousLabelError, LabelResolver, parse_label_start, slot_start_utc,
+)
+
+logger = logging.getLogger("CEPS-Pipeline")
 
 
 # XML namespace for CEPS data
@@ -19,7 +30,7 @@ NS = {
 
 def parse_datetime(date_str: str) -> datetime:
     """
-    Parse CEPS datetime string to naive datetime (Europe/Prague).
+    Parse CEPS datetime string to naive datetime (Europe/Prague wall clock).
 
     Args:
         date_str: ISO datetime string (e.g., "2025-11-01T00:00:00+01:00")
@@ -30,6 +41,24 @@ def parse_datetime(date_str: str) -> datetime:
     # Parse with timezone info, then make naive (remove timezone)
     dt = datetime.fromisoformat(date_str)
     return dt.replace(tzinfo=None)
+
+
+def parse_times(date_str: str) -> Dict[str, datetime]:
+    """
+    Parse a CEPS datetime string into both time columns of a record.
+
+    delivery_datetime is the UTC instant and the key; it keeps the two passes
+    of the repeated fall-back hour apart (CEPS sends +02:00 then +01:00).
+    delivery_timestamp is the naive local wall time (descriptive, and the
+    partition column of the 1-min tables).
+    """
+    dt = datetime.fromisoformat(date_str)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=PRAGUE_TZ)
+    return {
+        'delivery_datetime': dt.astimezone(timezone.utc),
+        'delivery_timestamp': dt.astimezone(PRAGUE_TZ).replace(tzinfo=None),
+    }
 
 
 def parse_imbalance_xml(xml_root: ET.Element) -> List[Dict]:
@@ -61,7 +90,7 @@ def parse_imbalance_xml(xml_root: ET.Element) -> List[Dict]:
         if date_str and value1:
             try:
                 records.append({
-                    'delivery_timestamp': parse_datetime(date_str),
+                    **parse_times(date_str),
                     'system_imbalance_mw': float(value1)
                 })
             except (ValueError, TypeError) as e:
@@ -111,7 +140,7 @@ def parse_re_price_xml(xml_root: ET.Element) -> List[Dict]:
                 afrr_value = float(value1) if value1 else None
 
                 records.append({
-                    'delivery_timestamp': parse_datetime(date_str),
+                    **parse_times(date_str),
                     'price_afrr_plus_eur_mwh': afrr_value,
                     'price_afrr_minus_eur_mwh': afrr_value,  # Same value
                     'price_mfrr_plus_eur_mwh': float(value2) if value2 else None,
@@ -164,7 +193,7 @@ def parse_svr_activation_xml(xml_root: ET.Element) -> List[Dict]:
         if date_str:
             try:
                 records.append({
-                    'delivery_timestamp': parse_datetime(date_str),
+                    **parse_times(date_str),
                     'afrr_plus_mw': float(value1) if value1 else None,
                     'afrr_minus_mw': float(value2) if value2 else None,
                     'mfrr_plus_mw': float(value3) if value3 else None,
@@ -215,7 +244,7 @@ def parse_export_import_svr_xml(xml_root: ET.Element) -> List[Dict]:
         if date_str:
             try:
                 records.append({
-                    'delivery_timestamp': parse_datetime(date_str),
+                    **parse_times(date_str),
                     'imbalance_netting_mw': float(value2) if value2 else None,
                     'mari_mfrr_mw': float(value3) if value3 else None,
                     'picasso_afrr_mw': float(value4) if value4 else None,
@@ -260,7 +289,7 @@ def parse_generation_res_xml(xml_root: ET.Element) -> List[Dict]:
         if date_str:
             try:
                 records.append({
-                    'delivery_timestamp': parse_datetime(date_str),
+                    **parse_times(date_str),
                     'wind_mw': float(value1) if value1 else None,
                     'solar_mw': float(value2) if value2 else None
                 })
@@ -310,7 +339,7 @@ def parse_generation_xml(xml_root: ET.Element) -> List[Dict]:
         if date_str:
             try:
                 records.append({
-                    'delivery_timestamp': parse_datetime(date_str),
+                    **parse_times(date_str),
                     'tpp_mw': float(item.get('value1')) if item.get('value1') else None,
                     'ccgt_mw': float(item.get('value2')) if item.get('value2') else None,
                     'npp_mw': float(item.get('value3')) if item.get('value3') else None,
@@ -354,7 +383,7 @@ def parse_generation_plan_xml(xml_root: ET.Element) -> List[Dict]:
         if date_str:
             try:
                 records.append({
-                    'delivery_timestamp': parse_datetime(date_str),
+                    **parse_times(date_str),
                     'total_mw': float(value1) if value1 else None,
                 })
             except (ValueError, TypeError):
@@ -383,7 +412,8 @@ def parse_estimated_imbalance_price_xml(xml_root: ET.Element) -> List[Dict]:
         xml_root: XML root element from SOAP response
 
     Returns:
-        List of dicts with keys: trade_date, time_interval, estimated_price_czk_mwh
+        List of dicts with keys: trade_date, time_interval, delivery_datetime,
+                                 estimated_price_czk_mwh
     """
     records = []
 
@@ -408,7 +438,44 @@ def parse_estimated_imbalance_price_xml(xml_root: ET.Element) -> List[Dict]:
             except (ValueError, TypeError):
                 continue
 
-    return records
+    return _resolve_interval_instants(records)
+
+
+def _resolve_interval_instants(records: List[Dict]) -> List[Dict]:
+    """Set delivery_datetime on label-only records, using the day's labels in file order.
+
+    On the fall-back day CEPS lists 02:00-03:00 twice ("02:45-02:00" closes the
+    first pass); the first occurrence is the first pass. While only the first
+    pass has been published, a repeated label appears once: it is the first
+    pass if nothing from the second pass or later is in the list yet.
+    Records that cannot be placed are dropped with a warning.
+    """
+    by_day: Dict[str, List[Dict]] = {}
+    for r in records:
+        by_day.setdefault(r['trade_date'], []).append(r)
+
+    resolved = []
+    for day_str, day_records in by_day.items():
+        labels = [r['time_interval'] for r in day_records]
+        resolver = LabelResolver(date.fromisoformat(day_str), labels)
+        # Anything starting at 03:00 or later, or the second-pass "02:45-03:00".
+        second_pass_seen = any(
+            parse_label_start(l)[0] >= 3 or l.startswith('02:45-03') for l in labels
+        )
+        for r in day_records:
+            try:
+                slot = resolver.slot(r['time_interval'])
+            except AmbiguousLabelError as e:
+                if second_pass_seen:
+                    logger.warning(f"  estimated_imbalance_price: {e}; skipped")
+                    continue
+                slot = e.slots[0]
+            except ValueError as e:
+                logger.warning(f"  estimated_imbalance_price: {e}; skipped")
+                continue
+            r['delivery_datetime'] = slot_start_utc(resolver.day, slot)
+            resolved.append(r)
+    return resolved
 
 
 def parse_soap_xml(dataset: str, xml_root: ET.Element) -> List[Dict]:

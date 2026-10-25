@@ -317,14 +317,11 @@ def process_dataset(
 
                     if records and not dry_run:
                         try:
-                            # Deduplicate records
+                            # Deduplicate records on the UTC instant (the
+                            # local time repeats on the fall-back day)
                             seen = {}
                             for record in records:
-                                if dataset == 'estimated_imbalance_price':
-                                    key = (record['trade_date'], record['time_interval'])
-                                else:
-                                    key = record['delivery_timestamp']
-                                seen[key] = record
+                                seen[record['delivery_datetime']] = record
                             deduped_records = list(seen.values())
 
                             uploaded = upsert_data(dataset, deduped_records, conn, logger)

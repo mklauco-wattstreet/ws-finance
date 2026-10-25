@@ -8,7 +8,7 @@ subject of a separate PR alongside its live aggregator.
 Aggregation rules (mapped from plan §4.4):
 - _mean_ columns:      AVG()
 - _median_ columns:    AVG() — see note below
-- _last_at_interval_:  ARRAY_AGG(... ORDER BY time_interval DESC)[1]
+- _last_at_interval_:  ARRAY_AGG(... ORDER BY delivery_datetime DESC)[1]
 - derived rolling/error cols (ceps_derived_features_60min): last
 
 Note on "_median_" columns: in the 15-min source these are the
@@ -27,9 +27,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from backfill._common import (
-    HOUR_COMPLETE_HAVING,
-    HOUR_GROUP_SQL,
-    HOUR_INTERVAL_SQL,
+    HOUR_COMPLETE_DT_HAVING,
+    HOUR_INTERVAL_DT_SQL,
+    HOUR_START_DT_SQL,
     parse_args,
     run_backfill,
     setup_logging,
@@ -38,29 +38,30 @@ from backfill._common import (
 
 def _last(col: str) -> str:
     """SQL fragment that picks the value of the last 15-min row in the hour."""
-    return f"(ARRAY_AGG({col} ORDER BY time_interval DESC))[1]"
+    return f"(ARRAY_AGG({col} ORDER BY delivery_datetime DESC))[1]"
 
 
 def _on_conflict_update(*cols: str) -> str:
     """ON CONFLICT clause body that updates each named column from EXCLUDED."""
-    lines = [f"    {c} = EXCLUDED.{c}" for c in cols] + ["    updated_at = CURRENT_TIMESTAMP"]
-    return "ON CONFLICT (trade_date, time_interval) DO UPDATE SET\n" + ",\n".join(lines)
+    lines = ["    time_interval = EXCLUDED.time_interval"] + [f"    {c} = EXCLUDED.{c}" for c in cols] + ["    updated_at = CURRENT_TIMESTAMP"]
+    return "ON CONFLICT (delivery_datetime, trade_date) DO UPDATE SET\n" + ",\n".join(lines)
 
 
 # -------------------- ceps_actual_imbalance_60min --------------------
 ACTUAL_IMBALANCE_SQL = f"""
 INSERT INTO ceps_actual_imbalance_60min (
-    trade_date, time_interval, system_imbalance_mean_mw, system_imbalance_median_mw
+    trade_date, time_interval, delivery_datetime, system_imbalance_mean_mw, system_imbalance_median_mw
 )
 SELECT
     trade_date,
-    {HOUR_INTERVAL_SQL},
+    {HOUR_INTERVAL_DT_SQL},
+    {HOUR_START_DT_SQL},
     AVG(system_imbalance_mean_mw),
     AVG(system_imbalance_median_mw)
 FROM ceps_actual_imbalance_15min
 WHERE trade_date = %s
-GROUP BY trade_date, {HOUR_GROUP_SQL}
-{HOUR_COMPLETE_HAVING}
+GROUP BY trade_date, {HOUR_START_DT_SQL}
+{HOUR_COMPLETE_DT_HAVING}
 {_on_conflict_update("system_imbalance_mean_mw", "system_imbalance_median_mw")}
 """
 
@@ -68,16 +69,17 @@ GROUP BY trade_date, {HOUR_GROUP_SQL}
 # -------------------- ceps_estimated_imbalance_price_60min --------------------
 ESTIMATED_PRICE_SQL = f"""
 INSERT INTO ceps_estimated_imbalance_price_60min (
-    trade_date, time_interval, estimated_price_czk_mwh
+    trade_date, time_interval, delivery_datetime, estimated_price_czk_mwh
 )
 SELECT
     trade_date,
-    {HOUR_INTERVAL_SQL},
+    {HOUR_INTERVAL_DT_SQL},
+    {HOUR_START_DT_SQL},
     AVG(estimated_price_czk_mwh)
 FROM ceps_estimated_imbalance_price_15min
 WHERE trade_date = %s
-GROUP BY trade_date, {HOUR_GROUP_SQL}
-{HOUR_COMPLETE_HAVING}
+GROUP BY trade_date, {HOUR_START_DT_SQL}
+{HOUR_COMPLETE_DT_HAVING}
 {_on_conflict_update("estimated_price_czk_mwh")}
 """
 
@@ -97,17 +99,18 @@ _RE_PRICE_SELECT = ",\n    ".join(
 )
 RE_PRICE_SQL = f"""
 INSERT INTO ceps_actual_re_price_60min (
-    trade_date, time_interval,
+    trade_date, time_interval, delivery_datetime,
     {", ".join(_RE_PRICE_COLS)}
 )
 SELECT
     trade_date,
-    {HOUR_INTERVAL_SQL},
+    {HOUR_INTERVAL_DT_SQL},
+    {HOUR_START_DT_SQL},
     {_RE_PRICE_SELECT}
 FROM ceps_actual_re_price_15min
 WHERE trade_date = %s
-GROUP BY trade_date, {HOUR_GROUP_SQL}
-{HOUR_COMPLETE_HAVING}
+GROUP BY trade_date, {HOUR_START_DT_SQL}
+{HOUR_COMPLETE_DT_HAVING}
 {_on_conflict_update(*_RE_PRICE_COLS)}
 """
 
@@ -126,17 +129,18 @@ _SVR_SELECT = ",\n    ".join(
 )
 SVR_ACTIVATION_SQL = f"""
 INSERT INTO ceps_svr_activation_60min (
-    trade_date, time_interval,
+    trade_date, time_interval, delivery_datetime,
     {", ".join(_SVR_COLS)}
 )
 SELECT
     trade_date,
-    {HOUR_INTERVAL_SQL},
+    {HOUR_INTERVAL_DT_SQL},
+    {HOUR_START_DT_SQL},
     {_SVR_SELECT}
 FROM ceps_svr_activation_15min
 WHERE trade_date = %s
-GROUP BY trade_date, {HOUR_GROUP_SQL}
-{HOUR_COMPLETE_HAVING}
+GROUP BY trade_date, {HOUR_START_DT_SQL}
+{HOUR_COMPLETE_DT_HAVING}
 {_on_conflict_update(*_SVR_COLS)}
 """
 
@@ -155,17 +159,18 @@ _EX_SELECT = ",\n    ".join(
 )
 EXPORT_IMPORT_SVR_SQL = f"""
 INSERT INTO ceps_export_import_svr_60min (
-    trade_date, time_interval,
+    trade_date, time_interval, delivery_datetime,
     {", ".join(_EX_COLS)}
 )
 SELECT
     trade_date,
-    {HOUR_INTERVAL_SQL},
+    {HOUR_INTERVAL_DT_SQL},
+    {HOUR_START_DT_SQL},
     {_EX_SELECT}
 FROM ceps_export_import_svr_15min
 WHERE trade_date = %s
-GROUP BY trade_date, {HOUR_GROUP_SQL}
-{HOUR_COMPLETE_HAVING}
+GROUP BY trade_date, {HOUR_START_DT_SQL}
+{HOUR_COMPLETE_DT_HAVING}
 {_on_conflict_update(*_EX_COLS)}
 """
 
@@ -175,29 +180,30 @@ _GEN_COLS = ["tpp_mw", "ccgt_mw", "npp_mw", "hpp_mw", "pspp_mw",
              "altpp_mw", "appp_mw", "wpp_mw", "pvpp_mw"]
 GENERATION_SQL = f"""
 INSERT INTO ceps_generation_60min (
-    trade_date, time_interval,
+    trade_date, time_interval, delivery_datetime,
     {", ".join(_GEN_COLS)}
 )
 SELECT
     trade_date,
-    {HOUR_INTERVAL_SQL},
+    {HOUR_INTERVAL_DT_SQL},
+    {HOUR_START_DT_SQL},
     {", ".join(f"AVG({c})" for c in _GEN_COLS)}
 FROM ceps_generation_15min
 WHERE trade_date = %s
-GROUP BY trade_date, {HOUR_GROUP_SQL}
-{HOUR_COMPLETE_HAVING}
+GROUP BY trade_date, {HOUR_START_DT_SQL}
+{HOUR_COMPLETE_DT_HAVING}
 {_on_conflict_update(*_GEN_COLS)}
 """
 
 
 # -------------------- ceps_generation_plan_60min --------------------
 GENERATION_PLAN_SQL = f"""
-INSERT INTO ceps_generation_plan_60min (trade_date, time_interval, total_mw)
-SELECT trade_date, {HOUR_INTERVAL_SQL}, AVG(total_mw)
+INSERT INTO ceps_generation_plan_60min (trade_date, time_interval, delivery_datetime, total_mw)
+SELECT trade_date, {HOUR_INTERVAL_DT_SQL}, {HOUR_START_DT_SQL}, AVG(total_mw)
 FROM ceps_generation_plan_15min
 WHERE trade_date = %s
-GROUP BY trade_date, {HOUR_GROUP_SQL}
-{HOUR_COMPLETE_HAVING}
+GROUP BY trade_date, {HOUR_START_DT_SQL}
+{HOUR_COMPLETE_DT_HAVING}
 {_on_conflict_update("total_mw")}
 """
 
@@ -214,17 +220,18 @@ _RES_SELECT = ",\n    ".join(
 )
 GENERATION_RES_SQL = f"""
 INSERT INTO ceps_generation_res_60min (
-    trade_date, time_interval,
+    trade_date, time_interval, delivery_datetime,
     {", ".join(_RES_COLS)}
 )
 SELECT
     trade_date,
-    {HOUR_INTERVAL_SQL},
+    {HOUR_INTERVAL_DT_SQL},
+    {HOUR_START_DT_SQL},
     {_RES_SELECT}
 FROM ceps_generation_res_15min
 WHERE trade_date = %s
-GROUP BY trade_date, {HOUR_GROUP_SQL}
-{HOUR_COMPLETE_HAVING}
+GROUP BY trade_date, {HOUR_START_DT_SQL}
+{HOUR_COMPLETE_DT_HAVING}
 {_on_conflict_update(*_RES_COLS)}
 """
 
@@ -234,17 +241,18 @@ _DERIVED_COLS = ["imb_roll_2h", "imb_roll_4h", "imb_integral_4h",
                  "solar_error_mw", "wind_error_mw", "gen_total_error_mw"]
 DERIVED_FEATURES_SQL = f"""
 INSERT INTO ceps_derived_features_60min (
-    trade_date, time_interval,
+    trade_date, time_interval, delivery_datetime,
     {", ".join(_DERIVED_COLS)}
 )
 SELECT
     trade_date,
-    {HOUR_INTERVAL_SQL},
+    {HOUR_INTERVAL_DT_SQL},
+    {HOUR_START_DT_SQL},
     {", ".join(_last(c) for c in _DERIVED_COLS)}
 FROM ceps_derived_features_15min
 WHERE trade_date = %s
-GROUP BY trade_date, {HOUR_GROUP_SQL}
-{HOUR_COMPLETE_HAVING}
+GROUP BY trade_date, {HOUR_START_DT_SQL}
+{HOUR_COMPLETE_DT_HAVING}
 {_on_conflict_update(*_DERIVED_COLS)}
 """
 

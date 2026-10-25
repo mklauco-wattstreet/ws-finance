@@ -2,7 +2,7 @@
 
 Mirrors app/ceps/preprocess_ceps_data.py::aggregate_1min_features with
 two surgical changes:
-  1. bucket  : DATE_TRUNC('hour', …)        (was 15-min FLOOR bucket)
+  1. bucket  : hour of the UTC instant       (was 15-min bucket)
   2. coverage: strict HAVING COUNT(*) = 60  (no partial hours)
 
 Per docs/60min_tables_plan.md §4.4: distributional stats (min/max/std/
@@ -37,6 +37,7 @@ from backfill._common import (
     setup_logging,
     daterange,
 )
+from ceps.ceps_time import bucket_start_sql, local_date_sql, local_label_sql
 
 
 PRICE_FLOOR_EUR = -500
@@ -56,9 +57,9 @@ WITH daily_sat AS (
 ),
 interval_data AS (
     SELECT
-        re.delivery_timestamp::date AS trade_date,
-        DATE_TRUNC('hour', re.delivery_timestamp) AS interval_start,
+        {bucket_start_sql('re.delivery_datetime', 60)} AS interval_start,
         re.delivery_timestamp,
+        re.delivery_datetime,
         re.price_afrr_plus_eur_mwh,
         re.price_afrr_minus_eur_mwh,
         re.price_mfrr_plus_eur_mwh,
@@ -72,11 +73,14 @@ interval_data AS (
              THEN TRUE ELSE FALSE END AS is_saturated
     FROM finance.ceps_actual_re_price_1min re
     LEFT JOIN finance.ceps_actual_imbalance_1min imb
-        ON imb.delivery_timestamp = re.delivery_timestamp
+        ON imb.delivery_datetime = re.delivery_datetime
+       AND imb.delivery_timestamp = re.delivery_timestamp
     LEFT JOIN finance.ceps_export_import_svr_1min svr
-        ON svr.delivery_timestamp = re.delivery_timestamp
+        ON svr.delivery_datetime = re.delivery_datetime
+       AND svr.delivery_timestamp = re.delivery_timestamp
     LEFT JOIN finance.ceps_svr_activation_1min act
-        ON act.delivery_timestamp = re.delivery_timestamp
+        ON act.delivery_datetime = re.delivery_datetime
+       AND act.delivery_timestamp = re.delivery_timestamp
     LEFT JOIN daily_sat ds
         ON ds.td = re.delivery_timestamp::date
     WHERE re.delivery_timestamp >= %s::date
@@ -84,9 +88,9 @@ interval_data AS (
 ),
 agg AS (
     SELECT
-        trade_date,
-        TO_CHAR(interval_start, 'HH24:MI') || '-' ||
-            TO_CHAR(interval_start + INTERVAL '1 hour', 'HH24:MI') AS time_interval,
+        {local_date_sql('interval_start')} AS trade_date,
+        {local_label_sql('interval_start', 60)} AS time_interval,
+        interval_start,
         COUNT(*)::smallint AS n,
 
         -- aFRR+ price distribution
@@ -158,7 +162,7 @@ agg AS (
         STDDEV_SAMP(system_imbalance_mw) AS imb_std,
         REGR_SLOPE(
             system_imbalance_mw,
-            EXTRACT(EPOCH FROM delivery_timestamp - interval_start)::int / 60
+            EXTRACT(EPOCH FROM delivery_datetime - interval_start)::int / 60
         ) AS imb_slope,
 
         -- Threshold counts
@@ -182,11 +186,11 @@ agg AS (
         STDDEV_SAMP(price_afrr_minus_eur_mwh - price_mfrr_minus_eur_mwh) AS afrr_mfrr_minus_spread_std
 
     FROM interval_data
-    GROUP BY trade_date, interval_start
+    GROUP BY interval_start
     HAVING COUNT(*) = 60
 )
 INSERT INTO finance.ceps_1min_features_60min (
-    trade_date, time_interval, minute_count,
+    trade_date, time_interval, delivery_datetime, minute_count,
     afrr_plus_min_eur, afrr_plus_max_eur, afrr_plus_std_eur, afrr_plus_skew,
     afrr_minus_min_eur, afrr_minus_max_eur, afrr_minus_std_eur, afrr_minus_skew,
     mfrr_plus_min_eur, mfrr_plus_max_eur, mfrr_plus_std_eur, mfrr_plus_skew,
@@ -198,7 +202,7 @@ INSERT INTO finance.ceps_1min_features_60min (
     afrr_mfrr_minus_spread_mean_eur, afrr_mfrr_minus_spread_std_eur
 )
 SELECT
-    trade_date, time_interval, n,
+    trade_date, time_interval, interval_start, n,
     afrr_plus_min, afrr_plus_max, afrr_plus_std, afrr_plus_skew,
     afrr_minus_min, afrr_minus_max, afrr_minus_std, afrr_minus_skew,
     mfrr_plus_min, mfrr_plus_max, mfrr_plus_std, mfrr_plus_skew,
@@ -209,7 +213,8 @@ SELECT
     afrr_mfrr_plus_spread_mean, afrr_mfrr_plus_spread_std,
     afrr_mfrr_minus_spread_mean, afrr_mfrr_minus_spread_std
 FROM agg
-ON CONFLICT (trade_date, time_interval) DO UPDATE SET
+ON CONFLICT (delivery_datetime, trade_date) DO UPDATE SET
+    time_interval = EXCLUDED.time_interval,
     minute_count = EXCLUDED.minute_count,
     afrr_plus_min_eur = EXCLUDED.afrr_plus_min_eur,
     afrr_plus_max_eur = EXCLUDED.afrr_plus_max_eur,

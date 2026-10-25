@@ -667,12 +667,13 @@ class CepsActualRePrice1Min(Base):
     __tablename__ = 'ceps_actual_re_price_1min'
     __table_args__ = (
         PrimaryKeyConstraint('delivery_timestamp', 'id', name='ceps_actual_re_price_1min_pkey'),
-        UniqueConstraint('delivery_timestamp', name='uq_ceps_re_price_1min_delivery_timestamp'),
+        UniqueConstraint('delivery_datetime', 'delivery_timestamp', name='ceps_actual_re_price_1min_delivery_datetime_key'),
         {'schema': DB_SCHEMA}
     )
 
     id: Mapped[int] = mapped_column(Integer, autoincrement=True)
     delivery_timestamp: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    delivery_datetime: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
     price_afrr_plus_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
     price_afrr_minus_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
     price_mfrr_plus_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
@@ -693,13 +694,14 @@ class CepsActualRePrice15Min(Base):
     __tablename__ = 'ceps_actual_re_price_15min'
     __table_args__ = (
         PrimaryKeyConstraint('trade_date', 'time_interval', 'id', name='ceps_actual_re_price_15min_pkey'),
-        UniqueConstraint('trade_date', 'time_interval', name='uq_ceps_re_price_15min_trade_date_interval'),
+        UniqueConstraint('delivery_datetime', 'trade_date', name='ceps_actual_re_price_15min_delivery_datetime_key'),
         {'schema': DB_SCHEMA}
     )
 
     id: Mapped[int] = mapped_column(Integer, autoincrement=True)
     trade_date: Mapped[date] = mapped_column(Date, nullable=False)
     time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    delivery_datetime: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
     price_afrr_plus_mean_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
     price_afrr_minus_mean_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
     price_mfrr_plus_mean_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
@@ -731,13 +733,14 @@ class Ceps1MinFeatures15Min(Base):
     __tablename__ = 'ceps_1min_features_15min'
     __table_args__ = (
         PrimaryKeyConstraint('trade_date', 'time_interval', 'id', name='ceps_1min_features_15min_pkey'),
-        UniqueConstraint('trade_date', 'time_interval', name='uq_ceps_1min_features_15min'),
+        UniqueConstraint('delivery_datetime', 'trade_date', name='ceps_1min_features_15min_delivery_datetime_key'),
         {'schema': DB_SCHEMA}
     )
 
     id: Mapped[int] = mapped_column(Integer, autoincrement=True)
     trade_date: Mapped[date] = mapped_column(Date, nullable=False)
     time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    delivery_datetime: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
     minute_count: Mapped[Optional[int]] = mapped_column(SmallInteger)
     # aFRR+ price distribution
     afrr_plus_min_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
@@ -793,13 +796,14 @@ class CepsDerivedFeatures15Min(Base):
     __tablename__ = 'ceps_derived_features_15min'
     __table_args__ = (
         PrimaryKeyConstraint('trade_date', 'time_interval', 'id', name='ceps_derived_features_15min_pkey'),
-        UniqueConstraint('trade_date', 'time_interval', name='uq_ceps_derived_features_15min'),
+        UniqueConstraint('delivery_datetime', 'trade_date', name='ceps_derived_features_15min_delivery_datetime_key'),
         {'schema': DB_SCHEMA}
     )
 
     id: Mapped[int] = mapped_column(Integer, autoincrement=True)
     trade_date: Mapped[date] = mapped_column(Date, nullable=False)
     time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    delivery_datetime: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
     # Rolling memory
     imb_roll_2h: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 5))
     imb_roll_4h: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 5))
@@ -1160,13 +1164,14 @@ class CepsActualImbalance60Min(Base):
     __tablename__ = 'ceps_actual_imbalance_60min'
     __table_args__ = (
         PrimaryKeyConstraint('trade_date', 'time_interval', 'id', name='ceps_actual_imbalance_60min_pkey'),
-        UniqueConstraint('trade_date', 'time_interval', name='uq_ceps_actual_imbalance_60min_trade_date_interval'),
+        UniqueConstraint('delivery_datetime', 'trade_date', name='ceps_actual_imbalance_60min_delivery_datetime_key'),
         {'schema': DB_SCHEMA}
     )
 
     id: Mapped[int] = mapped_column(Integer, autoincrement=True)
     trade_date: Mapped[date] = mapped_column(Date, nullable=False)
     time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    delivery_datetime: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
     system_imbalance_mean_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 5))
     system_imbalance_median_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 5))
     created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
@@ -1178,13 +1183,14 @@ class CepsEstimatedImbalancePrice60Min(Base):
     __tablename__ = 'ceps_estimated_imbalance_price_60min'
     __table_args__ = (
         PrimaryKeyConstraint('trade_date', 'time_interval', 'id', name='ceps_estimated_imbalance_price_60min_pkey'),
-        UniqueConstraint('trade_date', 'time_interval', name='uq_ceps_estimated_imbalance_price_60min_trade_date_interval'),
+        UniqueConstraint('delivery_datetime', 'trade_date', name='ceps_estimated_imbalance_price_60min_delivery_datetime_key'),
         {'schema': DB_SCHEMA}
     )
 
     id: Mapped[int] = mapped_column(Integer, autoincrement=True)
     trade_date: Mapped[date] = mapped_column(Date, nullable=False)
     time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    delivery_datetime: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
     estimated_price_czk_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
     updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
@@ -1195,13 +1201,14 @@ class CepsActualRePrice60Min(Base):
     __tablename__ = 'ceps_actual_re_price_60min'
     __table_args__ = (
         PrimaryKeyConstraint('trade_date', 'time_interval', 'id', name='ceps_actual_re_price_60min_pkey'),
-        UniqueConstraint('trade_date', 'time_interval', name='uq_ceps_actual_re_price_60min_trade_date_interval'),
+        UniqueConstraint('delivery_datetime', 'trade_date', name='ceps_actual_re_price_60min_delivery_datetime_key'),
         {'schema': DB_SCHEMA}
     )
 
     id: Mapped[int] = mapped_column(Integer, autoincrement=True)
     trade_date: Mapped[date] = mapped_column(Date, nullable=False)
     time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    delivery_datetime: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
     price_afrr_plus_mean_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
     price_afrr_plus_median_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
     price_afrr_plus_last_at_interval_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
@@ -1226,13 +1233,14 @@ class CepsSvrActivation60Min(Base):
     __tablename__ = 'ceps_svr_activation_60min'
     __table_args__ = (
         PrimaryKeyConstraint('trade_date', 'time_interval', 'id', name='ceps_svr_activation_60min_pkey'),
-        UniqueConstraint('trade_date', 'time_interval', name='uq_ceps_svr_activation_60min_trade_date_interval'),
+        UniqueConstraint('delivery_datetime', 'trade_date', name='ceps_svr_activation_60min_delivery_datetime_key'),
         {'schema': DB_SCHEMA}
     )
 
     id: Mapped[int] = mapped_column(Integer, autoincrement=True)
     trade_date: Mapped[date] = mapped_column(Date, nullable=False)
     time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    delivery_datetime: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
     afrr_plus_mean_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
     afrr_plus_median_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
     afrr_plus_last_at_interval_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
@@ -1254,13 +1262,14 @@ class CepsExportImportSvr60Min(Base):
     __tablename__ = 'ceps_export_import_svr_60min'
     __table_args__ = (
         PrimaryKeyConstraint('trade_date', 'time_interval', 'id', name='ceps_export_import_svr_60min_pkey'),
-        UniqueConstraint('trade_date', 'time_interval', name='uq_ceps_export_import_svr_60min_trade_date_interval'),
+        UniqueConstraint('delivery_datetime', 'trade_date', name='ceps_export_import_svr_60min_delivery_datetime_key'),
         {'schema': DB_SCHEMA}
     )
 
     id: Mapped[int] = mapped_column(Integer, autoincrement=True)
     trade_date: Mapped[date] = mapped_column(Date, nullable=False)
     time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    delivery_datetime: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
     imbalance_netting_mean_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
     imbalance_netting_median_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
     imbalance_netting_last_at_interval_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
@@ -1282,13 +1291,14 @@ class CepsGeneration60Min(Base):
     __tablename__ = 'ceps_generation_60min'
     __table_args__ = (
         PrimaryKeyConstraint('trade_date', 'time_interval', 'id', name='ceps_generation_60min_pkey'),
-        UniqueConstraint('trade_date', 'time_interval', name='uq_ceps_generation_60min_trade_date_interval'),
+        UniqueConstraint('delivery_datetime', 'trade_date', name='ceps_generation_60min_delivery_datetime_key'),
         {'schema': DB_SCHEMA}
     )
 
     id: Mapped[int] = mapped_column(Integer, autoincrement=True)
     trade_date: Mapped[date] = mapped_column(Date, nullable=False)
     time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    delivery_datetime: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
     tpp_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     ccgt_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     npp_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
@@ -1307,13 +1317,14 @@ class CepsGenerationPlan60Min(Base):
     __tablename__ = 'ceps_generation_plan_60min'
     __table_args__ = (
         PrimaryKeyConstraint('trade_date', 'time_interval', 'id', name='ceps_generation_plan_60min_pkey'),
-        UniqueConstraint('trade_date', 'time_interval', name='uq_ceps_generation_plan_60min_trade_date_interval'),
+        UniqueConstraint('delivery_datetime', 'trade_date', name='ceps_generation_plan_60min_delivery_datetime_key'),
         {'schema': DB_SCHEMA}
     )
 
     id: Mapped[int] = mapped_column(Integer, autoincrement=True)
     trade_date: Mapped[date] = mapped_column(Date, nullable=False)
     time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    delivery_datetime: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
     total_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
     updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
@@ -1324,13 +1335,14 @@ class CepsGenerationRes60Min(Base):
     __tablename__ = 'ceps_generation_res_60min'
     __table_args__ = (
         PrimaryKeyConstraint('trade_date', 'time_interval', 'id', name='ceps_generation_res_60min_pkey'),
-        UniqueConstraint('trade_date', 'time_interval', name='uq_ceps_generation_res_60min_trade_date_interval'),
+        UniqueConstraint('delivery_datetime', 'trade_date', name='ceps_generation_res_60min_delivery_datetime_key'),
         {'schema': DB_SCHEMA}
     )
 
     id: Mapped[int] = mapped_column(Integer, autoincrement=True)
     trade_date: Mapped[date] = mapped_column(Date, nullable=False)
     time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    delivery_datetime: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
     wind_mean_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     wind_median_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     wind_last_at_interval_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
@@ -1351,13 +1363,14 @@ class Ceps1MinFeatures60Min(Base):
     __tablename__ = 'ceps_1min_features_60min'
     __table_args__ = (
         PrimaryKeyConstraint('trade_date', 'time_interval', 'id', name='ceps_1min_features_60min_pkey'),
-        UniqueConstraint('trade_date', 'time_interval', name='uq_ceps_1min_features_60min_trade_date_interval'),
+        UniqueConstraint('delivery_datetime', 'trade_date', name='ceps_1min_features_60min_delivery_datetime_key'),
         {'schema': DB_SCHEMA}
     )
 
     id: Mapped[int] = mapped_column(Integer, autoincrement=True)
     trade_date: Mapped[date] = mapped_column(Date, nullable=False)
     time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    delivery_datetime: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
     minute_count: Mapped[Optional[int]] = mapped_column(SmallInteger)
     afrr_plus_min_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
     afrr_plus_max_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
@@ -1402,13 +1415,14 @@ class CepsDerivedFeatures60Min(Base):
     __tablename__ = 'ceps_derived_features_60min'
     __table_args__ = (
         PrimaryKeyConstraint('trade_date', 'time_interval', 'id', name='ceps_derived_features_60min_pkey'),
-        UniqueConstraint('trade_date', 'time_interval', name='uq_ceps_derived_features_60min_trade_date_interval'),
+        UniqueConstraint('delivery_datetime', 'trade_date', name='ceps_derived_features_60min_delivery_datetime_key'),
         {'schema': DB_SCHEMA}
     )
 
     id: Mapped[int] = mapped_column(Integer, autoincrement=True)
     trade_date: Mapped[date] = mapped_column(Date, nullable=False)
     time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    delivery_datetime: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
     imb_roll_2h: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 5))
     imb_roll_4h: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 5))
     imb_integral_4h: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))

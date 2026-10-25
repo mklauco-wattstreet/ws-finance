@@ -17,7 +17,7 @@ import sys
 import logging
 import argparse
 from pathlib import Path
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Set
 
 import psycopg2
@@ -26,6 +26,9 @@ import psycopg2
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from config import DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT
+from ceps.ceps_time import (
+    bucket_start_sql, instant_window, local_date_sql, local_dates, local_label_sql, local_window,
+)
 
 # Threshold constants
 PRICE_FLOOR_EUR = -500
@@ -33,7 +36,7 @@ PRICE_PEAK_EUR = 500
 MIN_MINUTE_COUNT = 12
 
 
-def aggregate_1min_features(affected_intervals: Set[tuple], conn, logger) -> int:
+def aggregate_1min_features(affected_intervals: Set[datetime], conn, logger) -> int:
     """Aggregate 1-min data into distributional features for 15-min intervals.
 
     Skewness: adjusted Fisher-Pearson via raw moments (handles n < 3 → NULL).
@@ -44,9 +47,9 @@ def aggregate_1min_features(affected_intervals: Set[tuple], conn, logger) -> int
     if not affected_intervals:
         return 0
 
-    dates = sorted(set(d for d, _ in affected_intervals))
-    min_date, max_date = dates[0], dates[-1]
-    affected_dates = tuple(dates)
+    affected_dates = tuple(local_dates(affected_intervals))
+    lo_utc, hi_utc = instant_window(affected_intervals)
+    lo_local, hi_local = local_window(lo_utc, hi_utc)
 
     query = f"""
         WITH daily_sat AS (
@@ -59,11 +62,9 @@ def aggregate_1min_features(affected_intervals: Set[tuple], conn, logger) -> int
         ),
         interval_data AS (
             SELECT
-                re.delivery_timestamp::date AS trade_date,
-                DATE_TRUNC('hour', re.delivery_timestamp) +
-                    INTERVAL '15 minutes' * FLOOR(EXTRACT(MINUTE FROM re.delivery_timestamp) / 15)
-                    AS interval_start,
+                {bucket_start_sql('re.delivery_datetime')} AS interval_start,
                 re.delivery_timestamp,
+                re.delivery_datetime,
                 re.price_afrr_plus_eur_mwh,
                 re.price_afrr_minus_eur_mwh,
                 re.price_mfrr_plus_eur_mwh,
@@ -77,20 +78,24 @@ def aggregate_1min_features(affected_intervals: Set[tuple], conn, logger) -> int
                      THEN TRUE ELSE FALSE END AS is_saturated
             FROM finance.ceps_actual_re_price_1min re
             LEFT JOIN finance.ceps_actual_imbalance_1min imb
-                ON imb.delivery_timestamp = re.delivery_timestamp
+                ON imb.delivery_datetime = re.delivery_datetime
+               AND imb.delivery_timestamp = re.delivery_timestamp
             LEFT JOIN finance.ceps_export_import_svr_1min svr
-                ON svr.delivery_timestamp = re.delivery_timestamp
+                ON svr.delivery_datetime = re.delivery_datetime
+               AND svr.delivery_timestamp = re.delivery_timestamp
             LEFT JOIN finance.ceps_svr_activation_1min act
-                ON act.delivery_timestamp = re.delivery_timestamp
+                ON act.delivery_datetime = re.delivery_datetime
+               AND act.delivery_timestamp = re.delivery_timestamp
             LEFT JOIN daily_sat ds
                 ON ds.td = re.delivery_timestamp::date
-            WHERE re.delivery_timestamp >= %s AND re.delivery_timestamp < %s::date + INTERVAL '1 day'
+            WHERE re.delivery_timestamp >= %s AND re.delivery_timestamp < %s
+              AND re.delivery_datetime >= %s AND re.delivery_datetime < %s
         ),
         agg AS (
             SELECT
-                trade_date,
-                TO_CHAR(interval_start, 'HH24:MI') || '-' ||
-                    TO_CHAR(interval_start + INTERVAL '15 minutes', 'HH24:MI') AS time_interval,
+                {local_date_sql('interval_start')} AS trade_date,
+                {local_label_sql('interval_start')} AS time_interval,
+                interval_start,
                 COUNT(*)::smallint AS n,
 
                 -- aFRR+ price distribution
@@ -163,7 +168,7 @@ def aggregate_1min_features(affected_intervals: Set[tuple], conn, logger) -> int
                 -- Normalized x: minute index 0..14 avoids float precision issues with epoch
                 REGR_SLOPE(
                     system_imbalance_mw,
-                    EXTRACT(EPOCH FROM delivery_timestamp - interval_start)::int / 60
+                    EXTRACT(EPOCH FROM delivery_datetime - interval_start)::int / 60
                 ) AS imb_slope,
 
                 -- Threshold counts
@@ -193,15 +198,11 @@ def aggregate_1min_features(affected_intervals: Set[tuple], conn, logger) -> int
                 STDDEV_SAMP(price_afrr_minus_eur_mwh - price_mfrr_minus_eur_mwh) AS afrr_mfrr_minus_spread_std
 
             FROM interval_data
-            WHERE (
-                trade_date,
-                TO_CHAR(interval_start, 'HH24:MI') || '-' ||
-                    TO_CHAR(interval_start + INTERVAL '15 minutes', 'HH24:MI')
-            ) IN %s
-            GROUP BY trade_date, interval_start
+            WHERE interval_start = ANY(%s)
+            GROUP BY interval_start
         )
         INSERT INTO finance.ceps_1min_features_15min (
-            trade_date, time_interval, minute_count,
+            trade_date, time_interval, delivery_datetime, minute_count,
             afrr_plus_min_eur, afrr_plus_max_eur, afrr_plus_std_eur, afrr_plus_skew,
             afrr_minus_min_eur, afrr_minus_max_eur, afrr_minus_std_eur, afrr_minus_skew,
             mfrr_plus_min_eur, mfrr_plus_max_eur, mfrr_plus_std_eur, mfrr_plus_skew,
@@ -213,7 +214,7 @@ def aggregate_1min_features(affected_intervals: Set[tuple], conn, logger) -> int
             afrr_mfrr_minus_spread_mean_eur, afrr_mfrr_minus_spread_std_eur
         )
         SELECT
-            trade_date, time_interval, n,
+            trade_date, time_interval, interval_start, n,
             CASE WHEN n >= {MIN_MINUTE_COUNT} THEN afrr_plus_min END,
             CASE WHEN n >= {MIN_MINUTE_COUNT} THEN afrr_plus_max END,
             CASE WHEN n >= {MIN_MINUTE_COUNT} THEN afrr_plus_std END,
@@ -244,7 +245,8 @@ def aggregate_1min_features(affected_intervals: Set[tuple], conn, logger) -> int
             CASE WHEN n >= {MIN_MINUTE_COUNT} THEN afrr_mfrr_minus_spread_mean END,
             CASE WHEN n >= {MIN_MINUTE_COUNT} THEN afrr_mfrr_minus_spread_std END
         FROM agg
-        ON CONFLICT (trade_date, time_interval) DO UPDATE SET
+        ON CONFLICT (delivery_datetime, trade_date) DO UPDATE SET
+            time_interval = EXCLUDED.time_interval,
             minute_count = EXCLUDED.minute_count,
             afrr_plus_min_eur = EXCLUDED.afrr_plus_min_eur,
             afrr_plus_max_eur = EXCLUDED.afrr_plus_max_eur,
@@ -279,14 +281,15 @@ def aggregate_1min_features(affected_intervals: Set[tuple], conn, logger) -> int
     """
 
     with conn.cursor() as cur:
-        cur.execute(query, (affected_dates, min_date, max_date, tuple(affected_intervals)))
+        cur.execute(query, (affected_dates, lo_local, hi_local, lo_utc, hi_utc,
+                            list(affected_intervals)))
         rows = cur.rowcount
         conn.commit()
 
     return rows
 
 
-def aggregate_derived_features(affected_intervals: Set[tuple], conn, logger) -> int:
+def aggregate_derived_features(affected_intervals: Set[datetime], conn, logger) -> int:
     """Compute rolling memory and forecast surprise features for 15-min intervals.
 
     Rolling memory: AVG/SUM of system_imbalance_mean_mw over trailing 2h (8) and 4h (16) intervals.
@@ -296,38 +299,36 @@ def aggregate_derived_features(affected_intervals: Set[tuple], conn, logger) -> 
     - solar_error = pvpp_mw (CEPS actual) - forecast_solar_mw (ENTSO-E DA forecast, CZ)
     - gen_total_error = actual_total - plan.total_mw
     Note: wind_error dropped — CZ has negligible wind capacity.
+
+    `affected_intervals` are UTC interval starts; rows are ordered and joined
+    on delivery_datetime, so the repeated fall-back hour is handled in time order.
     """
     if not affected_intervals:
         return 0
 
     # Expand dates to include 1 day lookback for rolling window context
-    affected_dates_set = set()
-    for d_str, _ in affected_intervals:
-        d = date.fromisoformat(d_str) if isinstance(d_str, str) else d_str
-        affected_dates_set.add(d_str if isinstance(d_str, str) else d_str.isoformat())
-        prev = (d - timedelta(days=1)).isoformat() if isinstance(d_str, str) else (d_str - timedelta(days=1)).isoformat()
-        affected_dates_set.add(prev)
-    lookback_dates = tuple(affected_dates_set)
+    affected_dates = local_dates(affected_intervals)
+    lookback_dates = sorted(set(affected_dates) | {d - timedelta(days=1) for d in affected_dates})
 
     query = """
         WITH rolling AS (
             SELECT
                 trade_date,
                 time_interval,
+                delivery_datetime,
                 system_imbalance_mean_mw,
                 AVG(system_imbalance_mean_mw) OVER w8 AS imb_roll_2h,
                 AVG(system_imbalance_mean_mw) OVER w16 AS imb_roll_4h,
                 SUM(system_imbalance_mean_mw) OVER w16 AS imb_integral_4h
             FROM finance.ceps_actual_imbalance_15min
-            WHERE trade_date IN %s
+            WHERE trade_date = ANY(%s)
             WINDOW
-                w8  AS (ORDER BY trade_date, time_interval ROWS 7 PRECEDING),
-                w16 AS (ORDER BY trade_date, time_interval ROWS 15 PRECEDING)
+                w8  AS (ORDER BY delivery_datetime ROWS 7 PRECEDING),
+                w16 AS (ORDER BY delivery_datetime ROWS 15 PRECEDING)
         ),
         forecast AS (
             SELECT
-                g.trade_date,
-                g.time_interval,
+                g.delivery_datetime,
                 COALESCE(g.tpp_mw, 0) + COALESCE(g.ccgt_mw, 0) + COALESCE(g.npp_mw, 0) +
                     COALESCE(g.hpp_mw, 0) + COALESCE(g.pspp_mw, 0) + COALESCE(g.altpp_mw, 0) +
                     COALESCE(g.appp_mw, 0) + COALESCE(g.wpp_mw, 0) + COALESCE(g.pvpp_mw, 0)
@@ -336,37 +337,30 @@ def aggregate_derived_features(affected_intervals: Set[tuple], conn, logger) -> 
                 ef.forecast_solar_mw AS da_forecast_solar_mw,
                 plan.total_mw AS plan_total_mw
             FROM finance.ceps_generation_15min g
-            -- ENTSO-E is keyed on delivery_datetime, so the repeated fall-back
-            -- hour has two rows per label; CEPS still keeps one (the later
-            -- pass), so take the later ENTSO-E row to match.
-            LEFT JOIN LATERAL (
-                SELECT ef.forecast_solar_mw
-                FROM finance.entsoe_generation_forecast ef
-                WHERE ef.trade_date = g.trade_date AND ef.time_interval = g.time_interval
-                  AND ef.country_code = 'CZ'
-                ORDER BY ef.delivery_datetime DESC
-                LIMIT 1
-            ) ef ON true
+            LEFT JOIN finance.entsoe_generation_forecast ef
+                ON ef.delivery_datetime = g.delivery_datetime
+                AND ef.country_code = 'CZ'
             LEFT JOIN finance.ceps_generation_plan_15min plan
-                ON plan.trade_date = g.trade_date AND plan.time_interval = g.time_interval
-            WHERE g.trade_date IN %s
+                ON plan.delivery_datetime = g.delivery_datetime AND plan.trade_date = g.trade_date
+            WHERE g.trade_date = ANY(%s)
         )
         INSERT INTO finance.ceps_derived_features_15min (
-            trade_date, time_interval,
+            trade_date, time_interval, delivery_datetime,
             imb_roll_2h, imb_roll_4h, imb_integral_4h,
             solar_error_mw, wind_error_mw, gen_total_error_mw
         )
         SELECT
-            r.trade_date, r.time_interval,
+            r.trade_date, r.time_interval, r.delivery_datetime,
             r.imb_roll_2h, r.imb_roll_4h, r.imb_integral_4h,
             f.actual_solar_mw - f.da_forecast_solar_mw,
             NULL,
             f.actual_total_mw - f.plan_total_mw
         FROM rolling r
         LEFT JOIN forecast f
-            ON f.trade_date = r.trade_date AND f.time_interval = r.time_interval
-        WHERE (r.trade_date::text, r.time_interval) IN %s
-        ON CONFLICT (trade_date, time_interval) DO UPDATE SET
+            ON f.delivery_datetime = r.delivery_datetime
+        WHERE r.delivery_datetime = ANY(%s)
+        ON CONFLICT (delivery_datetime, trade_date) DO UPDATE SET
+            time_interval = EXCLUDED.time_interval,
             imb_roll_2h = EXCLUDED.imb_roll_2h,
             imb_roll_4h = EXCLUDED.imb_roll_4h,
             imb_integral_4h = EXCLUDED.imb_integral_4h,
@@ -376,11 +370,8 @@ def aggregate_derived_features(affected_intervals: Set[tuple], conn, logger) -> 
             updated_at = CURRENT_TIMESTAMP
     """
 
-    # affected_dates used for both rolling and forecast CTEs
-    affected_dates = tuple(set(d for d, _ in affected_intervals))
-
     with conn.cursor() as cur:
-        cur.execute(query, (lookback_dates, affected_dates, tuple(affected_intervals)))
+        cur.execute(query, (lookback_dates, affected_dates, list(affected_intervals)))
         rows = cur.rowcount
         conn.commit()
 
@@ -400,11 +391,11 @@ def backfill_derived_features(start_date: date, end_date: date, conn, logger) ->
 
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT DISTINCT trade_date::text, time_interval
+                SELECT DISTINCT delivery_datetime
                 FROM finance.ceps_actual_imbalance_15min
                 WHERE trade_date = %s
             """, (date_str,))
-            intervals = set(cur.fetchall())
+            intervals = {row[0] for row in cur.fetchall()}
 
         if not intervals:
             logger.debug(f"  {date_str}: no imbalance data, skipping")
@@ -434,23 +425,12 @@ def backfill_features(start_date: date, end_date: date, conn, logger) -> int:
 
         # Get all 15-min intervals that exist in RE price 1-min data for this day
         with conn.cursor() as cur:
-            cur.execute("""
-                SELECT DISTINCT
-                    delivery_timestamp::date::text AS trade_date,
-                    TO_CHAR(
-                        DATE_TRUNC('hour', delivery_timestamp) +
-                            INTERVAL '15 minutes' * FLOOR(EXTRACT(MINUTE FROM delivery_timestamp) / 15),
-                        'HH24:MI'
-                    ) || '-' ||
-                    TO_CHAR(
-                        DATE_TRUNC('hour', delivery_timestamp) +
-                            INTERVAL '15 minutes' * (FLOOR(EXTRACT(MINUTE FROM delivery_timestamp) / 15) + 1),
-                        'HH24:MI'
-                    ) AS time_interval
+            cur.execute(f"""
+                SELECT DISTINCT {bucket_start_sql()}
                 FROM finance.ceps_actual_re_price_1min
                 WHERE delivery_timestamp::date = %s
             """, (date_str,))
-            intervals = set(cur.fetchall())
+            intervals = {row[0] for row in cur.fetchall()}
 
         if not intervals:
             logger.debug(f"  {date_str}: no RE price data, skipping")

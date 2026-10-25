@@ -29,12 +29,23 @@ import psycopg2
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from config import DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT
+from dst_calendar import PRAGUE_TZ, day_start_utc, slots_in_day
+
+
+def expected_slots(day: date, current_time: datetime, minutes: int, end_date: date) -> int:
+    """Expected `minutes`-slots for `day`: the whole day (1380/1440/1500 minutes,
+    92/96/100 quarters on DST days), or the slots started so far when it is the
+    last (current) day. `current_time` is aware."""
+    if day < end_date:
+        return slots_in_day(day, minutes)
+    elapsed = (current_time - day_start_utc(day)).total_seconds()
+    return int(elapsed // (minutes * 60)) + 1
 
 
 def get_missing_dates_1min(table_name: str, start_date: date, end_date: date, current_time: datetime, conn) -> list:
     """
     Get list of dates with missing or incomplete data for 1-minute tables.
-    Expected: 1440 records per day.
+    Expected: 1440 records per day (1380 / 1500 on DST days).
     """
     query = f"""
         WITH date_series AS (
@@ -66,15 +77,9 @@ def get_missing_dates_1min(table_name: str, start_date: date, end_date: date, cu
 
     missing_dates = []
     for check_date, record_count in all_dates:
-        if check_date < end_date:
-            expected = 1440
-            if record_count < expected:
-                missing_dates.append((check_date, record_count, expected))
-        else:
-            minutes_elapsed = current_time.hour * 60 + current_time.minute + 1
-            expected = minutes_elapsed
-            if record_count < expected:
-                missing_dates.append((check_date, record_count, expected))
+        expected = expected_slots(check_date, current_time, 1, end_date)
+        if record_count < expected:
+            missing_dates.append((check_date, record_count, expected))
 
     return missing_dates
 
@@ -82,7 +87,7 @@ def get_missing_dates_1min(table_name: str, start_date: date, end_date: date, cu
 def get_missing_dates_15min(table_name: str, start_date: date, end_date: date, current_time: datetime, conn) -> list:
     """
     Get list of dates with missing or incomplete data for native 15-minute tables.
-    Expected: 96 records per day.
+    Expected: 96 records per day (92 / 100 on DST days).
     """
     query = f"""
         WITH date_series AS (
@@ -114,16 +119,9 @@ def get_missing_dates_15min(table_name: str, start_date: date, end_date: date, c
 
     missing_dates = []
     for check_date, record_count in all_dates:
-        if check_date < end_date:
-            expected = 96
-            if record_count < expected:
-                missing_dates.append((check_date, record_count, expected))
-        else:
-            # Today: calculate expected based on current time (15-min intervals)
-            intervals_elapsed = (current_time.hour * 60 + current_time.minute) // 15 + 1
-            expected = intervals_elapsed
-            if record_count < expected:
-                missing_dates.append((check_date, record_count, expected))
+        expected = expected_slots(check_date, current_time, 15, end_date)
+        if record_count < expected:
+            missing_dates.append((check_date, record_count, expected))
 
     return missing_dates
 
@@ -190,8 +188,8 @@ def get_last_12h_stats_1min(table_name: str, current_time: datetime, conn) -> di
             MIN(delivery_timestamp) AS first_record,
             MAX(delivery_timestamp) AS last_record
         FROM finance.{table_name}
-        WHERE delivery_timestamp >= %s
-          AND delivery_timestamp <= %s;
+        WHERE delivery_datetime >= %s
+          AND delivery_datetime <= %s;
     """
 
     with conn.cursor() as cur:
@@ -243,17 +241,16 @@ def main():
     args = parser.parse_args()
 
     start_date = datetime.strptime(args.start, '%Y-%m-%d').date()
-    current_time = datetime.now()
+    current_time = datetime.now(PRAGUE_TZ)
     end_date = datetime.strptime(args.end, '%Y-%m-%d').date() if args.end else current_time.date()
 
     num_days = (end_date - start_date).days + 1
     completed_days = num_days - 1
-    minutes_today = current_time.hour * 60 + current_time.minute + 1
-    intervals_today = (current_time.hour * 60 + current_time.minute) // 15 + 1
+    days = [start_date + timedelta(days=i) for i in range(num_days)]
 
     # Expected totals
-    expected_1min = (completed_days * 1440) + minutes_today
-    expected_15min = (completed_days * 96) + intervals_today
+    expected_1min = sum(expected_slots(d, current_time, 1, end_date) for d in days)
+    expected_15min = sum(expected_slots(d, current_time, 15, end_date) for d in days)
 
     print("=" * 80)
     print("CEPS DATA CONSISTENCY CHECK")

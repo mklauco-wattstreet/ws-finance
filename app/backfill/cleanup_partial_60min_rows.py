@@ -72,6 +72,10 @@ INSTANT_KEYED = {
     "entsoe_load_60min", "entsoe_generation_forecast_60min", "entsoe_generation_actual_60min",
     "entsoe_cross_border_flows_60min", "entsoe_scheduled_cross_border_flows_60min",
     "entsoe_day_ahead_prices_60min", "entsoe_imbalance_prices_60min",
+    "ceps_actual_imbalance_60min", "ceps_estimated_imbalance_price_60min",
+    "ceps_actual_re_price_60min", "ceps_svr_activation_60min", "ceps_export_import_svr_60min",
+    "ceps_generation_60min", "ceps_generation_plan_60min", "ceps_generation_res_60min",
+    "ceps_derived_features_60min",
 }
 
 
@@ -121,14 +125,13 @@ def _build_queries(target: str, source: str, date_col: str, extra_keys_csv: str)
     )
 
 
-# ceps_1min_features_60min: source is the 1-min table; "complete" = 60 minutes.
+# ceps_1min_features_60min: source is the 1-min table; "complete" = 60 minutes,
+# matched by instant like INSTANT_KEYED.
 CEPS_1MIN_FEATURES_NOT_EXISTS = """NOT EXISTS (
     SELECT 1
     FROM ceps_actual_re_price_1min src
-    WHERE src.delivery_timestamp::date = t60.trade_date
-      AND TO_CHAR(DATE_TRUNC('hour', src.delivery_timestamp), 'HH24') =
-          SUBSTRING(t60.time_interval, 1, 2)
-    GROUP BY src.delivery_timestamp::date, DATE_TRUNC('hour', src.delivery_timestamp)
+    WHERE src.delivery_datetime >= t60.delivery_datetime
+      AND src.delivery_datetime < t60.delivery_datetime + interval '1 hour'
     HAVING COUNT(*) = 60
 )"""
 CEPS_1MIN_FEATURES_COUNT = (
