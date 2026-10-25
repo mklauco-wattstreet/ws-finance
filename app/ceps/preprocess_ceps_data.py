@@ -336,9 +336,17 @@ def aggregate_derived_features(affected_intervals: Set[tuple], conn, logger) -> 
                 ef.forecast_solar_mw AS da_forecast_solar_mw,
                 plan.total_mw AS plan_total_mw
             FROM finance.ceps_generation_15min g
-            LEFT JOIN finance.entsoe_generation_forecast ef
-                ON ef.trade_date = g.trade_date AND ef.time_interval = g.time_interval
-                AND ef.country_code = 'CZ'
+            -- ENTSO-E is keyed on delivery_datetime, so the repeated fall-back
+            -- hour has two rows per label; CEPS still keeps one (the later
+            -- pass), so take the later ENTSO-E row to match.
+            LEFT JOIN LATERAL (
+                SELECT ef.forecast_solar_mw
+                FROM finance.entsoe_generation_forecast ef
+                WHERE ef.trade_date = g.trade_date AND ef.time_interval = g.time_interval
+                  AND ef.country_code = 'CZ'
+                ORDER BY ef.delivery_datetime DESC
+                LIMIT 1
+            ) ef ON true
             LEFT JOIN finance.ceps_generation_plan_15min plan
                 ON plan.trade_date = g.trade_date AND plan.time_interval = g.time_interval
             WHERE g.trade_date IN %s
