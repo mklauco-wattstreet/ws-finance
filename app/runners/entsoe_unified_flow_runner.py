@@ -46,7 +46,7 @@ class UnifiedFlowRunner(BaseRunner):
         "delivery_datetime", "flow_de_mw", "flow_at_mw", "flow_pl_mw", "flow_sk_mw",
         "flow_total_net_mw"
     ]
-    CONFLICT_COLUMNS = ["trade_date", "period", "area_id", "country_code"]
+    CONFLICT_COLUMNS = ["delivery_datetime", "area_id", "country_code"]
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

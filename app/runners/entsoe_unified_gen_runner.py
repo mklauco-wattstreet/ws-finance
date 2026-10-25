@@ -52,11 +52,12 @@ class UnifiedGenerationRunner(BaseRunner):
     TABLE_NAME = "entsoe_generation_actual"
     COLUMNS = [
         "trade_date", "period", "area_id", "country_code", "time_interval",
+        "delivery_datetime",
         "gen_nuclear_mw", "gen_coal_mw", "gen_gas_mw", "gen_solar_mw",
         "gen_wind_mw", "gen_wind_offshore_mw", "gen_hydro_pumped_mw",
         "gen_biomass_mw", "gen_hydro_other_mw"
     ]
-    CONFLICT_COLUMNS = ["trade_date", "period", "area_id", "country_code"]
+    CONFLICT_COLUMNS = ["delivery_datetime", "area_id", "country_code"]
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -131,6 +132,7 @@ class UnifiedGenerationRunner(BaseRunner):
                 record['area_id'],
                 record['country_code'],
                 record['time_interval'],
+                record['delivery_datetime'],
                 record.get('gen_nuclear_mw'),
                 record.get('gen_coal_mw'),
                 record.get('gen_gas_mw'),

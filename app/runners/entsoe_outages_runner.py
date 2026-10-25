@@ -160,8 +160,9 @@ class OutagesRunner(BaseRunner):
            out_lignite_mw, out_hard_coal_mw, out_gas_mw, out_nuclear_mw, out_hydro_mw, out_other_mw)
         SELECT
           (s2.slot AT TIME ZONE 'Europe/Prague')::date,
-          (extract(hour FROM s2.slot AT TIME ZONE 'Europe/Prague')::int * 4
-             + extract(minute FROM s2.slot AT TIME ZONE 'Europe/Prague')::int / 15 + 1)::smallint,
+          -- period counts 15-min slots from local midnight (1..92/96/100, like OTE)
+          (extract(epoch FROM s2.slot
+             - ((s2.slot AT TIME ZONE 'Europe/Prague')::date::timestamp AT TIME ZONE 'Europe/Prague'))::int / 900 + 1)::smallint,
           to_char(s2.slot AT TIME ZONE 'Europe/Prague','HH24:MI') || '-' ||
           to_char((s2.slot + interval '15 min') AT TIME ZONE 'Europe/Prague','HH24:MI'),
           %(area)s, %(cc)s, s2.slot,
@@ -199,8 +200,9 @@ class OutagesRunner(BaseRunner):
                    GREATEST(o.nominal_power_mw - o.min_available_mw, 0) DESC
         ) s2
         GROUP BY s2.slot
-        ON CONFLICT (trade_date, period, area_id, country_code) DO UPDATE SET
-          time_interval = EXCLUDED.time_interval, delivery_datetime = EXCLUDED.delivery_datetime,
+        ON CONFLICT (delivery_datetime, area_id, country_code) DO UPDATE SET
+          trade_date = EXCLUDED.trade_date, period = EXCLUDED.period,
+          time_interval = EXCLUDED.time_interval,
           total_out_mw = EXCLUDED.total_out_mw, planned_out_mw = EXCLUDED.planned_out_mw,
           forced_out_mw = EXCLUDED.forced_out_mw, n_units = EXCLUDED.n_units,
           out_lignite_mw = EXCLUDED.out_lignite_mw, out_hard_coal_mw = EXCLUDED.out_hard_coal_mw,
@@ -223,24 +225,27 @@ class OutagesRunner(BaseRunner):
            total_out_mw, total_out_mw_max, planned_out_mw, forced_out_mw, n_units_max,
            out_lignite_mw, out_hard_coal_mw, out_gas_mw, out_nuclear_mw, out_hydro_mw, out_other_mw)
         SELECT trade_date,
-          to_char(h_local,'HH24:MI') || '-' || to_char(h_local + interval '1 hour','HH24:MI'),
-          %(area)s, %(cc)s, (h_local AT TIME ZONE 'Europe/Prague'),
+          to_char(h AT TIME ZONE 'Europe/Prague','HH24:MI') || '-' ||
+          to_char((h + interval '1 hour') AT TIME ZONE 'Europe/Prague','HH24:MI'),
+          %(area)s, %(cc)s, h,
           avg(total_out_mw), max(total_out_mw), avg(planned_out_mw), avg(forced_out_mw), max(n_units),
           avg(out_lignite_mw), avg(out_hard_coal_mw), avg(out_gas_mw),
           avg(out_nuclear_mw), avg(out_hydro_mw), avg(out_other_mw)
         FROM (
+          -- bucket by UTC hour: every Prague offset is a whole hour, and the
+          -- repeated 02:00-03:00 on the fall-back day stays two hours
           SELECT trade_date,
-                 date_trunc('hour', delivery_datetime AT TIME ZONE 'Europe/Prague') AS h_local,
-                 period, total_out_mw, planned_out_mw, forced_out_mw, n_units,
+                 date_trunc('hour', delivery_datetime) AS h,
+                 delivery_datetime, total_out_mw, planned_out_mw, forced_out_mw, n_units,
                  out_lignite_mw, out_hard_coal_mw, out_gas_mw, out_nuclear_mw, out_hydro_mw, out_other_mw
           FROM entsoe_outages_15min
           WHERE country_code = %(cc)s
             AND delivery_datetime >= %(start)s AND delivery_datetime < %(end)s
         ) b
-        GROUP BY trade_date, h_local
-        HAVING count(DISTINCT period) = 4
-        ON CONFLICT (trade_date, time_interval, area_id, country_code) DO UPDATE SET
-          delivery_datetime = EXCLUDED.delivery_datetime,
+        GROUP BY trade_date, h
+        HAVING count(DISTINCT delivery_datetime) = 4
+        ON CONFLICT (delivery_datetime, area_id, country_code) DO UPDATE SET
+          trade_date = EXCLUDED.trade_date, time_interval = EXCLUDED.time_interval,
           total_out_mw = EXCLUDED.total_out_mw, total_out_mw_max = EXCLUDED.total_out_mw_max,
           planned_out_mw = EXCLUDED.planned_out_mw, forced_out_mw = EXCLUDED.forced_out_mw,
           n_units_max = EXCLUDED.n_units_max,

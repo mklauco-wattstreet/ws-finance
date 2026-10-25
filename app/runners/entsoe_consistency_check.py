@@ -12,7 +12,7 @@ Checks data completeness for all ENTSO-E datasets:
 7. Balancing Energy (A84)
 8. Imbalance Prices (A85/A86)
 
-Expected: 96 periods per day per area (15-min resolution)
+Expected: one row per 15-min period per day per area (92/96/100 on DST days)
 """
 
 import argparse
@@ -71,7 +71,7 @@ DATASETS = [
 ]
 
 COUNTRIES = ['CZ', 'DE', 'AT', 'PL', 'SK']
-PERIODS_PER_DAY = 96
+PERIODS_PER_DAY = 96  # nominal day, for the summary figures only
 
 
 def get_summary_stats(table_name: str, country_code: str, start_date: date, end_date: date, conn) -> dict:
@@ -111,10 +111,13 @@ def get_missing_dates(table_name: str, country_code: str, start_date: date, end_
             WHERE country_code = %s AND trade_date BETWEEN %s AND %s
             GROUP BY trade_date
         )
+        -- expected periods = length of the local day in quarters (92/96/100)
         SELECT ds.check_date, COALESCE(dc.period_count, 0) AS period_count
         FROM date_series ds
         LEFT JOIN daily_counts dc ON ds.check_date = dc.trade_date
-        WHERE COALESCE(dc.period_count, 0) < {PERIODS_PER_DAY}
+        WHERE COALESCE(dc.period_count, 0) <
+              extract(epoch FROM ((ds.check_date + 1)::timestamp AT TIME ZONE 'Europe/Prague')
+                               - (ds.check_date::timestamp AT TIME ZONE 'Europe/Prague')) / 900
         ORDER BY ds.check_date;
     """
     with conn.cursor() as cur:

@@ -20,6 +20,9 @@ from pathlib import Path
 from typing import List, Dict, Optional, Any
 import zoneinfo
 
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from dst_calendar import day_start_utc, local_label, slot_start_utc
+
 
 # Standardized data directory path
 DATA_DIR = Path(__file__).parent / "data"
@@ -31,7 +34,7 @@ class BaseParser(ABC):
     Provides common utilities for:
     - Timestamp parsing (ISO 8601 → datetime)
     - Timezone conversion (UTC → Prague)
-    - Period number calculation (1-96)
+    - Period number calculation (1..92/96/100, counted from local midnight)
     - Time interval formatting
     """
 
@@ -71,55 +74,43 @@ class BaseParser(ABC):
 
     def calculate_period_number(self, dt: datetime) -> int:
         """
-        Calculate period number (1-96) for a given datetime.
+        15-min period number of the instant `dt` within its Prague delivery day.
 
-        Note: The datetime should be in Prague local time to align with OTE-CR periods.
-        Period 1 = 00:00-00:15 CET/CEST
-        Period 96 = 23:45-00:00 CET/CEST
+        Counted from local midnight in elapsed time, like OTE: 1..92 on the
+        spring-forward day, 1..96 normally, 1..100 on the fall-back day (the
+        repeated 02:00-03:00 gets its own periods 9-12 and 13-16).
 
         Args:
-            dt: Datetime in local timezone
+            dt: Timezone-aware datetime (UTC or local)
 
         Returns:
-            Period number (1-96)
+            Period number
         """
-        return (dt.hour * 4) + (dt.minute // 15) + 1
+        if dt.tzinfo is None:
+            raise ValueError("calculate_period_number needs a timezone-aware datetime")
+        trade_date = dt.astimezone(self.prague_tz).date()
+        return int((dt - day_start_utc(trade_date)).total_seconds() // 900) + 1
 
     def format_time_interval(self, start_dt: datetime, resolution_minutes: int) -> str:
         """
-        Format time interval as HH:MM-HH:MM.
+        Format the local wall-clock label HH:MM-HH:MM (descriptive only, not unique).
 
         Args:
-            start_dt: Start datetime
+            start_dt: Timezone-aware start datetime
             resolution_minutes: Interval resolution in minutes
 
         Returns:
             Formatted time interval string
         """
-        end_dt = start_dt + timedelta(minutes=resolution_minutes)
-        return f"{start_dt.strftime('%H:%M')}-{end_dt.strftime('%H:%M')}"
+        return local_label(start_dt, resolution_minutes, midnight='00:00')
 
-    def calculate_time_interval_from_period(self, period_num: int) -> str:
-        """
-        Calculate time interval string from period number.
+    def calculate_time_interval_from_period(self, trade_date, period_num: int) -> str:
+        """Local 15-min label of period `period_num` of delivery day `trade_date`."""
+        return self.format_time_interval(slot_start_utc(trade_date, period_num), 15)
 
-        Args:
-            period_num: Period number (1-96)
-
-        Returns:
-            Time interval string (HH:MM-HH:MM)
-        """
-        minutes_from_midnight = (period_num - 1) * 15
-        hours = minutes_from_midnight // 60
-        minutes = minutes_from_midnight % 60
-        start_time = f"{hours:02d}:{minutes:02d}"
-
-        end_minutes = minutes_from_midnight + 15
-        end_hours = end_minutes // 60
-        end_mins = end_minutes % 60
-        end_time = f"{end_hours:02d}:{end_mins:02d}"
-
-        return f"{start_time}-{end_time}"
+    def delivery_datetime(self, trade_date, period_num: int) -> datetime:
+        """UTC start instant of 15-min period `period_num` of delivery day `trade_date`."""
+        return slot_start_utc(trade_date, period_num)
 
     def get_resolution_minutes(self, resolution_str: str) -> int:
         """
@@ -270,6 +261,7 @@ class ImbalanceParser(BaseParser):
                     'trade_date': trade_date,
                     'period': period_num,
                     'time_interval': time_interval_str,
+                    'delivery_datetime': point_time_utc,
                     'status': doc_status,
                     'pos_imb_price_mwh': 0.0,
                     'pos_imb_scarcity_mwh': 0.0,
@@ -386,7 +378,8 @@ class ImbalanceParser(BaseParser):
                 record = {
                     'trade_date': trade_date,
                     'period': period_num,
-                    'time_interval': self.calculate_time_interval_from_period(period_num),
+                    'time_interval': self.calculate_time_interval_from_period(trade_date, period_num),
+                    'delivery_datetime': self.delivery_datetime(trade_date, period_num),
                     'status': 'A01',
                     'pos_imb_price_mwh': 0.0,
                     'pos_imb_scarcity_mwh': 0.0,
@@ -513,6 +506,7 @@ class LoadParser(BaseParser):
                 'trade_date': trade_date,
                 'period': period_num,
                 'time_interval': time_interval_str,
+                'delivery_datetime': point_time_utc,
                 'load_mw': last_quantity
             })
 
@@ -595,7 +589,8 @@ class LoadParser(BaseParser):
             record = {
                 'trade_date': trade_date,
                 'period': period_num,
-                'time_interval': self.calculate_time_interval_from_period(period_num),
+                'time_interval': self.calculate_time_interval_from_period(trade_date, period_num),
+                'delivery_datetime': self.delivery_datetime(trade_date, period_num),
                 'actual_load_mw': None,
                 'forecast_load_mw': None
             }
@@ -818,6 +813,7 @@ class GenerationParser(BaseParser):
                 'trade_date': trade_date,
                 'period': period_num,
                 'time_interval': data['time_interval'],
+                'delivery_datetime': self.delivery_datetime(trade_date, period_num),
             }
 
             # Include area_id if configured
@@ -976,6 +972,7 @@ class GermanyWindParser(BaseParser):
                 'trade_date': trade_date,
                 'period': period_num,
                 'time_interval': data['time_interval'],
+                'delivery_datetime': self.delivery_datetime(trade_date, period_num),
             }
 
             # Get individual wind values
@@ -1143,12 +1140,8 @@ class CrossBorderFlowsParser(BaseParser):
             # Apply direction (positive for import, negative for export)
             flow_value = last_quantity * direction
 
-            point_time_utc = period_start + timedelta(minutes=interval_idx * resolution_minutes)
-            point_time_local = self.convert_to_local_time(point_time_utc)
-
-            # Use local datetime as key (aligned with Prague timezone)
-            # Remove timezone info for storage (will be naive datetime in local time)
-            delivery_datetime = point_time_local.replace(tzinfo=None)
+            # Key on the UTC instant: unique even in the repeated fall-back hour
+            delivery_datetime = period_start + timedelta(minutes=interval_idx * resolution_minutes)
 
             # Initialize key if not exists
             if delivery_datetime not in self._wide_data:
@@ -1189,9 +1182,8 @@ class CrossBorderFlowsParser(BaseParser):
         for delivery_datetime in sorted(self._wide_data.keys()):
             data = self._wide_data[delivery_datetime]
 
-            # Calculate trade_date, period, time_interval from delivery_datetime
-            # delivery_datetime is already in Prague local time (naive)
-            trade_date = delivery_datetime.date()
+            # Calculate trade_date, period, time_interval from the UTC instant
+            trade_date = self.convert_to_local_time(delivery_datetime).date()
             period_num = self.calculate_period_number(delivery_datetime)
             time_interval_str = self.format_time_interval(delivery_datetime, 15)
 
@@ -1365,6 +1357,7 @@ class GenerationForecastParser(BaseParser):
                 'trade_date': trade_date,
                 'period': period_num,
                 'time_interval': data['time_interval'],
+                'delivery_datetime': self.delivery_datetime(trade_date, period_num),
             }
 
             # Include area_id and country_code if configured
@@ -1542,6 +1535,7 @@ class BalancingEnergyParser(BaseParser):
                 'trade_date': trade_date,
                 'period': period_num,
                 'time_interval': data['time_interval'],
+                'delivery_datetime': self.delivery_datetime(trade_date, period_num),
             }
 
             # Include area_id and country_code if configured
@@ -1671,6 +1665,7 @@ class ScheduledGenerationParser(BaseParser):
                 'trade_date': trade_date,
                 'period': period_num,
                 'time_interval': data['time_interval'],
+                'delivery_datetime': self.delivery_datetime(trade_date, period_num),
                 'scheduled_total_mw': value if value != 0.0 else None,
             }
 
@@ -1845,6 +1840,7 @@ class ScheduledExchangesParser(BaseParser):
                 'trade_date': trade_date,
                 'period': period_num,
                 'time_interval': data['time_interval'],
+                'delivery_datetime': self.delivery_datetime(trade_date, period_num),
             }
 
             # Include area_id and country_code if configured
@@ -1989,6 +1985,7 @@ class DayAheadPricesParser(BaseParser):
                 'trade_date': trade_date,
                 'period': period_num,
                 'time_interval': data['time_interval'],
+                'delivery_datetime': self.delivery_datetime(trade_date, period_num),
                 'price_eur_mwh': data['price_eur_mwh'],
             }
 
@@ -2109,6 +2106,7 @@ class ProcuredCapacityParser(BaseParser):
             rows.append({
                 'trade_date': point_time_local.date(),
                 'time_interval': self.format_time_interval(point_time_local, res_minutes),
+                'delivery_datetime': point_time_utc,
                 'reserve_type': self.reserve_type,
                 'direction': direction,
                 'offer_seq': offer_seq,

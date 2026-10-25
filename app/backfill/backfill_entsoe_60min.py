@@ -7,11 +7,11 @@ Aggregation rules:
 - entsoe_imbalance_prices_60min:
     * pos_imb_*, neg_imb_* prices:  AVG()
     * imbalance_mwh, difference_mwh: SUM()
-    * situation, status:            last (ARRAY_AGG ORDER BY time_interval DESC)
+    * situation, status:            last (ARRAY_AGG ORDER BY delivery_datetime DESC)
     * currency:                     MAX() (identical across the four quarters)
-    * delivery_datetime:            MIN() (hour start)
-- entsoe_cross_border_flows_60min:
-    * delivery_datetime: date_trunc('hour', MIN(delivery_datetime))
+- delivery_datetime (every table): UTC start of the hour. Hours are bucketed
+  by instant, so the repeated 02:00-03:00 on the fall-back day stays two
+  hours; the completeness gate counts distinct quarter instants.
 
 Partitioning is preserved: INSERT goes to the parent partitioned
 table; PostgreSQL routes each row to the right partition.
@@ -26,9 +26,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from backfill._common import (
-    HOUR_COMPLETE_HAVING,
-    HOUR_GROUP_SQL,
-    HOUR_INTERVAL_SQL,
+    HOUR_COMPLETE_DT_HAVING,
+    HOUR_INTERVAL_DT_SQL,
+    HOUR_START_DT_SQL,
     parse_args,
     run_backfill,
     setup_logging,
@@ -38,21 +38,24 @@ from backfill._common import (
 # -------------------- entsoe_load_60min (partitioned by country_code) --------------------
 LOAD_SQL = f"""
 INSERT INTO entsoe_load_60min (
-    trade_date, time_interval, area_id, country_code,
+    trade_date, time_interval, delivery_datetime, area_id, country_code,
     actual_load_mw, forecast_load_mw
 )
 SELECT
     trade_date,
-    {HOUR_INTERVAL_SQL},
+    {HOUR_INTERVAL_DT_SQL},
+    {HOUR_START_DT_SQL},
     area_id,
     country_code,
     AVG(actual_load_mw),
     AVG(forecast_load_mw)
 FROM entsoe_load
 WHERE trade_date = %s
-GROUP BY trade_date, {HOUR_GROUP_SQL}, area_id, country_code
-{HOUR_COMPLETE_HAVING}
-ON CONFLICT (trade_date, time_interval, area_id, country_code) DO UPDATE SET
+GROUP BY trade_date, {HOUR_START_DT_SQL}, area_id, country_code
+{HOUR_COMPLETE_DT_HAVING}
+ON CONFLICT (delivery_datetime, area_id, country_code) DO UPDATE SET
+    trade_date = EXCLUDED.trade_date,
+    time_interval = EXCLUDED.time_interval,
     actual_load_mw = EXCLUDED.actual_load_mw,
     forecast_load_mw = EXCLUDED.forecast_load_mw,
     updated_at = CURRENT_TIMESTAMP
@@ -62,12 +65,13 @@ ON CONFLICT (trade_date, time_interval, area_id, country_code) DO UPDATE SET
 # -------------------- entsoe_generation_forecast_60min (partitioned by country_code) --------------------
 GEN_FORECAST_SQL = f"""
 INSERT INTO entsoe_generation_forecast_60min (
-    trade_date, time_interval, area_id, country_code,
+    trade_date, time_interval, delivery_datetime, area_id, country_code,
     forecast_solar_mw, forecast_wind_mw, forecast_wind_offshore_mw
 )
 SELECT
     trade_date,
-    {HOUR_INTERVAL_SQL},
+    {HOUR_INTERVAL_DT_SQL},
+    {HOUR_START_DT_SQL},
     area_id,
     country_code,
     AVG(forecast_solar_mw),
@@ -75,9 +79,11 @@ SELECT
     AVG(forecast_wind_offshore_mw)
 FROM entsoe_generation_forecast
 WHERE trade_date = %s
-GROUP BY trade_date, {HOUR_GROUP_SQL}, area_id, country_code
-{HOUR_COMPLETE_HAVING}
-ON CONFLICT (trade_date, time_interval, area_id, country_code) DO UPDATE SET
+GROUP BY trade_date, {HOUR_START_DT_SQL}, area_id, country_code
+{HOUR_COMPLETE_DT_HAVING}
+ON CONFLICT (delivery_datetime, area_id, country_code) DO UPDATE SET
+    trade_date = EXCLUDED.trade_date,
+    time_interval = EXCLUDED.time_interval,
     forecast_solar_mw = EXCLUDED.forecast_solar_mw,
     forecast_wind_mw = EXCLUDED.forecast_wind_mw,
     forecast_wind_offshore_mw = EXCLUDED.forecast_wind_offshore_mw,
@@ -93,20 +99,23 @@ _GEN_ACTUAL_COLS = [
 ]
 GEN_ACTUAL_SQL = f"""
 INSERT INTO entsoe_generation_actual_60min (
-    trade_date, time_interval, area_id, country_code,
+    trade_date, time_interval, delivery_datetime, area_id, country_code,
     {", ".join(_GEN_ACTUAL_COLS)}
 )
 SELECT
     trade_date,
-    {HOUR_INTERVAL_SQL},
+    {HOUR_INTERVAL_DT_SQL},
+    {HOUR_START_DT_SQL},
     area_id,
     country_code,
     {", ".join(f"AVG({c})" for c in _GEN_ACTUAL_COLS)}
 FROM entsoe_generation_actual
 WHERE trade_date = %s
-GROUP BY trade_date, {HOUR_GROUP_SQL}, area_id, country_code
-{HOUR_COMPLETE_HAVING}
-ON CONFLICT (trade_date, time_interval, area_id, country_code) DO UPDATE SET
+GROUP BY trade_date, {HOUR_START_DT_SQL}, area_id, country_code
+{HOUR_COMPLETE_DT_HAVING}
+ON CONFLICT (delivery_datetime, area_id, country_code) DO UPDATE SET
+    trade_date = EXCLUDED.trade_date,
+    time_interval = EXCLUDED.time_interval,
     {", ".join(f"{c} = EXCLUDED.{c}" for c in _GEN_ACTUAL_COLS)},
     updated_at = CURRENT_TIMESTAMP
 """
@@ -121,16 +130,17 @@ INSERT INTO entsoe_cross_border_flows_60min (
 )
 SELECT
     trade_date,
-    {HOUR_INTERVAL_SQL},
-    date_trunc('hour', MIN(delivery_datetime)),
+    {HOUR_INTERVAL_DT_SQL},
+    {HOUR_START_DT_SQL},
     area_id,
     {", ".join(f"AVG({c})" for c in _FLOW_COLS)}
 FROM entsoe_cross_border_flows
 WHERE trade_date = %s
-GROUP BY trade_date, {HOUR_GROUP_SQL}, area_id
-{HOUR_COMPLETE_HAVING}
-ON CONFLICT (trade_date, time_interval, area_id) DO UPDATE SET
-    delivery_datetime = EXCLUDED.delivery_datetime,
+GROUP BY trade_date, {HOUR_START_DT_SQL}, area_id
+{HOUR_COMPLETE_DT_HAVING}
+ON CONFLICT (delivery_datetime, area_id) DO UPDATE SET
+    trade_date = EXCLUDED.trade_date,
+    time_interval = EXCLUDED.time_interval,
     {", ".join(f"{c} = EXCLUDED.{c}" for c in _FLOW_COLS)},
     updated_at = CURRENT_TIMESTAMP
 """
@@ -141,18 +151,21 @@ _SCHED_FLOW_COLS = ["scheduled_de_mw", "scheduled_at_mw", "scheduled_pl_mw",
                     "scheduled_sk_mw", "scheduled_total_net_mw"]
 SCHEDULED_CROSS_BORDER_FLOWS_SQL = f"""
 INSERT INTO entsoe_scheduled_cross_border_flows_60min (
-    trade_date, time_interval,
+    trade_date, time_interval, delivery_datetime,
     {", ".join(_SCHED_FLOW_COLS)}
 )
 SELECT
     trade_date,
-    {HOUR_INTERVAL_SQL},
+    {HOUR_INTERVAL_DT_SQL},
+    {HOUR_START_DT_SQL},
     {", ".join(f"AVG({c})" for c in _SCHED_FLOW_COLS)}
 FROM entsoe_scheduled_cross_border_flows
 WHERE trade_date = %s
-GROUP BY trade_date, {HOUR_GROUP_SQL}
-{HOUR_COMPLETE_HAVING}
-ON CONFLICT (trade_date, time_interval) DO UPDATE SET
+GROUP BY trade_date, {HOUR_START_DT_SQL}
+{HOUR_COMPLETE_DT_HAVING}
+ON CONFLICT (delivery_datetime) DO UPDATE SET
+    trade_date = EXCLUDED.trade_date,
+    time_interval = EXCLUDED.time_interval,
     {", ".join(f"{c} = EXCLUDED.{c}" for c in _SCHED_FLOW_COLS)},
     updated_at = CURRENT_TIMESTAMP
 """
@@ -161,19 +174,22 @@ ON CONFLICT (trade_date, time_interval) DO UPDATE SET
 # -------------------- entsoe_day_ahead_prices_60min (partitioned by country_code) --------------------
 DAY_AHEAD_PRICES_SQL = f"""
 INSERT INTO entsoe_day_ahead_prices_60min (
-    trade_date, time_interval, area_id, country_code, price_eur_mwh
+    trade_date, time_interval, delivery_datetime, area_id, country_code, price_eur_mwh
 )
 SELECT
     trade_date,
-    {HOUR_INTERVAL_SQL},
+    {HOUR_INTERVAL_DT_SQL},
+    {HOUR_START_DT_SQL},
     area_id,
     country_code,
     AVG(price_eur_mwh)
 FROM entsoe_day_ahead_prices
 WHERE trade_date = %s
-GROUP BY trade_date, {HOUR_GROUP_SQL}, area_id, country_code
-{HOUR_COMPLETE_HAVING}
-ON CONFLICT (trade_date, time_interval, area_id, country_code) DO UPDATE SET
+GROUP BY trade_date, {HOUR_START_DT_SQL}, area_id, country_code
+{HOUR_COMPLETE_DT_HAVING}
+ON CONFLICT (delivery_datetime, area_id, country_code) DO UPDATE SET
+    trade_date = EXCLUDED.trade_date,
+    time_interval = EXCLUDED.time_interval,
     price_eur_mwh = EXCLUDED.price_eur_mwh,
     updated_at = CURRENT_TIMESTAMP
 """
@@ -195,28 +211,29 @@ INSERT INTO entsoe_imbalance_prices_60min (
 )
 SELECT
     trade_date,
-    {HOUR_INTERVAL_SQL},
+    {HOUR_INTERVAL_DT_SQL},
     area_id,
     country_code,
     {", ".join(f"AVG({c})" for c in _IMB_PRICE_COLS)},
     SUM(imbalance_mwh),
     SUM(difference_mwh),
-    (ARRAY_AGG(situation ORDER BY time_interval DESC))[1],
-    (ARRAY_AGG(status    ORDER BY time_interval DESC))[1],
+    (ARRAY_AGG(situation ORDER BY delivery_datetime DESC))[1],
+    (ARRAY_AGG(status    ORDER BY delivery_datetime DESC))[1],
     MAX(currency),
-    date_trunc('hour', MIN(delivery_datetime))
+    {HOUR_START_DT_SQL}
 FROM entsoe_imbalance_prices
 WHERE trade_date = %s
-GROUP BY trade_date, {HOUR_GROUP_SQL}, area_id, country_code
-{HOUR_COMPLETE_HAVING}
-ON CONFLICT (trade_date, time_interval, area_id, country_code) DO UPDATE SET
+GROUP BY trade_date, {HOUR_START_DT_SQL}, area_id, country_code
+{HOUR_COMPLETE_DT_HAVING}
+ON CONFLICT (delivery_datetime, area_id, country_code) DO UPDATE SET
+    trade_date = EXCLUDED.trade_date,
+    time_interval = EXCLUDED.time_interval,
     {", ".join(f"{c} = EXCLUDED.{c}" for c in _IMB_PRICE_COLS)},
     imbalance_mwh = EXCLUDED.imbalance_mwh,
     difference_mwh = EXCLUDED.difference_mwh,
     situation = EXCLUDED.situation,
     status = EXCLUDED.status,
     currency = EXCLUDED.currency,
-    delivery_datetime = EXCLUDED.delivery_datetime,
     updated_at = CURRENT_TIMESTAMP
 """
 
@@ -236,8 +253,8 @@ INSERT INTO entsoe_intraday_transfer_capacity_60min (
 )
 SELECT
     trade_date,
-    {HOUR_INTERVAL_SQL},
-    date_trunc('hour', MIN(delivery_datetime)),
+    {HOUR_INTERVAL_DT_SQL},
+    {HOUR_START_DT_SQL},
     area_id,
     country_code,
     product,
@@ -245,10 +262,11 @@ SELECT
     MAX(published_at)
 FROM entsoe_intraday_transfer_capacity
 WHERE trade_date = %s
-GROUP BY trade_date, {HOUR_GROUP_SQL}, area_id, country_code, product
-{HOUR_COMPLETE_HAVING}
-ON CONFLICT (trade_date, time_interval, area_id, country_code, product) DO UPDATE SET
-    delivery_datetime = EXCLUDED.delivery_datetime,
+GROUP BY trade_date, {HOUR_START_DT_SQL}, area_id, country_code, product
+{HOUR_COMPLETE_DT_HAVING}
+ON CONFLICT (delivery_datetime, area_id, country_code, product) DO UPDATE SET
+    trade_date = EXCLUDED.trade_date,
+    time_interval = EXCLUDED.time_interval,
     {", ".join(f"{c} = EXCLUDED.{c}" for c in _CAPACITY_COLS)},
     published_at = EXCLUDED.published_at,
     updated_at = CURRENT_TIMESTAMP
@@ -263,18 +281,19 @@ INSERT INTO entsoe_congestion_income_60min (
 )
 SELECT
     trade_date,
-    {HOUR_INTERVAL_SQL},
-    date_trunc('hour', MIN(delivery_datetime)),
+    {HOUR_INTERVAL_DT_SQL},
+    {HOUR_START_DT_SQL},
     area_id,
     country_code,
     SUM(congestion_income_eur),
     MAX(source_resolution)
 FROM entsoe_congestion_income
 WHERE trade_date = %s
-GROUP BY trade_date, {HOUR_GROUP_SQL}, area_id, country_code
-{HOUR_COMPLETE_HAVING}
-ON CONFLICT (trade_date, time_interval, area_id, country_code) DO UPDATE SET
-    delivery_datetime = EXCLUDED.delivery_datetime,
+GROUP BY trade_date, {HOUR_START_DT_SQL}, area_id, country_code
+{HOUR_COMPLETE_DT_HAVING}
+ON CONFLICT (delivery_datetime, area_id, country_code) DO UPDATE SET
+    trade_date = EXCLUDED.trade_date,
+    time_interval = EXCLUDED.time_interval,
     congestion_income_eur = EXCLUDED.congestion_income_eur,
     source_resolution = EXCLUDED.source_resolution,
     updated_at = CURRENT_TIMESTAMP

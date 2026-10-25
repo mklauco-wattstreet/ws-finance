@@ -40,9 +40,10 @@ class UnifiedLoadRunner(BaseRunner):
     TABLE_NAME = "entsoe_load"
     COLUMNS = [
         "trade_date", "period", "area_id", "country_code", "time_interval",
+        "delivery_datetime",
         "actual_load_mw", "forecast_load_mw"
     ]
-    CONFLICT_COLUMNS = ["trade_date", "period", "area_id", "country_code"]
+    CONFLICT_COLUMNS = ["delivery_datetime", "area_id", "country_code"]
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -117,6 +118,7 @@ class UnifiedLoadRunner(BaseRunner):
                 record['area_id'],
                 record['country_code'],
                 record['time_interval'],
+                record['delivery_datetime'],
                 record.get('actual_load_mw'),
                 record.get('forecast_load_mw')
             ))

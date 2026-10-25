@@ -26,9 +26,9 @@ four quarter-hour rows sum back to the published hourly amount.
 source_resolution records the Period's native resolution ('PT15M' or
 'PT60M') so downstream can distinguish expanded rows from native ones.
 
-`period` is a convenience column derived from the local time-of-day; nothing
-here assumes 96 periods per day (DST switch days have 92/100) and nothing
-keys off it. (trade_date, time_interval) is the authoritative key.
+`period` counts 15-min periods from local midnight (1..92/96/100, like OTE)
+and `time_interval` is a descriptive local label. delivery_datetime (the UTC
+start instant) is the authoritative key.
 """
 
 from __future__ import annotations
@@ -156,11 +156,10 @@ class CongestionIncomeParser(BaseParser):
         trade_date = local_dt.date()
         period_num = self.calculate_period_number(local_dt)
         time_interval = self.format_time_interval(local_dt, NATIVE_INTERVAL_MINUTES)
-        # Naive local delivery timestamp (matches other ENTSO-E parsers'
-        # convention of storing Prague-local wall-clock time without tzinfo).
-        delivery_datetime = local_dt.replace(tzinfo=None)
+        # UTC instant: the key, unique even in the repeated fall-back hour.
+        delivery_datetime = sub_start_utc
 
-        key = (trade_date, time_interval, self.area_id, self.country_code)
+        key = (delivery_datetime, self.area_id, self.country_code)
 
         if key not in rows_by_key:
             rows_by_key[key] = {

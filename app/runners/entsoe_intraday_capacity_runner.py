@@ -62,7 +62,7 @@ class IntradayCapacityRunner(BaseRunner):
         "cap_import_total_mw", "cap_export_total_mw",
         "published_at",
     ]
-    CONFLICT_COLUMNS = ["trade_date", "time_interval", "area_id", "country_code", "product"]
+    CONFLICT_COLUMNS = ["delivery_datetime", "area_id", "country_code", "product"]
 
     # How far back the ida1/ida2/ida3 default window reaches. Days that are
     # already complete cost one SELECT and no API call.
@@ -143,7 +143,7 @@ class IntradayCapacityRunner(BaseRunner):
     def _is_product_complete(self, conn, day: date, area_id: int, country_code: str, product: str) -> bool:
         """One cheap SELECT: is (day, area, product) already fully populated?
 
-        Complete = the count of distinct time_interval rows already stored
+        Complete = the count of distinct delivery_datetime rows already stored
         for (trade_date, area_id, country_code, product) reaches the expected
         interval count for that local day/product. For ida1/ida2 that is the
         full day; for ida3 it is the second-half-of-day count, so "count
@@ -159,7 +159,7 @@ class IntradayCapacityRunner(BaseRunner):
         try:
             with conn.cursor() as cur:
                 cur.execute(
-                    f"SELECT COUNT(DISTINCT time_interval) FROM {self.TABLE_NAME} "
+                    f"SELECT COUNT(DISTINCT delivery_datetime) FROM {self.TABLE_NAME} "
                     f"WHERE trade_date = %s AND area_id = %s AND country_code = %s AND product = %s",
                     (day, area_id, country_code, product)
                 )

@@ -63,6 +63,18 @@ QUARTERLY_TABLES = [
 ]
 
 
+# Targets whose source and 60-min table are both keyed on delivery_datetime
+# (UTC start instant). Their hours are matched by instant, so the repeated
+# 02:00-03:00 on the fall-back day is checked as two separate hours.
+INSTANT_KEYED = {
+    "da_period_summary_60min", "da_curve_depth_60min",
+    "ote_prices_ida_60min", "ote_prices_imbalance_60min",
+    "entsoe_load_60min", "entsoe_generation_forecast_60min", "entsoe_generation_actual_60min",
+    "entsoe_cross_border_flows_60min", "entsoe_scheduled_cross_border_flows_60min",
+    "entsoe_day_ahead_prices_60min", "entsoe_imbalance_prices_60min",
+}
+
+
 def _not_exists_clause(target: str, source: str, date_col: str, extra_keys_csv: str) -> str:
     """Build the NOT EXISTS predicate that flags partial-hour 60-min rows.
 
@@ -80,6 +92,15 @@ def _not_exists_clause(target: str, source: str, date_col: str, extra_keys_csv: 
             f"      AND src.{k}::text = t60.{k}::text" for k in keys
         )
         extra_group = ", " + ", ".join(f"src.{k}" for k in keys)
+    if target in INSTANT_KEYED:
+        return f"""NOT EXISTS (
+    SELECT 1
+    FROM {source} src
+    WHERE src.delivery_datetime >= t60.delivery_datetime
+      AND src.delivery_datetime < t60.delivery_datetime + interval '1 hour'
+{extra_predicate_lines}
+    HAVING COUNT(DISTINCT src.delivery_datetime) = 4
+)"""
     return f"""NOT EXISTS (
     SELECT 1
     FROM {source} src

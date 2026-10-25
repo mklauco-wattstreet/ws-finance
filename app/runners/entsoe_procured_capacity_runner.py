@@ -31,6 +31,7 @@ from typing import List, Dict, Tuple
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from runners.base_runner import BaseRunner, PRAGUE_TZ
+from dst_calendar import local_label
 from entsoe.client import EntsoeClient
 from entsoe.parsers import ProcuredCapacityParser
 from entsoe.constants import (
@@ -48,10 +49,10 @@ TABLE_60MIN = "entsoe_procured_capacity_60min"
 TABLE_15MIN = "entsoe_procured_capacity_15min"
 
 RAW_COLUMNS = [
-    "trade_date", "time_interval", "reserve_type", "direction",
+    "trade_date", "time_interval", "delivery_datetime", "reserve_type", "direction",
     "offer_seq", "quantity_mw", "price_eur",
 ]
-RAW_CONFLICT = ["trade_date", "time_interval", "reserve_type", "direction", "offer_seq"]
+RAW_CONFLICT = ["delivery_datetime", "reserve_type", "direction", "offer_seq"]
 
 # Wide summary column order (must match migration 066).
 SUMMARY_VALUE_COLUMNS = [
@@ -60,8 +61,8 @@ SUMMARY_VALUE_COLUMNS = [
     for d in DIRECTIONS
     for suffix in ("mw", "price_marginal_eur", "price_avg_eur")
 ]
-SUMMARY_COLUMNS = ["trade_date", "time_interval"] + SUMMARY_VALUE_COLUMNS
-SUMMARY_CONFLICT = ["trade_date", "time_interval"]
+SUMMARY_COLUMNS = ["trade_date", "time_interval", "delivery_datetime"] + SUMMARY_VALUE_COLUMNS
+SUMMARY_CONFLICT = ["delivery_datetime"]
 
 
 class ProcuredCapacityRunner(BaseRunner):
@@ -189,17 +190,18 @@ class ProcuredCapacityRunner(BaseRunner):
     # Aggregation
     # ------------------------------------------------------------------
     def _aggregate_60min(self, raw_rows: List[Dict]) -> List[Tuple]:
-        """Aggregate per-offer rows into one wide row per (trade_date, hour)."""
-        # groups[(trade_date, time_interval)][f"{reserve}_{dir}"] -> list of (qty, price)
+        """Aggregate per-offer rows into one wide row per hour (keyed by its UTC start)."""
+        # groups[(delivery_datetime, trade_date, time_interval)][f"{reserve}_{dir}"]
+        #   -> list of (qty, price); delivery_datetime first so rows sort by instant
         groups: Dict[Tuple, Dict[str, list]] = defaultdict(lambda: defaultdict(list))
         for r in raw_rows:
-            key = (r['trade_date'], r['time_interval'])
+            key = (r['delivery_datetime'], r['trade_date'], r['time_interval'])
             groups[key][f"{r['reserve_type']}_{r['direction']}"].append(
                 (r['quantity_mw'], r['price_eur'])
             )
 
         records = []
-        for (trade_date, time_interval), buckets in sorted(groups.items()):
+        for (delivery_datetime, trade_date, time_interval), buckets in sorted(groups.items()):
             values = {}
             for r in RESERVE_TYPES:
                 for d in DIRECTIONS:
@@ -214,7 +216,8 @@ class ProcuredCapacityRunner(BaseRunner):
                     values[f"{r}_{d}_price_avg_eur"] = avg
 
             records.append(
-                (trade_date, time_interval) + tuple(values[c] for c in SUMMARY_VALUE_COLUMNS)
+                (trade_date, time_interval, delivery_datetime)
+                + tuple(values[c] for c in SUMMARY_VALUE_COLUMNS)
             )
         return records
 
@@ -222,15 +225,11 @@ class ProcuredCapacityRunner(BaseRunner):
         """Forward-fill each hourly summary row into four 15-min rows."""
         records = []
         for rec in records_60min:
-            trade_date, time_interval = rec[0], rec[1]
-            values = rec[2:]
-            start_hh = int(time_interval[:2])
+            trade_date, hour_start = rec[0], rec[2]
+            values = rec[3:]
             for q in range(4):
-                start_min = q * 15
-                end_total = start_hh * 60 + start_min + 15
-                ti = (f"{start_hh:02d}:{start_min:02d}-"
-                      f"{(end_total // 60) % 24:02d}:{end_total % 60:02d}")
-                records.append((trade_date, ti) + values)
+                start = hour_start + timedelta(minutes=15 * q)
+                records.append((trade_date, local_label(start, 15, midnight='00:00'), start) + values)
         return records
 
     # ------------------------------------------------------------------

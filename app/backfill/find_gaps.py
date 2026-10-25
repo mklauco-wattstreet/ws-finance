@@ -20,6 +20,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from backfill._common import get_db_connection
+from dst_calendar import slots_in_day
 
 
 # (table_name, date_column, partition_column_or_None)
@@ -122,9 +123,12 @@ def analyze_table(table, partition_col, start_date, end_date, coverage, verbose)
         for d in daterange(start_date, end_date):
             hours = day_map.get(d, {})
             full_hours = sum(1 for n in hours.values() if n >= 4)
+            # Distinct label hours: 23 on the spring-forward day; 24 on the
+            # fall-back day too (its repeated "02" hour shares one label).
+            expected_hours = min(slots_in_day(d, 60), 24)
             if not hours:
                 missing.append(d)
-            elif len(hours) < 24 or full_hours < 24:
+            elif len(hours) < expected_hours or full_hours < expected_hours:
                 partial.append((d, len(hours), full_hours))
             else:
                 fully_covered += 1
@@ -142,7 +146,9 @@ def analyze_table(table, partition_col, start_date, end_date, coverage, verbose)
             print(f"    Partial coverage ({len(partial)} day(s)):")
             shown = partial if verbose else partial[:5]
             for d, hour_count, full_hour_count in shown:
-                print(f"      {d}: {hour_count}/24 hours present, {full_hour_count}/24 fully covered")
+                expected_hours = min(slots_in_day(d, 60), 24)
+                print(f"      {d}: {hour_count}/{expected_hours} hours present, "
+                      f"{full_hour_count}/{expected_hours} fully covered")
             if not verbose and len(partial) > 5:
                 print(f"      … ({len(partial) - 5} more — use --verbose to see all)")
 

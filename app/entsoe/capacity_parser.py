@@ -56,7 +56,7 @@ class IntradayTransferCapacityParser(BaseParser):
         super().__init__()
         self.area_id = area_id
         self.country_code = country_code
-        # delivery_datetime (Prague local, naive) -> {column: value}
+        # delivery_datetime (UTC instant) -> {column: value}
         self._wide_data: Dict[datetime, Dict[str, float]] = {}
         # delivery_datetime -> max update_DateAndOrTime.dateTime seen (tz-aware UTC)
         self._published_at: Dict[datetime, datetime] = {}
@@ -135,9 +135,8 @@ class IntradayTransferCapacityParser(BaseParser):
             if last_value is None:
                 continue
 
-            point_time_utc = period_start + timedelta(minutes=interval_idx * resolution_minutes)
-            point_time_local = self.convert_to_local_time(point_time_utc)
-            delivery_datetime = point_time_local.replace(tzinfo=None)
+            # Key on the UTC instant: unique even in the repeated fall-back hour
+            delivery_datetime = period_start + timedelta(minutes=interval_idx * resolution_minutes)
 
             self._wide_data.setdefault(delivery_datetime, {})[column] = last_value
 
@@ -162,7 +161,7 @@ class IntradayTransferCapacityParser(BaseParser):
             cols = self._wide_data[delivery_datetime]
 
             record: Dict[str, Any] = {
-                'trade_date': delivery_datetime.date(),
+                'trade_date': self.convert_to_local_time(delivery_datetime).date(),
                 'period': self.calculate_period_number(delivery_datetime),
                 'time_interval': self.format_time_interval(delivery_datetime, 15),
                 'delivery_datetime': delivery_datetime,

@@ -34,9 +34,10 @@ class UnifiedDayAheadPricesRunner(BaseRunner):
     TABLE_NAME = "entsoe_day_ahead_prices"
     COLUMNS = [
         "trade_date", "period", "area_id", "country_code", "time_interval",
+        "delivery_datetime",
         "price_eur_mwh"
     ]
-    CONFLICT_COLUMNS = ["trade_date", "period", "area_id", "country_code"]
+    CONFLICT_COLUMNS = ["delivery_datetime", "area_id", "country_code"]
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -91,6 +92,7 @@ class UnifiedDayAheadPricesRunner(BaseRunner):
                 record['area_id'],
                 record['country_code'],
                 record['time_interval'],
+                record['delivery_datetime'],
                 record.get('price_eur_mwh'),
             ))
         return records

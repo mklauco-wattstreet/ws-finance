@@ -42,7 +42,7 @@ class CongestionIncomeRunner(BaseRunner):
         "trade_date", "period", "time_interval", "delivery_datetime",
         "area_id", "country_code", "congestion_income_eur", "source_resolution"
     ]
-    CONFLICT_COLUMNS = ["trade_date", "time_interval", "area_id", "country_code"]
+    CONFLICT_COLUMNS = ["delivery_datetime", "area_id", "country_code"]
 
     # Default (non-backfill) polling window: D-2 through D, Prague local.
     # 10 days, not 2: ENTSO-E sometimes publishes a delivery day late (or not at

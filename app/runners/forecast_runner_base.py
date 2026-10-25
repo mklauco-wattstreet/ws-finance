@@ -32,9 +32,10 @@ class BaseForecastRunner(BaseRunner):
 
     COLUMNS = [
         "trade_date", "period", "area_id", "country_code", "time_interval",
+        "delivery_datetime",
         "forecast_solar_mw", "forecast_wind_mw", "forecast_wind_offshore_mw"
     ]
-    CONFLICT_COLUMNS = ["trade_date", "period", "area_id", "country_code"]
+    CONFLICT_COLUMNS = ["delivery_datetime", "area_id", "country_code"]
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -82,6 +83,7 @@ class BaseForecastRunner(BaseRunner):
                 record['area_id'],
                 record['country_code'],
                 record['time_interval'],
+                record['delivery_datetime'],
                 record.get('forecast_solar_mw'),
                 record.get('forecast_wind_mw'),
                 record.get('forecast_wind_offshore_mw')

@@ -62,7 +62,8 @@ class EntsoeImbalancePrices(Base):
     """
     __tablename__ = 'entsoe_imbalance_prices'
     __table_args__ = (
-        PrimaryKeyConstraint('trade_date', 'period', 'area_id', 'country_code'),
+        PrimaryKeyConstraint('delivery_datetime', 'area_id', 'country_code', name='entsoe_imbalance_prices_pkey'),
+        UniqueConstraint('trade_date', 'period', 'area_id', 'country_code', name='entsoe_imbalance_prices_trade_date_period_key'),
         {'schema': DB_SCHEMA}
     )
 
@@ -87,9 +88,8 @@ class EntsoeImbalancePrices(Base):
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
     created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
     updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
-    # NOTE: intentionally unpopulated (always NULL) — the parser stores trade_date+period,
-    # not an instant. Kept for schema stability; do NOT wire the parser to it.
-    delivery_datetime: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True))
+    # UTC start of the interval - the key (migration 083)
+    delivery_datetime: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
 
 
 class OteDailyPayments(Base):
@@ -344,7 +344,8 @@ class EntsoeLoad(Base):
     """
     __tablename__ = 'entsoe_load'
     __table_args__ = (
-        PrimaryKeyConstraint('trade_date', 'period', 'area_id', 'country_code'),
+        PrimaryKeyConstraint('delivery_datetime', 'area_id', 'country_code', name='entsoe_load_pkey'),
+        UniqueConstraint('trade_date', 'period', 'area_id', 'country_code', name='entsoe_load_trade_date_period_key'),
         {'schema': DB_SCHEMA}
     )
 
@@ -354,6 +355,7 @@ class EntsoeLoad(Base):
     area_id: Mapped[int] = mapped_column(Integer, nullable=False)
     country_code: Mapped[str] = mapped_column(String(5), nullable=False)
     time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    delivery_datetime: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
     actual_load_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     forecast_load_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
@@ -385,7 +387,8 @@ class EntsoeGenerationActual(Base):
     __tablename__ = 'entsoe_generation_actual'
     __table_args__ = (
         # Partitioned table: composite PK includes partition key (country_code)
-        PrimaryKeyConstraint('trade_date', 'period', 'area_id', 'country_code'),
+        PrimaryKeyConstraint('delivery_datetime', 'area_id', 'country_code', name='entsoe_generation_actual_pkey'),
+        UniqueConstraint('trade_date', 'period', 'area_id', 'country_code', name='entsoe_generation_actual_trade_date_period_key'),
         {'schema': DB_SCHEMA}
     )
 
@@ -395,6 +398,7 @@ class EntsoeGenerationActual(Base):
     area_id: Mapped[int] = mapped_column(Integer, nullable=False)
     country_code: Mapped[str] = mapped_column(String(5), nullable=False)
     time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    delivery_datetime: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
     gen_nuclear_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     gen_coal_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     gen_gas_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
@@ -418,22 +422,22 @@ class EntsoeCrossBorderFlows(Base):
     - flow_sk_mw: Physical flow to/from Slovakia
     - flow_total_net_mw: Sum of all border flows
 
-    Note: trade_date/period columns added in migration 010 for ML feature alignment.
+    Partitioned by country_code; keyed on delivery_datetime (migration 083).
     """
     __tablename__ = 'entsoe_cross_border_flows'
     __table_args__ = (
-        PrimaryKeyConstraint('id', name='entsoe_cross_border_flows_pkey'),
-        UniqueConstraint('delivery_datetime', 'area_id', name='entsoe_cross_border_flows_datetime_area_key'),
-        UniqueConstraint('trade_date', 'period', 'area_id', name='entsoe_cross_border_flows_trade_date_period_area_key'),
+        PrimaryKeyConstraint('delivery_datetime', 'area_id', 'country_code', name='entsoe_cross_border_flows_pkey'),
+        UniqueConstraint('trade_date', 'period', 'area_id', 'country_code', name='entsoe_cross_border_flows_trade_date_period_key'),
         {'schema': DB_SCHEMA}
     )
 
     id: Mapped[int] = mapped_column(Integer, autoincrement=True)
     trade_date: Mapped[date] = mapped_column(Date, nullable=False)
     period: Mapped[int] = mapped_column(Integer, nullable=False)
+    area_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    country_code: Mapped[str] = mapped_column(String(5), nullable=False)
     time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
-    delivery_datetime: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    area_id: Mapped[str] = mapped_column(String(20), nullable=False)
+    delivery_datetime: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
     flow_de_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     flow_at_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     flow_pl_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
@@ -456,7 +460,8 @@ class EntsoeGenerationForecast(Base):
     """
     __tablename__ = 'entsoe_generation_forecast'
     __table_args__ = (
-        PrimaryKeyConstraint('trade_date', 'period', 'area_id', 'country_code'),
+        PrimaryKeyConstraint('delivery_datetime', 'area_id', 'country_code', name='entsoe_generation_forecast_pkey'),
+        UniqueConstraint('trade_date', 'period', 'area_id', 'country_code', name='entsoe_generation_forecast_trade_date_period_key'),
         {'schema': DB_SCHEMA}
     )
 
@@ -466,6 +471,7 @@ class EntsoeGenerationForecast(Base):
     area_id: Mapped[int] = mapped_column(Integer, nullable=False)
     country_code: Mapped[str] = mapped_column(String(5), nullable=False)
     time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    delivery_datetime: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
     forecast_solar_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     forecast_wind_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     forecast_wind_offshore_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
@@ -480,7 +486,8 @@ class EntsoeGenerationForecastIntraday(Base):
     """
     __tablename__ = 'entsoe_generation_forecast_intraday'
     __table_args__ = (
-        PrimaryKeyConstraint('trade_date', 'period', 'area_id', 'country_code'),
+        PrimaryKeyConstraint('delivery_datetime', 'area_id', 'country_code', name='entsoe_generation_forecast_intraday_pkey'),
+        UniqueConstraint('trade_date', 'period', 'area_id', 'country_code', name='entsoe_generation_forecast_intraday_trade_date_period_key'),
         {'schema': DB_SCHEMA}
     )
 
@@ -490,6 +497,7 @@ class EntsoeGenerationForecastIntraday(Base):
     area_id: Mapped[int] = mapped_column(Integer, nullable=False)
     country_code: Mapped[str] = mapped_column(String(5), nullable=False)
     time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    delivery_datetime: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
     forecast_solar_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     forecast_wind_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     forecast_wind_offshore_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
@@ -504,7 +512,8 @@ class EntsoeGenerationForecastCurrent(Base):
     """
     __tablename__ = 'entsoe_generation_forecast_current'
     __table_args__ = (
-        PrimaryKeyConstraint('trade_date', 'period', 'area_id', 'country_code'),
+        PrimaryKeyConstraint('delivery_datetime', 'area_id', 'country_code', name='entsoe_generation_forecast_current_pkey'),
+        UniqueConstraint('trade_date', 'period', 'area_id', 'country_code', name='entsoe_generation_forecast_current_trade_date_period_key'),
         {'schema': DB_SCHEMA}
     )
 
@@ -514,6 +523,7 @@ class EntsoeGenerationForecastCurrent(Base):
     area_id: Mapped[int] = mapped_column(Integer, nullable=False)
     country_code: Mapped[str] = mapped_column(String(5), nullable=False)
     time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    delivery_datetime: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
     forecast_solar_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     forecast_wind_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     forecast_wind_offshore_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
@@ -533,20 +543,22 @@ class EntsoeBalancingEnergy(Base):
     """
     __tablename__ = 'entsoe_balancing_energy'
     __table_args__ = (
-        PrimaryKeyConstraint('id', name='entsoe_balancing_energy_pkey'),
-        UniqueConstraint('trade_date', 'period', name='entsoe_balancing_energy_trade_date_period_key'),
-        UniqueConstraint('trade_date', 'time_interval', name='entsoe_balancing_energy_trade_date_time_interval_key'),
+        PrimaryKeyConstraint('delivery_datetime', 'area_id', 'country_code', name='entsoe_balancing_energy_pkey'),
+        UniqueConstraint('trade_date', 'period', 'area_id', 'country_code', name='entsoe_balancing_energy_trade_date_period_key'),
         {'schema': DB_SCHEMA}
     )
 
     id: Mapped[int] = mapped_column(Integer, autoincrement=True)
     trade_date: Mapped[date] = mapped_column(Date, nullable=False)
     period: Mapped[int] = mapped_column(Integer, nullable=False)
+    area_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    country_code: Mapped[str] = mapped_column(String(5), nullable=False)
     time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
-    afrr_up_price_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
-    afrr_down_price_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
-    mfrr_up_price_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
-    mfrr_down_price_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    delivery_datetime: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    afrr_up_price_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    afrr_down_price_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    mfrr_up_price_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    mfrr_down_price_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
     rr_up_price_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
     rr_down_price_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
     created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
@@ -561,16 +573,18 @@ class EntsoeGenerationScheduled(Base):
     """
     __tablename__ = 'entsoe_generation_scheduled'
     __table_args__ = (
-        PrimaryKeyConstraint('id', name='entsoe_generation_scheduled_pkey'),
-        UniqueConstraint('trade_date', 'period', name='entsoe_generation_scheduled_trade_date_period_key'),
-        UniqueConstraint('trade_date', 'time_interval', name='entsoe_generation_scheduled_trade_date_time_interval_key'),
+        PrimaryKeyConstraint('delivery_datetime', 'area_id', 'country_code', name='entsoe_generation_scheduled_pkey'),
+        UniqueConstraint('trade_date', 'period', 'area_id', 'country_code', name='entsoe_generation_scheduled_trade_date_period_key'),
         {'schema': DB_SCHEMA}
     )
 
     id: Mapped[int] = mapped_column(Integer, autoincrement=True)
     trade_date: Mapped[date] = mapped_column(Date, nullable=False)
     period: Mapped[int] = mapped_column(Integer, nullable=False)
+    area_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    country_code: Mapped[str] = mapped_column(String(5), nullable=False)
     time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    delivery_datetime: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
     scheduled_total_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
     updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
@@ -590,16 +604,18 @@ class EntsoeScheduledCrossBorderFlows(Base):
     """
     __tablename__ = 'entsoe_scheduled_cross_border_flows'
     __table_args__ = (
-        PrimaryKeyConstraint('id', name='entsoe_sched_xborder_flows_pkey'),
-        UniqueConstraint('trade_date', 'period', name='entsoe_sched_xborder_flows_date_period_key'),
-        UniqueConstraint('trade_date', 'time_interval', name='entsoe_sched_xborder_flows_date_interval_key'),
+        PrimaryKeyConstraint('delivery_datetime', 'area_id', 'country_code', name='entsoe_scheduled_cross_border_flows_pkey'),
+        UniqueConstraint('trade_date', 'period', 'area_id', 'country_code', name='entsoe_scheduled_cross_border_flows_trade_date_period_key'),
         {'schema': DB_SCHEMA}
     )
 
     id: Mapped[int] = mapped_column(Integer, autoincrement=True)
     trade_date: Mapped[date] = mapped_column(Date, nullable=False)
     period: Mapped[int] = mapped_column(Integer, nullable=False)
+    area_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    country_code: Mapped[str] = mapped_column(String(5), nullable=False)
     time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    delivery_datetime: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
     scheduled_de_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     scheduled_at_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     scheduled_pl_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
@@ -623,7 +639,8 @@ class EntsoeDayAheadPrices(Base):
     __tablename__ = 'entsoe_day_ahead_prices'
     __table_args__ = (
         # Partitioned table: composite PK includes partition key (country_code)
-        PrimaryKeyConstraint('trade_date', 'period', 'area_id', 'country_code'),
+        PrimaryKeyConstraint('delivery_datetime', 'area_id', 'country_code', name='entsoe_day_ahead_prices_pkey'),
+        UniqueConstraint('trade_date', 'period', 'area_id', 'country_code', name='entsoe_day_ahead_prices_trade_date_period_key'),
         {'schema': DB_SCHEMA}
     )
 
@@ -633,6 +650,7 @@ class EntsoeDayAheadPrices(Base):
     area_id: Mapped[int] = mapped_column(Integer, nullable=False)
     country_code: Mapped[str] = mapped_column(String(5), nullable=False)
     time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    delivery_datetime: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
     price_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
     updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')

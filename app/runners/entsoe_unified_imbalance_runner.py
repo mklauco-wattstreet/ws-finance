@@ -55,13 +55,14 @@ class UnifiedImbalanceRunner(BaseRunner):
     TABLE_NAME = "entsoe_imbalance_prices"
     COLUMNS = [
         "trade_date", "period", "area_id", "country_code", "time_interval",
+        "delivery_datetime",
         "pos_imb_price_mwh", "pos_imb_scarcity_mwh",
         "pos_imb_incentive_mwh", "pos_imb_financial_neutrality_mwh",
         "neg_imb_price_mwh", "neg_imb_scarcity_mwh",
         "neg_imb_incentive_mwh", "neg_imb_financial_neutrality_mwh",
         "imbalance_mwh", "difference_mwh", "situation", "status", "currency"
     ]
-    CONFLICT_COLUMNS = ["trade_date", "period", "area_id", "country_code"]
+    CONFLICT_COLUMNS = ["delivery_datetime", "area_id", "country_code"]
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -128,6 +129,7 @@ class UnifiedImbalanceRunner(BaseRunner):
                 record['area_id'],
                 record['country_code'],
                 record['time_interval'],
+                record['delivery_datetime'],
                 record.get('pos_imb_price_mwh'),
                 record.get('pos_imb_scarcity_mwh'),
                 record.get('pos_imb_incentive_mwh'),

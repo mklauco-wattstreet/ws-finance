@@ -41,9 +41,10 @@ class UnifiedScheduledRunner(BaseRunner):
     TABLE_NAME = "entsoe_generation_scheduled"
     COLUMNS = [
         "trade_date", "period", "area_id", "country_code", "time_interval",
+        "delivery_datetime",
         "scheduled_total_mw"
     ]
-    CONFLICT_COLUMNS = ["trade_date", "period", "area_id", "country_code"]
+    CONFLICT_COLUMNS = ["delivery_datetime", "area_id", "country_code"]
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -100,6 +101,7 @@ class UnifiedScheduledRunner(BaseRunner):
                 record['area_id'],
                 record['country_code'],
                 record['time_interval'],
+                record['delivery_datetime'],
                 record.get('scheduled_total_mw')
             ))
         return records

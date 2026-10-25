@@ -46,7 +46,11 @@ def local_label(start_utc: datetime, minutes: int = 15, midnight: str = "24:00")
 
     `midnight` is how an end at local midnight is written ("24:00" or "00:00");
     tables differ, and each caller keeps its table's existing convention.
+    Any aware datetime is accepted; it is normalised to UTC first, because
+    adding a timedelta to a zoneinfo-local datetime is wall-clock arithmetic
+    and would give the wrong end across the clock change.
     """
+    start_utc = start_utc.astimezone(timezone.utc)
     start = start_utc.astimezone(PRAGUE_TZ)
     end = (start_utc + timedelta(minutes=minutes)).astimezone(PRAGUE_TZ)
     end_txt = midnight if (end.hour, end.minute) == (0, 0) else end.strftime("%H:%M")
