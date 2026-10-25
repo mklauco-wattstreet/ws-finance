@@ -22,6 +22,7 @@ import pandas as pd
 # Import database configuration and logging
 from config import DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT, DB_SCHEMA
 from common import setup_logging, print_banner
+from dst_calendar import slot_key
 
 # Cutoff date for format change
 CUTOFF_DATE = datetime(2025, 10, 1).date()
@@ -85,28 +86,6 @@ def clean_numeric_value(value):
         return None
 
 
-def generate_time_interval(period):
-    """
-    Generate time interval string for a given period (1-96).
-
-    Args:
-        period: Period number (1-96)
-
-    Returns:
-        str: Time interval in format "HH:MM-HH:MM"
-    """
-    # Each period is 15 minutes, starting from 00:00
-    start_minutes = (period - 1) * 15
-    end_minutes = period * 15
-
-    start_hour = start_minutes // 60
-    start_min = start_minutes % 60
-    end_hour = end_minutes // 60
-    end_min = end_minutes % 60
-
-    return f"{start_hour:02d}:{start_min:02d}-{end_hour:02d}:{end_min:02d}"
-
-
 def read_legacy_day_ahead_file(file_path, trade_date):
     """
     Read legacy day-ahead data from Excel file (hourly resolution, before Oct 1, 2025).
@@ -139,12 +118,13 @@ def read_legacy_day_ahead_file(file_path, trade_date):
         # Expand this hour into 4 periods (15-minute intervals)
         for quarter in range(4):
             period = (hour - 1) * 4 + quarter + 1  # hour 1 -> periods 1-4, hour 2 -> periods 5-8, etc.
-            time_interval = generate_time_interval(period)
+            delivery_datetime, time_interval = slot_key(trade_date, period)
 
             record = {
                 'trade_date': trade_date,
                 'period': period,
                 'time_interval': time_interval,
+                'delivery_datetime': delivery_datetime,
                 'price_15min_eur_mwh': price,  # Same price for all 4 quarters
                 'volume_mwh': volume / 4 if volume is not None else None,  # Divide by 4
                 'purchase_15min_products_mwh': 0,  # Not available in legacy
@@ -184,16 +164,19 @@ def read_new_day_ahead_file(file_path, trade_date):
         if pd.isna(row.get('Period')):
             continue
 
-        # Clean time interval (remove any extra spaces or newlines)
-        time_interval = str(row['Time interval']).strip() if not pd.isna(row.get('Time interval')) else None
-
-        if not time_interval:
+        if pd.isna(row.get('Time interval')) or not str(row['Time interval']).strip():
             continue
+
+        # Period is OTE's 1..92/96/100 numbering; the file's own label
+        # ("02a:00-02a:15" on the fall-back day) is replaced by a plain one.
+        period = int(row['Period'])
+        delivery_datetime, time_interval = slot_key(trade_date, period)
 
         record = {
             'trade_date': trade_date,
-            'period': int(row['Period']),
+            'period': period,
             'time_interval': time_interval,
+            'delivery_datetime': delivery_datetime,
         }
 
         # Process numeric columns with exact column names from Excel
@@ -354,14 +337,16 @@ def upload_to_database(records, conn, trade_date):
     # Use UPSERT to handle duplicates gracefully
     upsert_query = """
         INSERT INTO ote_prices_day_ahead (
-            trade_date, period, time_interval,
+            trade_date, period, time_interval, delivery_datetime,
             price_15min_eur_mwh, volume_mwh,
             purchase_15min_products_mwh, purchase_60min_products_mwh,
             sale_15min_products_mwh, sale_60min_products_mwh,
             saldo_dm_mwh, export_mwh, import_mwh,
             price_60min_ref_eur_mwh, is_15min
         ) VALUES %s
-        ON CONFLICT (trade_date, period) DO UPDATE SET
+        ON CONFLICT (delivery_datetime) DO UPDATE SET
+            trade_date = EXCLUDED.trade_date,
+            period = EXCLUDED.period,
             time_interval = EXCLUDED.time_interval,
             price_15min_eur_mwh = EXCLUDED.price_15min_eur_mwh,
             volume_mwh = EXCLUDED.volume_mwh,
@@ -375,7 +360,9 @@ def upload_to_database(records, conn, trade_date):
             price_60min_ref_eur_mwh = EXCLUDED.price_60min_ref_eur_mwh,
             is_15min = EXCLUDED.is_15min,
             updated_at = CURRENT_TIMESTAMP
-        WHERE ote_prices_day_ahead.time_interval IS DISTINCT FROM EXCLUDED.time_interval
+        WHERE ote_prices_day_ahead.trade_date IS DISTINCT FROM EXCLUDED.trade_date
+           OR ote_prices_day_ahead.period IS DISTINCT FROM EXCLUDED.period
+           OR ote_prices_day_ahead.time_interval IS DISTINCT FROM EXCLUDED.time_interval
            OR ote_prices_day_ahead.price_15min_eur_mwh IS DISTINCT FROM EXCLUDED.price_15min_eur_mwh
            OR ote_prices_day_ahead.volume_mwh IS DISTINCT FROM EXCLUDED.volume_mwh
            OR ote_prices_day_ahead.purchase_15min_products_mwh IS DISTINCT FROM EXCLUDED.purchase_15min_products_mwh
@@ -396,6 +383,7 @@ def upload_to_database(records, conn, trade_date):
             record['trade_date'],
             record['period'],
             record['time_interval'],
+            record['delivery_datetime'],
             record['price_15min_eur_mwh'],
             record['volume_mwh'],
             record['purchase_15min_products_mwh'],
@@ -442,8 +430,9 @@ def process_directory(directory_path, logger, debug_mode=False):
         logger.error(f"'{directory_path}' is not a directory")
         return False
 
-    # Find all Excel files (both old and new formats)
-    excel_files = list(dir_path.glob("DM_*.xlsx"))
+    # Find all Excel files (both old and new formats); DM_60MIN_* belongs to
+    # upload_day_ahead_60min_prices.py
+    excel_files = [f for f in dir_path.glob("DM_*.xlsx") if not f.name.startswith("DM_60MIN_")]
 
     if not excel_files:
         logger.warning(f"No day-ahead Excel files in '{directory_path}'")

@@ -14,9 +14,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from backfill._common import (
-    HOUR_COMPLETE_HAVING,
-    HOUR_GROUP_SQL,
-    HOUR_INTERVAL_SQL,
+    HOUR_COMPLETE_DT_HAVING,
+    HOUR_INTERVAL_DT_SQL,
+    HOUR_START_DT_SQL,
     parse_args,
     run_backfill,
     setup_logging,
@@ -25,7 +25,7 @@ from backfill._common import (
 
 PERIOD_SUMMARY_SQL = f"""
 INSERT INTO da_period_summary_60min (
-    delivery_date, time_interval,
+    delivery_date, time_interval, delivery_datetime,
     clearing_price, clearing_volume,
     supply_next_price, supply_next_volume,
     supply_price_gap, supply_volume_gap,
@@ -34,7 +34,8 @@ INSERT INTO da_period_summary_60min (
 )
 SELECT
     delivery_date,
-    {HOUR_INTERVAL_SQL},
+    {HOUR_INTERVAL_DT_SQL},
+    {HOUR_START_DT_SQL},
     AVG(clearing_price),
     SUM(clearing_volume),
     AVG(supply_next_price),
@@ -47,9 +48,11 @@ SELECT
     SUM(demand_volume_gap)
 FROM da_period_summary
 WHERE delivery_date = %s
-GROUP BY delivery_date, {HOUR_GROUP_SQL}
-{HOUR_COMPLETE_HAVING}
-ON CONFLICT (delivery_date, time_interval) DO UPDATE SET
+GROUP BY delivery_date, {HOUR_START_DT_SQL}
+{HOUR_COMPLETE_DT_HAVING}
+ON CONFLICT (delivery_datetime) DO UPDATE SET
+    delivery_date = EXCLUDED.delivery_date,
+    time_interval = EXCLUDED.time_interval,
     clearing_price = EXCLUDED.clearing_price,
     clearing_volume = EXCLUDED.clearing_volume,
     supply_next_price = EXCLUDED.supply_next_price,
@@ -65,7 +68,7 @@ ON CONFLICT (delivery_date, time_interval) DO UPDATE SET
 
 CURVE_DEPTH_SQL = f"""
 INSERT INTO da_curve_depth_60min (
-    delivery_date, time_interval, clearing_price,
+    delivery_date, time_interval, delivery_datetime, clearing_price,
     supply_mw_from_clearing, supply_price_from_clearing, supply_slope,
     supply_matched_mw_from_clearing, supply_matched_price_from_clearing, supply_matched_slope,
     demand_mw_from_clearing, demand_price_from_clearing, demand_slope,
@@ -73,7 +76,8 @@ INSERT INTO da_curve_depth_60min (
 )
 SELECT
     delivery_date,
-    {HOUR_INTERVAL_SQL},
+    {HOUR_INTERVAL_DT_SQL},
+    {HOUR_START_DT_SQL},
     AVG(clearing_price),
     AVG(supply_mw_from_clearing),
     AVG(supply_price_from_clearing),
@@ -89,9 +93,11 @@ SELECT
     AVG(demand_matched_slope)
 FROM da_curve_depth
 WHERE delivery_date = %s
-GROUP BY delivery_date, {HOUR_GROUP_SQL}
-{HOUR_COMPLETE_HAVING}
-ON CONFLICT (delivery_date, time_interval) DO UPDATE SET
+GROUP BY delivery_date, {HOUR_START_DT_SQL}
+{HOUR_COMPLETE_DT_HAVING}
+ON CONFLICT (delivery_datetime) DO UPDATE SET
+    delivery_date = EXCLUDED.delivery_date,
+    time_interval = EXCLUDED.time_interval,
     clearing_price = EXCLUDED.clearing_price,
     supply_mw_from_clearing = EXCLUDED.supply_mw_from_clearing,
     supply_price_from_clearing = EXCLUDED.supply_price_from_clearing,

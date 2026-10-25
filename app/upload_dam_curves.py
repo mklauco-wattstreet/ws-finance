@@ -24,6 +24,7 @@ from psycopg2 import extras
 
 from config import DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT, DB_SCHEMA
 from common import setup_logging, print_banner
+from dst_calendar import slot_key
 
 # Fixed jump threshold for future filtering/flagging
 JUMP_THRESHOLD_EUR = Decimal('20.00')
@@ -39,27 +40,6 @@ ORDER_RESOLUTION_MAP = {
     'PT15M': '15min',
     'PT60M': '60min',
 }
-
-
-def generate_time_interval(period):
-    """
-    Generate time interval string for a given period (1-96).
-
-    Args:
-        period: Period number (1-96)
-
-    Returns:
-        str: Time interval in format "HH:MM-HH:MM"
-    """
-    start_minutes = (period - 1) * 15
-    end_minutes = period * 15
-
-    start_hour = start_minutes // 60
-    start_min = start_minutes % 60
-    end_hour = end_minutes // 60
-    end_min = end_minutes % 60
-
-    return f"{start_hour:02d}:{start_min:02d}-{end_hour:02d}:{end_min:02d}"
 
 
 def parse_date_from_filename(filename):
@@ -95,7 +75,9 @@ def parse_xml_file(file_path, delivery_date):
           price="..." energy_order="..." energy_match="..."
           trade_type="B|S" order_resolution="PT15M|PT60M"/>
 
-    Period in XML is already global 1-96 (sequential across all hours).
+    Period in XML is OTE's global 1..92/96/100 numbering (sequential across
+    all hours of the delivery day). time_interval is derived from it, not
+    taken from the XML label ("02a:00-02a:15" on the fall-back day).
 
     Args:
         file_path: Path to XML file
@@ -113,6 +95,13 @@ def parse_xml_file(file_path, delivery_date):
         ns = root.tag.split('}')[0] + '}'
 
     data_elements = root.findall(f'{ns}data')
+
+    labels = {}
+
+    def label(period):
+        if period not in labels:
+            labels[period] = slot_key(delivery_date, period)[1]
+        return labels[period]
 
     records = []
     for elem in data_elements:
@@ -134,7 +123,7 @@ def parse_xml_file(file_path, delivery_date):
         if order_resolution is not None:
             # New format (Oct 2025+): period and order_resolution present
             global_period = int(attrs.get('period', '1'))
-            time_interval = generate_time_interval(global_period)
+            time_interval = label(global_period)
             records.append((
                 delivery_date, global_period, time_interval, side,
                 price, volume_bid, volume_matched, order_resolution,
@@ -146,7 +135,7 @@ def parse_xml_file(file_path, delivery_date):
             hour = int(attrs.get('hour', '1'))
             for q in range(4):
                 global_period = (hour - 1) * 4 + q + 1
-                time_interval = generate_time_interval(global_period)
+                time_interval = label(global_period)
                 records.append((
                     delivery_date, global_period, time_interval, side,
                     price, volume_bid, volume_matched, '60min',
@@ -223,7 +212,8 @@ def compute_and_upsert_period_summary(delivery_date, conn, logger):
 
     # CTE-based query: clearing_price from OTE (authoritative), volumes from da_bid.
     # INNER JOIN to ote_prices_day_ahead drops periods where OTE has no price
-    # (e.g. DST-skipped hour 02 on spring-forward day) — correct behaviour.
+    # — correct behaviour. Joined on period (OTE numbering, identical in both
+    # tables): the label repeats on the fall-back day.
     summary_query = """
         WITH clearing AS (
             SELECT
@@ -234,7 +224,7 @@ def compute_and_upsert_period_summary(delivery_date, conn, logger):
             FROM da_bid b
             JOIN ote_prices_day_ahead ote
               ON ote.trade_date = b.delivery_date
-             AND ote.time_interval = b.time_interval
+             AND ote.period = b.period
             WHERE b.delivery_date = %s
               AND b.side = 'sell'
               AND b.volume_matched > 0
@@ -338,6 +328,7 @@ def compute_and_upsert_period_summary(delivery_date, conn, logger):
                 delivery_date,      # delivery_date
                 row[0],             # period
                 row[1],             # time_interval
+                slot_key(delivery_date, row[0])[0],  # delivery_datetime
                 row[2],             # clearing_price
                 row[3],             # clearing_volume
                 row[4],             # supply_next_price
@@ -352,13 +343,14 @@ def compute_and_upsert_period_summary(delivery_date, conn, logger):
 
         upsert_summary = """
             INSERT INTO da_period_summary (
-                delivery_date, period, time_interval,
+                delivery_date, period, time_interval, delivery_datetime,
                 clearing_price, clearing_volume,
                 supply_next_price, supply_next_volume, supply_price_gap, supply_volume_gap,
                 demand_next_price, demand_next_volume, demand_price_gap, demand_volume_gap
             ) VALUES %s
             ON CONFLICT (delivery_date, period) DO UPDATE SET
                 time_interval = EXCLUDED.time_interval,
+                delivery_datetime = EXCLUDED.delivery_datetime,
                 clearing_price = EXCLUDED.clearing_price,
                 clearing_volume = EXCLUDED.clearing_volume,
                 supply_next_price = EXCLUDED.supply_next_price,
@@ -425,7 +417,7 @@ def compute_and_upsert_curve_depth(delivery_date, conn, logger):
             FROM da_bid b
             JOIN ote_prices_day_ahead ote
               ON ote.trade_date = b.delivery_date
-             AND ote.time_interval = b.time_interval
+             AND ote.period = b.period
             WHERE b.delivery_date = %s
               AND b.side = 'sell'
               AND b.volume_matched > 0
@@ -565,6 +557,7 @@ def compute_and_upsert_curve_depth(delivery_date, conn, logger):
                 delivery_date,
                 row[0],   # period
                 row[1],   # time_interval
+                slot_key(delivery_date, row[0])[0],  # delivery_datetime
                 row[2],   # clearing_price
                 row[3],  row[4],  row[5],   # supply
                 row[6],  row[7],  row[8],   # supply_matched
@@ -574,7 +567,7 @@ def compute_and_upsert_curve_depth(delivery_date, conn, logger):
 
         upsert_depth = """
             INSERT INTO da_curve_depth (
-                delivery_date, period, time_interval, clearing_price,
+                delivery_date, period, time_interval, delivery_datetime, clearing_price,
                 supply_mw_from_clearing,         supply_price_from_clearing,         supply_slope,
                 supply_matched_mw_from_clearing, supply_matched_price_from_clearing, supply_matched_slope,
                 demand_mw_from_clearing,         demand_price_from_clearing,         demand_slope,
@@ -582,6 +575,7 @@ def compute_and_upsert_curve_depth(delivery_date, conn, logger):
             ) VALUES %s
             ON CONFLICT (delivery_date, period) DO UPDATE SET
                 time_interval = EXCLUDED.time_interval,
+                delivery_datetime = EXCLUDED.delivery_datetime,
                 clearing_price = EXCLUDED.clearing_price,
                 supply_mw_from_clearing            = EXCLUDED.supply_mw_from_clearing,
                 supply_price_from_clearing         = EXCLUDED.supply_price_from_clearing,

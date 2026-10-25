@@ -18,9 +18,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from backfill._common import (
-    HOUR_COMPLETE_HAVING,
-    HOUR_GROUP_SQL,
-    HOUR_INTERVAL_SQL,
+    HOUR_COMPLETE_DT_HAVING,
+    HOUR_INTERVAL_DT_SQL,
+    HOUR_START_DT_SQL,
     parse_args,
     run_backfill,
     setup_logging,
@@ -29,7 +29,7 @@ from backfill._common import (
 
 IMBALANCE_SQL = f"""
 INSERT INTO ote_prices_imbalance_60min (
-    trade_date, time_interval,
+    trade_date, time_interval, delivery_datetime,
     system_imbalance_mwh, absolute_imbalance_sum_mwh,
     positive_imbalance_mwh, negative_imbalance_mwh, rounded_imbalance_mwh,
     cost_of_be_czk, cost_of_imbalance_czk,
@@ -43,7 +43,8 @@ INSERT INTO ote_prices_imbalance_60min (
 )
 SELECT
     trade_date,
-    {HOUR_INTERVAL_SQL},
+    {HOUR_INTERVAL_DT_SQL},
+    {HOUR_START_DT_SQL},
     SUM(system_imbalance_mwh),
     SUM(absolute_imbalance_sum_mwh),
     SUM(positive_imbalance_mwh),
@@ -60,9 +61,11 @@ SELECT
     AVG(price_not_performed_activation_czk_mwh)
 FROM ote_prices_imbalance
 WHERE trade_date = %s
-GROUP BY trade_date, {HOUR_GROUP_SQL}
-{HOUR_COMPLETE_HAVING}
-ON CONFLICT (trade_date, time_interval) DO UPDATE SET
+GROUP BY trade_date, {HOUR_START_DT_SQL}
+{HOUR_COMPLETE_DT_HAVING}
+ON CONFLICT (delivery_datetime) DO UPDATE SET
+    trade_date = EXCLUDED.trade_date,
+    time_interval = EXCLUDED.time_interval,
     system_imbalance_mwh = EXCLUDED.system_imbalance_mwh,
     absolute_imbalance_sum_mwh = EXCLUDED.absolute_imbalance_sum_mwh,
     positive_imbalance_mwh = EXCLUDED.positive_imbalance_mwh,

@@ -4,7 +4,7 @@ Per docs/60min_tables_plan.md §4.2 (provisional, aggregation-from-quarters):
 - price_eur_mwh: VWAP weighted by volume_mwh
 - volume_mwh, saldo_dm_mwh, export_mwh, import_mwh: sum
 
-GROUP BY (trade_date, hour, ida_idx).
+GROUP BY (trade_date, hour of delivery_datetime, ida_idx).
 
 Usage:
     python3 -m backfill.backfill_ida_60min YYYY-MM-DD YYYY-MM-DD [--debug] [--dry-run]
@@ -16,9 +16,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from backfill._common import (
-    HOUR_COMPLETE_HAVING,
-    HOUR_GROUP_SQL,
-    HOUR_INTERVAL_SQL,
+    HOUR_COMPLETE_DT_HAVING,
+    HOUR_INTERVAL_DT_SQL,
+    HOUR_START_DT_SQL,
     parse_args,
     run_backfill,
     setup_logging,
@@ -27,13 +27,14 @@ from backfill._common import (
 
 IDA_SQL = f"""
 INSERT INTO ote_prices_ida_60min (
-    trade_date, time_interval, ida_idx,
+    trade_date, time_interval, delivery_datetime, ida_idx,
     price_eur_mwh, volume_mwh,
     saldo_dm_mwh, export_mwh, import_mwh
 )
 SELECT
     trade_date,
-    {HOUR_INTERVAL_SQL},
+    {HOUR_INTERVAL_DT_SQL},
+    {HOUR_START_DT_SQL},
     ida_idx,
     SUM(price_eur_mwh * volume_mwh) / NULLIF(SUM(volume_mwh), 0),
     SUM(volume_mwh),
@@ -42,9 +43,11 @@ SELECT
     SUM(import_mwh)
 FROM ote_prices_ida
 WHERE trade_date = %s
-GROUP BY trade_date, {HOUR_GROUP_SQL}, ida_idx
-{HOUR_COMPLETE_HAVING}
-ON CONFLICT (trade_date, time_interval, ida_idx) DO UPDATE SET
+GROUP BY trade_date, {HOUR_START_DT_SQL}, ida_idx
+{HOUR_COMPLETE_DT_HAVING}
+ON CONFLICT (delivery_datetime, ida_idx) DO UPDATE SET
+    trade_date = EXCLUDED.trade_date,
+    time_interval = EXCLUDED.time_interval,
     price_eur_mwh = EXCLUDED.price_eur_mwh,
     volume_mwh = EXCLUDED.volume_mwh,
     saldo_dm_mwh = EXCLUDED.saldo_dm_mwh,

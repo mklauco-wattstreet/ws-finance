@@ -21,6 +21,7 @@ import pandas as pd
 
 # Import database configuration
 from config import DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT, DB_SCHEMA
+from dst_calendar import slot_key
 
 
 def parse_date_from_filename(filename):
@@ -101,10 +102,15 @@ def read_intraday_file(file_path, trade_date):
             # This row contains text (like "The results contain only traded hourly contracts.")
             continue
 
+        # Period is OTE's 1..92/96/100 numbering; the file's own label is
+        # replaced by a plain one (it may carry A/B markers on the fall-back day).
+        delivery_datetime, time_interval = slot_key(trade_date, period, midnight='00:00')
+
         record = {
             'trade_date': trade_date,
             'period': period,
-            'time_interval': str(row['Time interval']).strip(),
+            'time_interval': time_interval,
+            'delivery_datetime': delivery_datetime,
         }
 
         # Process numeric columns with exact column names from Excel
@@ -147,13 +153,15 @@ def upload_to_database(records, conn, trade_date):
     # Use UPSERT to handle updates to intraday data (which changes throughout the day)
     upsert_query = """
         INSERT INTO ote_prices_intraday_market (
-            trade_date, period, time_interval,
+            trade_date, period, time_interval, delivery_datetime,
             traded_volume_mwh, traded_volume_purchased_mwh,
             traded_volume_sold_mwh, weighted_avg_price_eur_mwh,
             min_price_eur_mwh, max_price_eur_mwh,
             last_price_eur_mwh
         ) VALUES %s
-        ON CONFLICT (trade_date, period) DO UPDATE SET
+        ON CONFLICT (delivery_datetime) DO UPDATE SET
+            trade_date = EXCLUDED.trade_date,
+            period = EXCLUDED.period,
             time_interval = EXCLUDED.time_interval,
             traded_volume_mwh = EXCLUDED.traded_volume_mwh,
             traded_volume_purchased_mwh = EXCLUDED.traded_volume_purchased_mwh,
@@ -172,6 +180,7 @@ def upload_to_database(records, conn, trade_date):
             record['trade_date'],
             record['period'],
             record['time_interval'],
+            record['delivery_datetime'],
             record['traded_volume_mwh'],
             record['traded_volume_purchased_mwh'],
             record['traded_volume_sold_mwh'],

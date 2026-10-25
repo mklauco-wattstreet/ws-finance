@@ -3,8 +3,9 @@
 Core orchestration for expired-position liquidation.
 
 For each expired position from the Trader API:
-- Parse contract_id into (trade_date, time_interval)
-- Look up OTE imbalance settlement price + CNB CZK/EUR rate from `finance`
+- Parse contract_id into (trade_date, time_interval, delivery_datetime)
+- Look up OTE imbalance settlement price (by delivery_datetime) + CNB
+  CZK/EUR rate from `finance`
 - Skip silently if either is missing (matches the manual UI behavior)
 - POST to the Trader API and persist an audit row in
   "trader-app".manual_position_logs
@@ -19,12 +20,16 @@ import json
 import logging
 import re
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Any, Dict, Optional
 
+from dst_calendar import PRAGUE_TZ
 
+
+# "20260513 22:00-20260513 22:15"; on the fall-back day the repeated hour
+# carries A (first pass) / B (second pass): "20261025 02:45A-20261025 02:00B".
 CONTRACT_ID_RE = re.compile(
-    r"^(\d{8})\s+(\d{2}:\d{2})-(\d{8})\s+(\d{2}:\d{2})$"
+    r"^(\d{8})\s+(\d{2}:\d{2})([AB]?)-(\d{8})\s+(\d{2}:\d{2})([AB]?)$"
 )
 
 # Audit target value reserved for automated cron runs (distinguishes
@@ -55,38 +60,58 @@ class LiquidationResult:
     detail: str = ""
 
 
-def parse_contract_id(contract_id: str) -> Optional[Dict[str, Any]]:
-    """Parse "20260513 22:00-20260513 22:15" into trade_date + time_interval.
+def _contract_instant(yyyymmdd: str, hhmm: str, marker: str) -> Optional[datetime]:
+    """UTC instant of a contract boundary given as Prague wall-clock time.
 
-    The trade_date is taken from the START of the interval (the OTE
-    imbalance table keys on delivery-start, so cross-midnight contracts
-    naturally line up with their start date).
+    The A/B marker is required on, and only allowed on, a wall time that
+    occurs twice (the repeated hour on the fall-back day); a wall time that
+    does not exist (spring-forward gap) is rejected.
+    """
+    try:
+        wall = datetime.strptime(f"{yyyymmdd} {hhmm}", "%Y%m%d %H:%M")
+    except ValueError:
+        return None
+    first = wall.replace(tzinfo=PRAGUE_TZ, fold=0)
+    second = wall.replace(tzinfo=PRAGUE_TZ, fold=1)
+    if first.astimezone(timezone.utc).astimezone(PRAGUE_TZ).replace(tzinfo=None) != wall:
+        return None
+    ambiguous = first.utcoffset() != second.utcoffset()
+    if ambiguous != bool(marker):
+        return None
+    chosen = second if marker == "B" else first
+    return chosen.astimezone(timezone.utc)
+
+
+def parse_contract_id(contract_id: str) -> Optional[Dict[str, Any]]:
+    """Parse "20260513 22:00-20260513 22:15" into trade_date + delivery_datetime.
+
+    The trade_date is the local date of the START of the interval and
+    delivery_datetime its UTC instant (the OTE imbalance tables key on
+    delivery start, so cross-midnight contracts line up with their start).
     """
     if not contract_id:
         return None
     m = CONTRACT_ID_RE.match(contract_id.strip())
     if not m:
         return None
-    yyyymmdd_start, hhmm_start, yyyymmdd_end, hhmm_end = m.groups()
-    try:
-        start_dt = datetime.strptime(f"{yyyymmdd_start} {hhmm_start}", "%Y%m%d %H:%M")
-        end_dt = datetime.strptime(f"{yyyymmdd_end} {hhmm_end}", "%Y%m%d %H:%M")
-    except ValueError:
+    yyyymmdd_start, hhmm_start, mark_start, yyyymmdd_end, hhmm_end, mark_end = m.groups()
+    start_utc = _contract_instant(yyyymmdd_start, hhmm_start, mark_start)
+    end_utc = _contract_instant(yyyymmdd_end, hhmm_end, mark_end)
+    if start_utc is None or end_utc is None:
         return None
-    duration_minutes = int((end_dt - start_dt).total_seconds() // 60)
+    duration_minutes = int((end_utc - start_utc).total_seconds() // 60)
     if duration_minutes <= 0:
         return None
     return {
-        # OTE imbalance tables key on delivery-start, so cross-midnight
-        # contracts line up with their start date.
-        "trade_date": start_dt.date(),
-        "time_interval": f"{hhmm_start}-{hhmm_end}",
+        "trade_date": start_utc.astimezone(PRAGUE_TZ).date(),
+        "time_interval": f"{hhmm_start}{mark_start}-{hhmm_end}{mark_end}",
+        "delivery_datetime": start_utc,
         "duration_minutes": duration_minutes,
     }
 
 
 def fetch_settlement_price(
-    conn, table: str, trade_date: date, time_interval: str
+    conn, table: str, delivery_datetime: datetime
 ) -> Optional[float]:
     """Settlement price from `table` (15-min or 60-min imbalance source).
 
@@ -97,9 +122,8 @@ def fetch_settlement_price(
         cur.execute(
             f"SELECT settlement_price_imbalance_czk_mwh "
             f"FROM {table} "
-            f"WHERE trade_date = %s AND time_interval = %s "
-            f"LIMIT 1",
-            (trade_date, time_interval),
+            f"WHERE delivery_datetime = %s",
+            (delivery_datetime,),
         )
         row = cur.fetchone()
     if row is None or row[0] is None:
@@ -198,7 +222,7 @@ def process_position(
             detail=f"{duration}min",
         )
 
-    settlement = fetch_settlement_price(conn, table, trade_date, time_interval)
+    settlement = fetch_settlement_price(conn, table, parsed["delivery_datetime"])
     if settlement is None:
         logger.info(
             f"  Skipping {position_id} ({contract_id}): no OTE settlement "

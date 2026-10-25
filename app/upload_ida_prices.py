@@ -19,6 +19,7 @@ from psycopg2 import extras
 import pandas as pd
 
 from config import DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT, DB_SCHEMA
+from dst_calendar import slot_key
 
 
 def parse_date_from_filename(filename, ida_idx):
@@ -86,7 +87,9 @@ def read_ida_file(file_path, trade_date, ida_idx):
         except (ValueError, TypeError):
             continue
 
-        time_interval = str(row['Time interval']).strip()
+        # Period is OTE's 1..92/96/100 numbering; the file's own label is
+        # replaced by a plain one (it may carry A/B markers on the fall-back day).
+        delivery_datetime, time_interval = slot_key(trade_date, period)
 
         price = clean_numeric_value(row.get('Price (EUR/MWh)'))
         volume = clean_numeric_value(row.get('Volume\n(MWh)'))
@@ -99,6 +102,7 @@ def read_ida_file(file_path, trade_date, ida_idx):
             period,
             ida_idx,
             time_interval,
+            delivery_datetime,
             price,
             volume,
             saldo,
@@ -123,11 +127,13 @@ def upload_to_database(records, conn, trade_date, ida_idx):
 
     upsert_query = """
         INSERT INTO ote_prices_ida (
-            trade_date, period, ida_idx, time_interval,
+            trade_date, period, ida_idx, time_interval, delivery_datetime,
             price_eur_mwh, volume_mwh, saldo_dm_mwh,
             export_mwh, import_mwh
         ) VALUES %s
-        ON CONFLICT (trade_date, period, ida_idx) DO UPDATE SET
+        ON CONFLICT (delivery_datetime, ida_idx) DO UPDATE SET
+            trade_date = EXCLUDED.trade_date,
+            period = EXCLUDED.period,
             time_interval = EXCLUDED.time_interval,
             price_eur_mwh = EXCLUDED.price_eur_mwh,
             volume_mwh = EXCLUDED.volume_mwh,

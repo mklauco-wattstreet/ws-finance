@@ -21,6 +21,7 @@ import pandas as pd
 
 # Import database configuration
 from config import DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT, DB_SCHEMA
+from dst_calendar import slot_key
 
 
 def parse_date_from_filename(filename):
@@ -94,10 +95,16 @@ def read_imbalance_file(file_path, trade_date):
         if pd.isna(row.get('Period')):
             continue
 
+        # Period is OTE's 1..92/96/100 numbering; the file's own label
+        # ("02:45-02:00" on the fall-back day) is replaced by a plain one.
+        period = int(row['Period'])
+        delivery_datetime, time_interval = slot_key(trade_date, period, midnight='00:00')
+
         record = {
             'trade_date': trade_date,
-            'period': int(row['Period']),
-            'time_interval': str(row['Time interval']).strip(),
+            'period': period,
+            'time_interval': time_interval,
+            'delivery_datetime': delivery_datetime,
         }
 
         # Process numeric columns with exact column names from Excel
@@ -145,7 +152,7 @@ def upload_to_database(records, conn, trade_date):
 
     insert_query = """
         INSERT INTO ote_prices_imbalance (
-            trade_date, period, time_interval,
+            trade_date, period, time_interval, delivery_datetime,
             system_imbalance_mwh, absolute_imbalance_sum_mwh,
             positive_imbalance_mwh, negative_imbalance_mwh,
             rounded_imbalance_mwh, cost_of_be_czk,
@@ -155,7 +162,9 @@ def upload_to_database(records, conn, trade_date):
             price_be_component_czk_mwh, price_im_component_czk_mwh,
             price_si_component_czk_mwh, price_not_performed_activation_czk_mwh
         ) VALUES %s
-        ON CONFLICT (trade_date, period) DO UPDATE SET
+        ON CONFLICT (delivery_datetime) DO UPDATE SET
+            trade_date = EXCLUDED.trade_date,
+            period = EXCLUDED.period,
             time_interval = EXCLUDED.time_interval,
             system_imbalance_mwh = EXCLUDED.system_imbalance_mwh,
             absolute_imbalance_sum_mwh = EXCLUDED.absolute_imbalance_sum_mwh,
@@ -181,6 +190,7 @@ def upload_to_database(records, conn, trade_date):
             record['trade_date'],
             record['period'],
             record['time_interval'],
+            record['delivery_datetime'],
             record['system_imbalance_mwh'],
             record['absolute_imbalance_sum_mwh'],
             record['positive_imbalance_mwh'],

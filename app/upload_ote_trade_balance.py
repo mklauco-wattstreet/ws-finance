@@ -23,6 +23,7 @@ import pandas as pd
 # Import database configuration and logging
 from config import DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT, DB_SCHEMA
 from common import setup_logging, print_banner
+from dst_calendar import AmbiguousLabelError, LabelResolver, slot_key, slots_in_day
 
 
 def parse_date_from_filename(filename):
@@ -75,64 +76,49 @@ def clean_numeric_value(value):
         return None
 
 
-def parse_time_interval_to_period(time_interval):
-    """
-    Convert time interval string to period number (1-96).
+MW_COLUMNS = [
+    (('Total', 'Buy (MW)'), 'total_buy_mw'),
+    (('Total', 'Sell (MW)'), 'total_sell_mw'),
+    (('Daily market', 'Buy (MW)'), 'daily_market_buy_mw'),
+    (('Daily market', 'Sell (MW)'), 'daily_market_sell_mw'),
+    (('Intraday auction', 'Buy (MW)'), 'intraday_auction_buy_mw'),
+    (('Intraday auction', 'Sell (MW)'), 'intraday_auction_sell_mw'),
+    (('Intraday market', 'Buy (MW)'), 'intraday_market_buy_mw'),
+    (('Intraday market', 'Sell (MW)'), 'intraday_market_sell_mw'),
+    (('Realization diagrams', 'Buy (MW)'), 'realization_diagrams_buy_mw'),
+    (('Realization diagrams', 'Sell (MW)'), 'realization_diagrams_sell_mw'),
+]
 
-    Args:
-        time_interval: Time interval in format "HH:MM - HH:MM" or "HH:MM-HH:MM"
-
-    Returns:
-        int: Period number (1-96)
-    """
-    # Extract start time from interval (handle both "HH:MM - HH:MM" and "HH:MM-HH:MM")
-    if ' - ' in time_interval:
-        start_time_str = time_interval.split(' - ')[0].strip()
-    else:
-        start_time_str = time_interval.split('-')[0].strip()
-
-    # Parse hours and minutes
-    hour, minute = map(int, start_time_str.split(':'))
-
-    # Calculate period: each period is 15 minutes
-    # 00:00 = period 1, 00:15 = period 2, etc.
-    period = (hour * 4) + (minute // 15) + 1
-
-    return period
-
-
-def generate_time_interval(period):
-    """
-    Generate time interval string for a given period (1-96).
-
-    Args:
-        period: Period number (1-96)
-
-    Returns:
-        str: Time interval in format "HH:MM-HH:MM"
-    """
-    # Each period is 15 minutes, starting from 00:00
-    start_minutes = (period - 1) * 15
-    end_minutes = period * 15
-
-    start_hour = start_minutes // 60
-    start_min = start_minutes % 60
-    end_hour = end_minutes // 60
-    end_min = end_minutes % 60
-
-    return f"{start_hour:02d}:{start_min:02d}-{end_hour:02d}:{end_min:02d}"
+MWH_COLUMNS = [
+    (('Total', 'Buy (MWh)'), 'total_buy_mwh'),
+    (('Total', 'Sell (MWh)'), 'total_sell_mwh'),
+    (('Daily market', 'Buy (MWh)'), 'daily_market_buy_mwh'),
+    (('Daily market', 'Sell (MWh)'), 'daily_market_sell_mwh'),
+    (('Intraday auction', 'Buy (MWh)'), 'intraday_auction_buy_mwh'),
+    (('Intraday auction', 'Sell (MWh)'), 'intraday_auction_sell_mwh'),
+    (('Intraday market', 'Buy (MWh)'), 'intraday_market_buy_mwh'),
+    (('Intraday market', 'Sell (MWh)'), 'intraday_market_sell_mwh'),
+    (('Realization diagrams', 'Buy (MWh)'), 'realization_diagrams_buy_mwh'),
+    (('Realization diagrams', 'Sell (MWh)'), 'realization_diagrams_sell_mwh'),
+]
 
 
 def read_trade_balance_file(file_path, delivery_date):
     """
-    Read trade balance data from Excel file and ensure all 96 periods are present.
+    Read trade balance data from Excel file.
+
+    One export covers several delivery days (the portal session downloads
+    D-1..D+1). Every delivery day present in the file is completed to all of
+    its periods (92/96/100), with zeros where the file has no row: a period
+    missing from the export means no position.
 
     Args:
         file_path: Path to the Excel file
-        delivery_date: Delivery date extracted from filename
+        delivery_date: Delivery date extracted from filename (used only when
+            the file carries no Delivery day values)
 
     Returns:
-        list of dictionaries containing the data (always 96 records)
+        list of dictionaries containing the data
     """
     print(f"  Reading file: {file_path.name}")
 
@@ -144,23 +130,16 @@ def read_trade_balance_file(file_path, delivery_date):
 
     print(f"  Found {len(df)} rows in Excel")
 
-    # Create a dictionary to store records by period number
-    records_by_period = {}
-
-    # Track the actual delivery date from the Excel data
-    actual_delivery_date = None
-
+    # Collect (delivery_date, label, row) first: label resolution needs all of
+    # a day's labels to place the repeated fall-back hour.
+    rows = []
     for _, row in df.iterrows():
-        # Get delivery day and period (time interval)
         delivery_day = row[('Unnamed: 0_level_0', 'Delivery day')]
-        time_interval = row[('Unnamed: 1_level_0', 'Period')]
+        label = row[('Unnamed: 1_level_0', 'Period')]
 
         # Skip empty rows
-        if pd.isna(delivery_day) or pd.isna(time_interval):
+        if pd.isna(delivery_day) or pd.isna(label):
             continue
-
-        # Convert time_interval to period number
-        period = parse_time_interval_to_period(str(time_interval))
 
         # Parse delivery date from the row (this is the actual date, not from filename)
         if isinstance(delivery_day, str):
@@ -168,100 +147,70 @@ def read_trade_balance_file(file_path, delivery_date):
         else:
             row_delivery_date = delivery_day.date() if hasattr(delivery_day, 'date') else delivery_date
 
-        # Store the actual delivery date (from first valid row)
-        if actual_delivery_date is None:
-            actual_delivery_date = row_delivery_date
+        rows.append((row_delivery_date, str(label), row))
 
-        # Clean time_interval: remove spaces around dash to fit varchar(11)
-        # "01:00 - 01:15" (13 chars) -> "01:00-01:15" (11 chars)
-        cleaned_time_interval = str(time_interval).replace(' - ', '-')
+    # (delivery_date, period) -> record; label resolver per delivery day;
+    # slots that must not be zero-filled because a row could not be placed
+    records_by_slot = {}
+    resolvers = {}
+    unknown_slots = set()
+
+    for row_delivery_date, label, row in rows:
+        if row_delivery_date not in resolvers:
+            resolvers[row_delivery_date] = LabelResolver(
+                row_delivery_date, [l for d, l, _ in rows if d == row_delivery_date]
+            )
+        # Label -> period (OTE numbering); handles the repeated fall-back hour
+        try:
+            period = resolvers[row_delivery_date].slot(label)
+        except AmbiguousLabelError as e:
+            print(f"  Warning: skipping row, {e}")
+            unknown_slots.update((row_delivery_date, slot) for slot in e.slots)
+            continue
+        delivery_datetime, time_interval = slot_key(row_delivery_date, period)
 
         record = {
             'delivery_date': row_delivery_date,
-            'time_interval': cleaned_time_interval,
+            'time_interval': time_interval,
             'period': period,
+            'delivery_datetime': delivery_datetime,
         }
 
-        # Process MW columns
-        mw_columns = [
-            (('Total', 'Buy (MW)'), 'total_buy_mw'),
-            (('Total', 'Sell (MW)'), 'total_sell_mw'),
-            (('Daily market', 'Buy (MW)'), 'daily_market_buy_mw'),
-            (('Daily market', 'Sell (MW)'), 'daily_market_sell_mw'),
-            (('Intraday auction', 'Buy (MW)'), 'intraday_auction_buy_mw'),
-            (('Intraday auction', 'Sell (MW)'), 'intraday_auction_sell_mw'),
-            (('Intraday market', 'Buy (MW)'), 'intraday_market_buy_mw'),
-            (('Intraday market', 'Sell (MW)'), 'intraday_market_sell_mw'),
-            (('Realization diagrams', 'Buy (MW)'), 'realization_diagrams_buy_mw'),
-            (('Realization diagrams', 'Sell (MW)'), 'realization_diagrams_sell_mw'),
-        ]
-
-        for excel_col, db_col in mw_columns:
+        for excel_col, db_col in MW_COLUMNS + MWH_COLUMNS:
             record[db_col] = clean_numeric_value(row.get(excel_col))
 
-        # Process MWh columns
-        mwh_columns = [
-            (('Total', 'Buy (MWh)'), 'total_buy_mwh'),
-            (('Total', 'Sell (MWh)'), 'total_sell_mwh'),
-            (('Daily market', 'Buy (MWh)'), 'daily_market_buy_mwh'),
-            (('Daily market', 'Sell (MWh)'), 'daily_market_sell_mwh'),
-            (('Intraday auction', 'Buy (MWh)'), 'intraday_auction_buy_mwh'),
-            (('Intraday auction', 'Sell (MWh)'), 'intraday_auction_sell_mwh'),
-            (('Intraday market', 'Buy (MWh)'), 'intraday_market_buy_mwh'),
-            (('Intraday market', 'Sell (MWh)'), 'intraday_market_sell_mwh'),
-            (('Realization diagrams', 'Buy (MWh)'), 'realization_diagrams_buy_mwh'),
-            (('Realization diagrams', 'Sell (MWh)'), 'realization_diagrams_sell_mwh'),
-        ]
+        records_by_slot[(row_delivery_date, period)] = record
 
-        for excel_col, db_col in mwh_columns:
-            record[db_col] = clean_numeric_value(row.get(excel_col))
+    if not resolvers:
+        print(f"  Warning: No rows with a delivery day in Excel")
+        return []
 
-        records_by_period[period] = record
-
-    # Use actual delivery date from Excel data, fallback to filename date if not found
-    if actual_delivery_date is None:
-        actual_delivery_date = delivery_date
-        print(f"  Warning: No delivery date found in Excel, using filename date: {delivery_date}")
-    else:
-        print(f"  Actual delivery date from Excel: {actual_delivery_date}")
-
-    # Now create all 96 periods, filling missing ones with zeros
+    # Complete every delivery day present in the file, filling missing periods
+    # with zeros (never a slot an unplaceable row might belong to)
     complete_records = []
-    for period in range(1, 97):
-        if period in records_by_period:
-            # Use data from Excel
-            complete_records.append(records_by_period[period])
-        else:
-            # Create record with zeros for missing period
-            time_interval = generate_time_interval(period)
-            record = {
-                'delivery_date': actual_delivery_date,
-                'time_interval': time_interval,
-                'period': period,
-                'total_buy_mw': 0.0,
-                'total_sell_mw': 0.0,
-                'daily_market_buy_mw': 0.0,
-                'daily_market_sell_mw': 0.0,
-                'intraday_auction_buy_mw': 0.0,
-                'intraday_auction_sell_mw': 0.0,
-                'intraday_market_buy_mw': 0.0,
-                'intraday_market_sell_mw': 0.0,
-                'realization_diagrams_buy_mw': 0.0,
-                'realization_diagrams_sell_mw': 0.0,
-                'total_buy_mwh': 0.0,
-                'total_sell_mwh': 0.0,
-                'daily_market_buy_mwh': 0.0,
-                'daily_market_sell_mwh': 0.0,
-                'intraday_auction_buy_mwh': 0.0,
-                'intraday_auction_sell_mwh': 0.0,
-                'intraday_market_buy_mwh': 0.0,
-                'intraday_market_sell_mwh': 0.0,
-                'realization_diagrams_buy_mwh': 0.0,
-                'realization_diagrams_sell_mwh': 0.0,
-            }
+    for day in sorted(resolvers):
+        n_slots = slots_in_day(day)
+        from_file = 0
+        for period in range(1, n_slots + 1):
+            record = records_by_slot.get((day, period))
+            if record is not None:
+                from_file += 1
+            elif (day, period) in unknown_slots:
+                continue
+            else:
+                delivery_datetime, time_interval = slot_key(day, period)
+                record = {
+                    'delivery_date': day,
+                    'time_interval': time_interval,
+                    'period': period,
+                    'delivery_datetime': delivery_datetime,
+                }
+                for _, db_col in MW_COLUMNS + MWH_COLUMNS:
+                    record[db_col] = 0.0
             complete_records.append(record)
-
-    print(f"  Complete records with all 96 periods: {len(complete_records)} (from Excel: {len(records_by_period)}, filled with zeros: {96 - len(records_by_period)})")
+        n_unknown = sum(1 for d, p in unknown_slots if d == day and (d, p) not in records_by_slot)
+        print(f"  {day}: {n_slots} periods (from Excel: {from_file}, "
+              f"filled with zeros: {n_slots - from_file - n_unknown}, left untouched: {n_unknown})")
 
     return complete_records
 
@@ -332,16 +281,11 @@ def upload_to_database(records, conn, delivery_date):
     if not records:
         return 0, 0
 
-    # Get actual delivery date from first record
-    actual_date = records[0]['delivery_date'] if records else delivery_date
-    if actual_date != delivery_date:
-        print(f"  Note: Excel contains data for {actual_date} (filename suggests {delivery_date})")
-
     cursor = conn.cursor()
 
     upsert_query = """
         INSERT INTO ote_trade_balance (
-            delivery_date, time_interval, period,
+            delivery_date, time_interval, period, delivery_datetime,
             total_buy_mw, total_sell_mw,
             daily_market_buy_mw, daily_market_sell_mw,
             intraday_auction_buy_mw, intraday_auction_sell_mw,
@@ -353,8 +297,10 @@ def upload_to_database(records, conn, delivery_date):
             intraday_market_buy_mwh, intraday_market_sell_mwh,
             realization_diagrams_buy_mwh, realization_diagrams_sell_mwh
         ) VALUES %s
-        ON CONFLICT (delivery_date, time_interval)
+        ON CONFLICT (delivery_datetime)
         DO UPDATE SET
+            delivery_date = EXCLUDED.delivery_date,
+            time_interval = EXCLUDED.time_interval,
             period = EXCLUDED.period,
             total_buy_mw = EXCLUDED.total_buy_mw,
             total_sell_mw = EXCLUDED.total_sell_mw,
@@ -378,6 +324,8 @@ def upload_to_database(records, conn, delivery_date):
             realization_diagrams_sell_mwh = EXCLUDED.realization_diagrams_sell_mwh,
             uploaded_at = CURRENT_TIMESTAMP
         WHERE (
+            ote_trade_balance.delivery_date IS DISTINCT FROM EXCLUDED.delivery_date OR
+            ote_trade_balance.time_interval IS DISTINCT FROM EXCLUDED.time_interval OR
             ote_trade_balance.period IS DISTINCT FROM EXCLUDED.period OR
             ote_trade_balance.total_buy_mw IS DISTINCT FROM EXCLUDED.total_buy_mw OR
             ote_trade_balance.total_sell_mw IS DISTINCT FROM EXCLUDED.total_sell_mw OR
@@ -409,6 +357,7 @@ def upload_to_database(records, conn, delivery_date):
             record['delivery_date'],
             record['time_interval'],
             record['period'],
+            record['delivery_datetime'],
             record['total_buy_mw'],
             record['total_sell_mw'],
             record['daily_market_buy_mw'],

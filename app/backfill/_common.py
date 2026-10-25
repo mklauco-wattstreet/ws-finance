@@ -46,6 +46,17 @@ HOUR_GROUP_SQL = "SUBSTRING(time_interval, 1, 2)"
 # mean the exact 4 expected quarters — partial hours are filtered out.
 HOUR_COMPLETE_HAVING = "HAVING COUNT(DISTINCT time_interval) = 4"
 
+# Same three fragments for sources keyed on delivery_datetime (UTC instant of
+# the quarter start). Hours are bucketed by instant, so the repeated
+# 02:00-03:00 on the fall-back day stays two separate hours. Every Prague
+# offset is a whole hour, so the UTC hour boundary is the local one.
+HOUR_START_DT_SQL = "date_trunc('hour', delivery_datetime)"
+HOUR_INTERVAL_DT_SQL = (
+    "to_char(date_trunc('hour', delivery_datetime) AT TIME ZONE 'Europe/Prague', 'HH24:MI') || '-' || "
+    "to_char((date_trunc('hour', delivery_datetime) + interval '1 hour') AT TIME ZONE 'Europe/Prague', 'HH24:MI')"
+)
+HOUR_COMPLETE_DT_HAVING = "HAVING COUNT(DISTINCT delivery_datetime) = 4"
+
 
 def setup_logging(name: str, debug: bool = False) -> logging.Logger:
     level = logging.DEBUG if debug else logging.INFO

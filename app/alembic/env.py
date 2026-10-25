@@ -22,8 +22,10 @@ if config.config_file_name is not None:
 # SQLAlchemy MetaData object for 'autogenerate' support
 target_metadata = Base.metadata
 
-# Build database URL from environment
-DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+# Build database URL from environment. The driver is named explicitly:
+# SQLAlchemy 2.1 maps a bare "postgresql://" to psycopg (v3), which is not
+# installed - only psycopg2 is (requirements.txt).
+DATABASE_URL = f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
 
 def include_name(name, type_, parent_names):
@@ -31,6 +33,18 @@ def include_name(name, type_, parent_names):
     if type_ == "schema":
         return name == DB_SCHEMA
     return True
+
+
+def include_object(obj, name, type_, reflected, compare_to):
+    """Autogenerate guard: never compare or emit anything outside finance.
+
+    Tables carry their schema; for other object types the parent table's
+    schema decides. Objects with no schema are excluded too, so nothing can
+    fall through to public.
+    """
+    table = obj if type_ == "table" else getattr(obj, "table", None)
+    schema = getattr(table, "schema", None) if table is not None else None
+    return schema == DB_SCHEMA
 
 
 def run_migrations_offline() -> None:
@@ -51,6 +65,7 @@ def run_migrations_offline() -> None:
         dialect_opts={"paramstyle": "named"},
         include_schemas=True,
         include_name=include_name,
+        include_object=include_object,
         version_table_schema=DB_SCHEMA,
     )
 
@@ -79,6 +94,7 @@ def run_migrations_online() -> None:
             target_metadata=target_metadata,
             include_schemas=True,
             include_name=include_name,
+            include_object=include_object,
             version_table_schema=DB_SCHEMA,
         )
 

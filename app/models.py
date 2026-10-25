@@ -121,7 +121,7 @@ class OtePricesDayAhead(Base):
     __table_args__ = (
         PrimaryKeyConstraint('id', name='ote_prices_day_ahead_pkey'),
         UniqueConstraint('trade_date', 'period', name='ote_prices_day_ahead_trade_date_period_key'),
-        UniqueConstraint('trade_date', 'time_interval', name='ote_prices_day_ahead_trade_date_time_interval_key'),
+        UniqueConstraint('delivery_datetime', name='ote_prices_day_ahead_delivery_datetime_key'),
         {'schema': DB_SCHEMA}
     )
 
@@ -129,6 +129,7 @@ class OtePricesDayAhead(Base):
     trade_date: Mapped[date] = mapped_column(Date, nullable=False)
     period: Mapped[int] = mapped_column(Integer, nullable=False)
     time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    delivery_datetime: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
     price_15min_eur_mwh: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     volume_mwh: Mapped[Decimal] = mapped_column(Numeric(12, 3), nullable=False)
     purchase_15min_products_mwh: Mapped[Decimal] = mapped_column(Numeric(12, 3), nullable=False)
@@ -150,7 +151,7 @@ class OtePricesDayAhead60min(Base):
     __table_args__ = (
         PrimaryKeyConstraint('id', name='ote_prices_day_ahead_60min_pkey'),
         UniqueConstraint('trade_date', 'period_60', name='ote_prices_day_ahead_60min_trade_date_period_60_key'),
-        UniqueConstraint('trade_date', 'time_interval', name='ote_prices_day_ahead_60min_trade_date_time_interval_key'),
+        UniqueConstraint('delivery_datetime', name='ote_prices_day_ahead_60min_delivery_datetime_key'),
         {'schema': DB_SCHEMA}
     )
 
@@ -158,6 +159,7 @@ class OtePricesDayAhead60min(Base):
     trade_date: Mapped[date] = mapped_column(Date, nullable=False)
     period_60: Mapped[int] = mapped_column(Integer, nullable=False)
     time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    delivery_datetime: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
     price_60min_eur_mwh: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     volume_mwh: Mapped[Decimal] = mapped_column(Numeric(12, 3), nullable=False)
     purchase_15min_products_mwh: Mapped[Decimal] = mapped_column(Numeric(12, 3), nullable=False)
@@ -177,7 +179,7 @@ class OtePricesImbalance(Base):
     __table_args__ = (
         PrimaryKeyConstraint('id', name='ote_prices_imbalance_pkey'),
         UniqueConstraint('trade_date', 'period', name='ote_prices_imbalance_trade_date_period_key'),
-        UniqueConstraint('trade_date', 'time_interval', name='ote_prices_imbalance_trade_date_time_interval_key'),
+        UniqueConstraint('delivery_datetime', name='ote_prices_imbalance_delivery_datetime_key'),
         {'schema': DB_SCHEMA}
     )
 
@@ -185,6 +187,7 @@ class OtePricesImbalance(Base):
     trade_date: Mapped[date] = mapped_column(Date, nullable=False)
     period: Mapped[int] = mapped_column(Integer, nullable=False)
     time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    delivery_datetime: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
     system_imbalance_mwh: Mapped[Decimal] = mapped_column(Numeric(12, 5), nullable=False)
     absolute_imbalance_sum_mwh: Mapped[Decimal] = mapped_column(Numeric(12, 5), nullable=False)
     positive_imbalance_mwh: Mapped[Decimal] = mapped_column(Numeric(12, 5), nullable=False)
@@ -210,9 +213,9 @@ class OtePricesIntradayMarket(Base):
     """
     __tablename__ = 'ote_prices_intraday_market'
     __table_args__ = (
-        PrimaryKeyConstraint('id', name='prices_intraday_market_pkey'),
-        UniqueConstraint('trade_date', 'period', name='prices_intraday_market_trade_date_period_key'),
-        UniqueConstraint('trade_date', 'time_interval', name='prices_intraday_market_trade_date_time_interval_key'),
+        PrimaryKeyConstraint('id', name='ote_prices_intraday_market_pkey'),
+        UniqueConstraint('trade_date', 'period', name='ote_prices_intraday_market_trade_date_period_key'),
+        UniqueConstraint('delivery_datetime', name='ote_prices_intraday_market_delivery_datetime_key'),
         {'schema': DB_SCHEMA}
     )
 
@@ -220,6 +223,7 @@ class OtePricesIntradayMarket(Base):
     trade_date: Mapped[date] = mapped_column(Date, nullable=False)
     period: Mapped[int] = mapped_column(Integer, nullable=False)
     time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    delivery_datetime: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
     traded_volume_mwh: Mapped[Decimal] = mapped_column(Numeric(12, 4), nullable=False)
     traded_volume_purchased_mwh: Mapped[Decimal] = mapped_column(Numeric(12, 4), nullable=False)
     traded_volume_sold_mwh: Mapped[Decimal] = mapped_column(Numeric(12, 4), nullable=False)
@@ -236,13 +240,14 @@ class OteTradeBalance(Base):
     __tablename__ = 'ote_trade_balance'
     __table_args__ = (
         PrimaryKeyConstraint('id', name='ote_trade_balance_pkey'),
-        UniqueConstraint('delivery_date', 'time_interval', name='ote_trade_balance_delivery_date_time_interval_key'),
+        UniqueConstraint('delivery_datetime', name='ote_trade_balance_delivery_datetime_key'),
         {'schema': DB_SCHEMA}
     )
 
     id: Mapped[int] = mapped_column(Integer, autoincrement=True)
     delivery_date: Mapped[date] = mapped_column(Date, nullable=False)
     time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    delivery_datetime: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
     period: Mapped[int] = mapped_column(Integer, nullable=False)
     total_buy_mw: Mapped[Decimal] = mapped_column(Numeric(12, 5), nullable=False)
     total_sell_mw: Mapped[Decimal] = mapped_column(Numeric(12, 5), nullable=False)
@@ -840,12 +845,14 @@ class DaPeriodSummary(Base):
     __tablename__ = 'da_period_summary'
     __table_args__ = (
         PrimaryKeyConstraint('delivery_date', 'period', name='da_period_summary_pkey'),
+        UniqueConstraint('delivery_datetime', name='da_period_summary_delivery_datetime_key'),
         {'schema': DB_SCHEMA}
     )
 
     delivery_date: Mapped[date] = mapped_column(Date, nullable=False)
     period: Mapped[int] = mapped_column(Integer, nullable=False)
     time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    delivery_datetime: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
     clearing_price: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2))
     clearing_volume: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     supply_next_price: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2))
@@ -871,12 +878,14 @@ class DaCurveDepth(Base):
     __tablename__ = 'da_curve_depth'
     __table_args__ = (
         PrimaryKeyConstraint('delivery_date', 'period', name='da_curve_depth_pkey'),
+        UniqueConstraint('delivery_datetime', name='da_curve_depth_delivery_datetime_key'),
         {'schema': DB_SCHEMA}
     )
 
     delivery_date: Mapped[date] = mapped_column(Date, nullable=False)
     period: Mapped[int] = mapped_column(Integer, nullable=False)
     time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    delivery_datetime: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
     clearing_price: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
 
     supply_mw_from_clearing: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
@@ -904,6 +913,7 @@ class OtePricesIda(Base):
     __table_args__ = (
         PrimaryKeyConstraint('id', name='ote_prices_ida_pkey'),
         UniqueConstraint('trade_date', 'period', 'ida_idx', name='ote_prices_ida_trade_date_period_ida_idx_key'),
+        UniqueConstraint('delivery_datetime', 'ida_idx', name='ote_prices_ida_delivery_datetime_ida_idx_key'),
         {'schema': DB_SCHEMA}
     )
 
@@ -912,6 +922,7 @@ class OtePricesIda(Base):
     period: Mapped[int] = mapped_column(Integer, nullable=False)
     ida_idx: Mapped[int] = mapped_column(Integer, nullable=False)
     time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    delivery_datetime: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
     price_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2))
     volume_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     saldo_dm_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
@@ -980,12 +991,13 @@ class DaPeriodSummary60Min(Base):
     """Day-ahead per-period summary aggregated to 60-min hours."""
     __tablename__ = 'da_period_summary_60min'
     __table_args__ = (
-        PrimaryKeyConstraint('delivery_date', 'time_interval', name='da_period_summary_60min_pkey'),
+        PrimaryKeyConstraint('delivery_datetime', name='da_period_summary_60min_pkey'),
         {'schema': DB_SCHEMA}
     )
 
     delivery_date: Mapped[date] = mapped_column(Date, nullable=False)
     time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    delivery_datetime: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
     clearing_price: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2))
     clearing_volume: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     supply_next_price: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2))
@@ -1003,12 +1015,13 @@ class DaCurveDepth60Min(Base):
     """Day-ahead curve depth aggregated to 60-min hours."""
     __tablename__ = 'da_curve_depth_60min'
     __table_args__ = (
-        PrimaryKeyConstraint('delivery_date', 'time_interval', name='da_curve_depth_60min_pkey'),
+        PrimaryKeyConstraint('delivery_datetime', name='da_curve_depth_60min_pkey'),
         {'schema': DB_SCHEMA}
     )
 
     delivery_date: Mapped[date] = mapped_column(Date, nullable=False)
     time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    delivery_datetime: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
     clearing_price: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     supply_mw_from_clearing: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     supply_price_from_clearing: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2))
@@ -1036,13 +1049,14 @@ class OtePricesImbalance60Min(Base):
     __tablename__ = 'ote_prices_imbalance_60min'
     __table_args__ = (
         PrimaryKeyConstraint('id', name='ote_prices_imbalance_60min_pkey'),
-        UniqueConstraint('trade_date', 'time_interval', name='ote_prices_imbalance_60min_trade_date_interval_key'),
+        UniqueConstraint('delivery_datetime', name='ote_prices_imbalance_60min_delivery_datetime_key'),
         {'schema': DB_SCHEMA}
     )
 
     id: Mapped[int] = mapped_column(Integer, autoincrement=True)
     trade_date: Mapped[date] = mapped_column(Date, nullable=False)
     time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    delivery_datetime: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
     system_imbalance_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 5))
     absolute_imbalance_sum_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 5))
     positive_imbalance_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 5))
@@ -1066,13 +1080,14 @@ class OtePricesIda60Min(Base):
     __tablename__ = 'ote_prices_ida_60min'
     __table_args__ = (
         PrimaryKeyConstraint('id', name='ote_prices_ida_60min_pkey'),
-        UniqueConstraint('trade_date', 'time_interval', 'ida_idx', name='ote_prices_ida_60min_trade_date_interval_ida_idx_key'),
+        UniqueConstraint('delivery_datetime', 'ida_idx', name='ote_prices_ida_60min_delivery_datetime_ida_idx_key'),
         {'schema': DB_SCHEMA}
     )
 
     id: Mapped[int] = mapped_column(Integer, autoincrement=True)
     trade_date: Mapped[date] = mapped_column(Date, nullable=False)
     time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    delivery_datetime: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
     ida_idx: Mapped[int] = mapped_column(Integer, nullable=False)
     price_eur_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2))
     volume_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))

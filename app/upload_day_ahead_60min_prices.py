@@ -20,6 +20,7 @@ import pandas as pd
 
 from config import DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT, DB_SCHEMA
 from common import setup_logging, print_banner
+from dst_calendar import slot_key
 
 
 def parse_date_from_filename(filename):
@@ -69,22 +70,6 @@ def clean_numeric_value(value):
         return None
 
 
-def convert_time_interval(raw):
-    """
-    Convert '00-01' to '00:00-01:00' format.
-
-    Args:
-        raw: Raw time interval string from Excel (e.g., '00-01', '23-24')
-
-    Returns:
-        str: Time interval in 'HH:MM-HH:MM' format
-    """
-    parts = raw.strip().split('-')
-    start = f"{int(parts[0]):02d}:00"
-    end = f"{int(parts[1]):02d}:00"
-    return f"{start}-{end}"
-
-
 def read_day_ahead_60min_file(file_path, trade_date):
     """
     Read day-ahead 60-minute data from Excel file.
@@ -104,14 +89,19 @@ def read_day_ahead_60min_file(file_path, trade_date):
         if pd.isna(row.get('Period')):
             continue
 
-        time_interval_raw = str(row['Time interval']).strip() if not pd.isna(row.get('Time interval')) else None
-        if not time_interval_raw:
+        if pd.isna(row.get('Time interval')) or not str(row['Time interval']).strip():
             continue
+
+        # Period is OTE's 1..23/24/25 hour numbering; the file's own label
+        # ("02a-02b" on the fall-back day) is replaced by a plain one.
+        period_60 = int(row['Period'])
+        delivery_datetime, time_interval = slot_key(trade_date, period_60, minutes=60)
 
         record = {
             'trade_date': trade_date,
-            'period_60': int(row['Period']),
-            'time_interval': convert_time_interval(time_interval_raw),
+            'period_60': period_60,
+            'time_interval': time_interval,
+            'delivery_datetime': delivery_datetime,
         }
 
         numeric_columns = [
@@ -153,13 +143,15 @@ def upload_to_database(records, conn, trade_date):
 
     upsert_query = """
         INSERT INTO ote_prices_day_ahead_60min (
-            trade_date, period_60, time_interval,
+            trade_date, period_60, time_interval, delivery_datetime,
             price_60min_eur_mwh, volume_mwh,
             purchase_15min_products_mwh, purchase_60min_products_mwh,
             sale_15min_products_mwh, sale_60min_products_mwh,
             saldo_dm_mwh, export_mwh, import_mwh
         ) VALUES %s
-        ON CONFLICT (trade_date, period_60) DO UPDATE SET
+        ON CONFLICT (delivery_datetime) DO UPDATE SET
+            trade_date = EXCLUDED.trade_date,
+            period_60 = EXCLUDED.period_60,
             time_interval = EXCLUDED.time_interval,
             price_60min_eur_mwh = EXCLUDED.price_60min_eur_mwh,
             volume_mwh = EXCLUDED.volume_mwh,
@@ -171,7 +163,9 @@ def upload_to_database(records, conn, trade_date):
             export_mwh = EXCLUDED.export_mwh,
             import_mwh = EXCLUDED.import_mwh,
             updated_at = CURRENT_TIMESTAMP
-        WHERE ote_prices_day_ahead_60min.time_interval IS DISTINCT FROM EXCLUDED.time_interval
+        WHERE ote_prices_day_ahead_60min.trade_date IS DISTINCT FROM EXCLUDED.trade_date
+           OR ote_prices_day_ahead_60min.period_60 IS DISTINCT FROM EXCLUDED.period_60
+           OR ote_prices_day_ahead_60min.time_interval IS DISTINCT FROM EXCLUDED.time_interval
            OR ote_prices_day_ahead_60min.price_60min_eur_mwh IS DISTINCT FROM EXCLUDED.price_60min_eur_mwh
            OR ote_prices_day_ahead_60min.volume_mwh IS DISTINCT FROM EXCLUDED.volume_mwh
            OR ote_prices_day_ahead_60min.purchase_15min_products_mwh IS DISTINCT FROM EXCLUDED.purchase_15min_products_mwh
@@ -189,6 +183,7 @@ def upload_to_database(records, conn, trade_date):
             record['trade_date'],
             record['period_60'],
             record['time_interval'],
+            record['delivery_datetime'],
             record['price_60min_eur_mwh'],
             record['volume_mwh'],
             record['purchase_15min_products_mwh'],
