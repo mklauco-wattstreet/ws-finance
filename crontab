@@ -50,7 +50,9 @@
 20 10,11,15,16,22,23 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 download_okte_ida.py >> /var/log/okte_ida.log 2>&1
 
 # OTE-CR - Download OTE daily settlement reports at 09:00
-0 09 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 ote_production.py >> /var/log/ote.log 2>&1
+# Shares /app/browser-profile with the portal session, so it takes the same lock (waits up to
+# 15 min) - the OTE refresh API can start a portal session at any time.
+0 09 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && flock -w 900 /tmp/ote_portal_session.lock /usr/local/bin/python3 ote_production.py >> /var/log/ote.log 2>&1
 
 # OTE-CR - Portal session every 2 hours (offset to minute 10): ONE certificate login, then
 # trade balance (D-1..D+1), the intraday-market limit utilization ("Fin. security trend
@@ -58,6 +60,7 @@
 # run also fetches both financial-security reports for yesterday, which closes that day
 # (their period filters on the event timestamp). No --reports given = all three.
 # Chromium shares /app/browser-profile with the daily payments job (09:00) - keep clear of it.
+# The OTE refresh API (app/api/ote_refresh_api.py) runs this same command under the same lock.
 # flock guards against a hung run overlapping the next slot.
 10 2-22/2 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && flock -n /tmp/ote_portal_session.lock /usr/local/bin/python3 ote_portal_session.py >> /var/log/ote.log 2>&1
 10 0 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && flock -n /tmp/ote_portal_session.lock /usr/local/bin/python3 ote_portal_session.py --limit-yesterday >> /var/log/ote.log 2>&1

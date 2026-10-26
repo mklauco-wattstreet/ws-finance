@@ -16,6 +16,10 @@ alembic>=1.13.0
 requests>=2.31.0
 brotli>=1.1.0  # Required for Brotli decompression in requests
 
+# OTE force-fetch API (app/api/ote_refresh_api.py, started by entrypoint.sh)
+fastapi>=0.110.0
+uvicorn>=0.29.0
+
 # Monitoring
 sentry-sdk>=2.0.0
 

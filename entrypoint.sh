@@ -23,6 +23,13 @@ cut -d= -f1 /etc/environment_for_cron | sort
 # Load the crontab from the mounted file
 crontab /etc/cron.d/entsoe-ote-cron
 
+# OTE portal force-fetch API (app/api/ote_refresh_api.py), reachable on
+# shared_network as http://entsoe-ote-data-uploader:8080 (no host port).
+# Not supervised: if it dies, cron keeps running and the API stays down until
+# the container is recreated. Exits at startup if OTE_API_TOKEN is not set.
+echo "Starting OTE refresh API on :8080..."
+python3 -m uvicorn api.ote_refresh_api:app --app-dir /app/scripts --host 0.0.0.0 --port 8080 --workers 1 >> /var/log/ote_api.log 2>&1 &
+
 # Start cron in foreground
 echo "Starting cron service..."
 cron
