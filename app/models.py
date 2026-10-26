@@ -8,8 +8,8 @@ from decimal import Decimal
 from typing import Optional
 
 from sqlalchemy import (
-    BigInteger, Boolean, CheckConstraint, Date, DateTime, Integer, Numeric, SmallInteger, String,
-    UniqueConstraint, PrimaryKeyConstraint
+    BigInteger, Boolean, CheckConstraint, Date, DateTime, Index, Integer, Numeric, SmallInteger, String,
+    Text, UniqueConstraint, PrimaryKeyConstraint
 )
 from sqlalchemy.dialects.postgresql import TIMESTAMP
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -2036,3 +2036,35 @@ class OktePricesIda60min(Base):
     flow_pl_sk: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
     created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
     updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+
+
+class FetchLog(Base):
+    """One row per run of a source dataset, written by fetch_log.py (migration 085).
+
+    status is NULL while running; a row whose finished_at stays NULL long after
+    started_at is a run that was killed before it could finish.
+    """
+    __tablename__ = 'fetch_log'
+    __table_args__ = (
+        PrimaryKeyConstraint('id', name='fetch_log_pkey'),
+        CheckConstraint("trigger IN ('cron', 'api', 'manual')", name='fetch_log_trigger_check'),
+        CheckConstraint("status IN ('ok', 'failed', 'skipped')", name='fetch_log_status_check'),
+        Index('ix_fetch_log_source_dataset_started_at', 'source', 'dataset', 'started_at'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, autoincrement=True)
+    source: Mapped[str] = mapped_column(String(20), nullable=False)
+    dataset: Mapped[str] = mapped_column(String(50), nullable=False)
+    country_code: Mapped[Optional[str]] = mapped_column(String(2))
+    trigger: Mapped[str] = mapped_column(String(10), nullable=False)
+    dry_run: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default='false')
+    args: Mapped[Optional[str]] = mapped_column(Text)
+    started_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, server_default='CURRENT_TIMESTAMP')
+    finished_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True))
+    status: Mapped[Optional[str]] = mapped_column(String(10))
+    rows_inserted: Mapped[Optional[int]] = mapped_column(Integer)
+    rows_updated: Mapped[Optional[int]] = mapped_column(Integer)
+    data_from: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True))
+    data_to: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True))
+    error: Mapped[Optional[str]] = mapped_column(Text)

@@ -13,7 +13,7 @@ Endpoints (all require the X-API-Token header == OTE_API_TOKEN):
 
 The run is the same command cron uses, under the same flock, so an API run and
 a cron run can never overlap: whichever starts second is refused (API: 409,
-cron: flock -n skips the slot).
+cron: flock -n skips the slot). Runs are tagged trigger=api in finance.fetch_log.
 
 Usage (inside the container):
     python3 -m uvicorn api.ote_refresh_api:app --app-dir /app/scripts --host 0.0.0.0 --port 8080 --workers 1
@@ -143,7 +143,7 @@ def refresh(req: Optional[RefreshRequest] = None):
             cmd.append("--dry-run")
         with open(RUN_LOG, "a") as log:
             proc = subprocess.Popen(cmd, cwd="/app/scripts", stdout=log, stderr=subprocess.STDOUT,
-                                    start_new_session=True)
+                                    start_new_session=True, env={**os.environ, "FETCH_TRIGGER": "api"})
 
         previous = _last_run
         run = {"started_at": _now_iso(), "finished_at": None, "exit_code": None,

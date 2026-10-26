@@ -26,6 +26,10 @@ Usage:
 
 Each report is isolated: a failure is logged (with screenshot) and the
 next report still runs; the exit code is non-zero if any report failed.
+
+Every requested report gets its own finance.fetch_log row (dataset = report
+key), opened when the session starts so a login failure or maintenance page is
+recorded against each report too.
 """
 
 import sentry_init  # noqa: F401 - must be first to capture errors
@@ -35,6 +39,7 @@ import sys
 import time
 from datetime import datetime, timedelta
 
+import fetch_log
 from common import setup_logging
 from config import OTE_LOCAL_STORAGE_PASSWORD
 import ote_portal
@@ -85,6 +90,15 @@ def run_fs_trend(driver, logger, args):
                                   spec=FS_TREND)
 
 
+def _report_window(name, args):
+    """Requested delivery/event days as a half-open [from, to) date range."""
+    today = datetime.now().date()
+    if name == "trade_balance":
+        return today - timedelta(days=1), today + timedelta(days=2)
+    days = _fs_days(args)
+    return days[0], days[-1] + timedelta(days=1)
+
+
 REPORT_RUNNERS = {
     "trade_balance": run_trade_balance,
     "intraday_limit": run_intraday_limit,
@@ -122,6 +136,15 @@ def main():
         logger.error("OTE_LOCAL_STORAGE_PASSWORD not configured")
         sys.exit(1)
 
+    runs = {}
+    for name in args.reports:
+        data_from, data_to = _report_window(name, args)
+        runs[name] = fetch_log.start("ote", name, dry_run=args.dry_run, data_from=data_from, data_to=data_to)
+
+    def finish_open(status, error=None):
+        for open_name in list(runs):
+            fetch_log.finish(runs.pop(open_name), status, error)
+
     driver = None
     failed = []
     try:
@@ -131,6 +154,7 @@ def main():
 
         if ote_portal.is_maintenance_page(driver):
             logger.warning("OTE portal is in maintenance mode, skipping")
+            finish_open("skipped", "OTE portal in maintenance mode")
             sys.exit(0)
 
         ote_portal.switch_to_english(driver, logger)
@@ -142,7 +166,9 @@ def main():
             try:
                 REPORT_RUNNERS[name](driver, logger, args)
                 logger.info(f"OTE PortalSession: {name} OK in {time.monotonic() - started:.0f}s")
+                fetch_log.finish(runs.pop(name), "ok")
             except Exception as e:
+                fetch_log.finish(runs.pop(name), "failed", f"{type(e).__name__}: {e}")
                 failed.append(name)
                 logger.error(f"OTE PortalSession: {name} FAILED: {e}", exc_info=True)
                 take_screenshot(driver, f"{name}_failed")
@@ -151,7 +177,9 @@ def main():
         raise
     except KeyboardInterrupt:
         failed.append("interrupted")
+        finish_open("failed", "interrupted")
     except Exception as e:
+        finish_open("failed", f"{type(e).__name__}: {e}")
         logger.error(f"OTE PortalSession: {e}", exc_info=True)
         if driver:
             take_screenshot(driver, "error")

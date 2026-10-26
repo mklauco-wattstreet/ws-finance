@@ -22,6 +22,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 
+import fetch_log
 from common import setup_logging
 from config import OTE_CERT_PATH, OTE_CERT_PASSWORD, OTE_LOCAL_STORAGE_PASSWORD
 
@@ -660,4 +661,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    fetch_log.run_logged("ote", "daily_payments", main)

@@ -28,6 +28,7 @@ import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
+import fetch_log
 from common import (
     setup_logging,
     parse_date,
@@ -261,4 +262,4 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    fetch_log.run_logged("ote", "dam_curves", main)

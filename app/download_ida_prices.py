@@ -30,6 +30,7 @@ from pathlib import Path
 
 import psycopg2
 from config import DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT, DB_SCHEMA
+import fetch_log
 from common import (
     setup_logging,
     parse_date,
@@ -296,4 +297,4 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    fetch_log.run_logged("ote", "ida_prices", main)
