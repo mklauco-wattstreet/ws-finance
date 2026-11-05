@@ -54,7 +54,7 @@
 # 15 min) - the OTE refresh API can start a portal session at any time.
 0 09 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && flock -w 900 /tmp/ote_portal_session.lock /usr/local/bin/python3 ote_production.py >> /var/log/ote.log 2>&1
 
-# OTE-CR - Portal session every 2 hours (offset to minute 10): ONE certificate login, then
+# OTE-CR - Portal session every hour (offset to minute 10): ONE certificate login, then
 # trade balance (D-1..D+1), the intraday-market limit utilization ("Fin. security trend
 # for limit IM") and the overall "Fin. security trend", both for today's events. The 00:10
 # run also fetches both financial-security reports for yesterday, which closes that day
@@ -62,7 +62,7 @@
 # Chromium shares /app/browser-profile with the daily payments job (09:00) - keep clear of it.
 # The OTE refresh API (app/api/ote_refresh_api.py) runs this same command under the same lock.
 # flock guards against a hung run overlapping the next slot.
-10 2-22/2 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && flock -n /tmp/ote_portal_session.lock /usr/local/bin/python3 ote_portal_session.py >> /var/log/ote.log 2>&1
+10 1-23 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && flock -n /tmp/ote_portal_session.lock /usr/local/bin/python3 ote_portal_session.py >> /var/log/ote.log 2>&1
 10 0 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && flock -n /tmp/ote_portal_session.lock /usr/local/bin/python3 ote_portal_session.py --limit-yesterday >> /var/log/ote.log 2>&1
 
 # OTE-CR - Download DAM matching curves every 10 min from 14:00-21:59 (published ~14:00).

@@ -2,7 +2,7 @@
 OTE portal force-fetch API.
 
 Lets trader-web trigger ote_portal_session.py on demand instead of waiting for
-the next cron slot (10 2-22/2). Runs inside the entsoe-ote-data-uploader
+the next cron slot (10 1-23). Runs inside the entsoe-ote-data-uploader
 container (started by entrypoint.sh), because the script needs this
 container's Chromium profile, certificates and lock file.
 
