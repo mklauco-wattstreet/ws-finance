@@ -12,9 +12,10 @@ COMMONREQ 921 on CommonService, one message per call.
 Usage (inside the container, cwd /app/scripts):
     python3 -m ote_soap.fetch --dry-run [--code 463]
         Build and sign a request, self-check the signature, print it. No network.
-    python3 -m ote_soap.fetch --request [--code 463] [--from YYYY-MM-DD --to YYYY-MM-DD]
-        Send one SFVOTREQ to ReportService. Dates default to today.
-    python3 -m ote_soap.fetch --collect [--max 20]
+    python3 -m ote_soap.fetch --request [--code 463|400,403,406|all] [--from YYYY-MM-DD --to YYYY-MM-DD]
+        Send SFVOTREQ to ReportService for one code, a comma list, or all
+        financial report codes (SFVOTREQ.xsd), 2 s apart. Dates default to today.
+    python3 -m ote_soap.fetch --collect [--max 100]
         Pick up queued messages (COMMONREQ 921) until the queue is empty or --max.
     --debug   verbose logging
 """
@@ -24,6 +25,7 @@ import sentry_init  # noqa: F401  (must be first)
 import argparse
 import os
 import sys
+import time
 from datetime import date, datetime
 from pathlib import Path
 
@@ -36,6 +38,7 @@ from ote_soap.messages import PRAGUE, SFVOTREQ_CODES, new_message_id, queue_pick
 from ote_soap.wssec import Credentials, verify_own_envelope
 
 OUT_ROOT = Path(os.getenv("OTE_SOAP_OUT_DIR", "/app/downloads/ote_soap"))
+REQUEST_GAP_S = 2  # pause between requests in --code all (OTE's per-code minimum delay is unpublished)
 
 
 def _out_dir() -> Path:
@@ -63,6 +66,19 @@ def _describe(resp: OteResponse) -> str:
     )
 
 
+def _parse_codes(value: str) -> list[str]:
+    """'463' | '400,403,406' | 'all' -> list of valid SFVOTREQ codes (order kept, duplicates dropped)."""
+    if value.strip().lower() == "all":
+        return sorted(SFVOTREQ_CODES)
+    codes = list(dict.fromkeys(c.strip() for c in value.split(",") if c.strip()))
+    unknown = [c for c in codes if c not in SFVOTREQ_CODES]
+    if not codes or unknown:
+        raise argparse.ArgumentTypeError(
+            f"unknown report code(s) {', '.join(unknown) or value!r}; valid: {', '.join(sorted(SFVOTREQ_CODES))} or all"
+        )
+    return codes
+
+
 def _load_credentials(logger) -> Credentials:
     if not OTE_CERT_PATH:
         raise SystemExit("OTE_CERT_PATH is not set")
@@ -73,14 +89,16 @@ def _load_credentials(logger) -> Credentials:
     return creds
 
 
-def do_dry_run(client: OteSoapClient, code: str, d_from: date, d_to: date, logger) -> int:
-    msg_id = new_message_id()
-    envelope = client.build(report_request(code, d_from, d_to, msg_id))
-    verify_own_envelope(envelope, client.creds)
-    logger.info("Signature self-check OK (%s). Request id %s, %d bytes.", client.sign_alg, msg_id, len(envelope))
-    path = _save(f"dryrun_request_{code}_{msg_id}", envelope)
-    logger.info("Signed request written to %s (not sent)", path)
-    print(etree.tostring(etree.fromstring(envelope), pretty_print=True).decode())
+def do_dry_run(client: OteSoapClient, codes: list[str], d_from: date, d_to: date, logger) -> int:
+    for code in codes:
+        msg_id = new_message_id()
+        envelope = client.build(report_request(code, d_from, d_to, msg_id))
+        verify_own_envelope(envelope, client.creds)
+        path = _save(f"dryrun_request_{code}_{msg_id}", envelope)
+        logger.info("Report %s (%s): signature self-check OK (%s), %d bytes, written to %s (not sent)",
+                    code, SFVOTREQ_CODES[code], client.sign_alg, len(envelope), path.name)
+        if len(codes) == 1:
+            print(etree.tostring(etree.fromstring(envelope), pretty_print=True).decode())
     return 0
 
 
@@ -98,6 +116,23 @@ def do_request(client: OteSoapClient, code: str, d_from: date, d_to: date, logge
     logger.info("ReportService answered: %s", _describe(resp))
     logger.info("Response saved to %s", path)
     return 0 if resp.return_code == "0" else 1
+
+
+def do_request_many(client: OteSoapClient, codes: list[str], d_from: date, d_to: date, logger) -> int:
+    """Request each code in turn; one failure does not stop the others."""
+    failed = []
+    for i, code in enumerate(codes):
+        if i:
+            time.sleep(REQUEST_GAP_S)
+        try:
+            if do_request(client, code, d_from, d_to, logger) != 0:
+                failed.append(code)
+        except OteSoapError as exc:
+            logger.error("Report %s: %s", code, exc)
+            failed.append(code)
+    logger.info("Requested %d report(s), %d not accepted: %s",
+                len(codes), len(failed), ", ".join(failed) or "none")
+    return 1 if failed else 0
 
 
 def do_collect(client: OteSoapClient, max_messages: int, logger) -> int:
@@ -123,10 +158,11 @@ def main() -> int:
     mode.add_argument("--dry-run", action="store_true", help="build + sign + self-check, no network")
     mode.add_argument("--request", action="store_true", help="send one SFVOTREQ to ReportService")
     mode.add_argument("--collect", action="store_true", help="pick up queued messages (COMMONREQ 921)")
-    parser.add_argument("--code", default="463", choices=sorted(SFVOTREQ_CODES), help="SFVOTREQ report code (default 463)")
+    parser.add_argument("--code", default="463", type=_parse_codes,
+                        help="report code(s): one code, a comma list (400,403,406) or 'all' (default 463)")
     parser.add_argument("--from", dest="date_from", type=date.fromisoformat, help="YYYY-MM-DD, default today")
     parser.add_argument("--to", dest="date_to", type=date.fromisoformat, help="YYYY-MM-DD, default today")
-    parser.add_argument("--max", type=int, default=20, help="max pickups for --collect (default 20)")
+    parser.add_argument("--max", type=int, default=100, help="max pickups for --collect (default 100)")
     parser.add_argument("--debug", action="store_true")
     args = parser.parse_args()
 
@@ -136,12 +172,13 @@ def main() -> int:
     d_to = args.date_to or d_from
 
     logger.info("OTE SOAP endpoint %s, signing %s, output %s", BASE_URL, SIGN_ALG, OUT_ROOT)
+    codes = args.code
     client = OteSoapClient(_load_credentials(logger))
     try:
         if args.dry_run:
-            return do_dry_run(client, args.code, d_from, d_to, logger)
+            return do_dry_run(client, codes, d_from, d_to, logger)
         if args.request:
-            return do_request(client, args.code, d_from, d_to, logger)
+            return do_request_many(client, codes, d_from, d_to, logger)
         return do_collect(client, args.max, logger)
     except OteSoapError as exc:
         logger.error("%s", exc)
