@@ -76,6 +76,12 @@
 # Shares the queue lock /tmp/ote_soap_queue.lock with the limit snapshot (which runs at 00:57 and 01:02).
 0 1 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 -m ote_soap.exchange_rate >> /var/log/ote.log 2>&1
 
+# OTE-CR - OTE SOAP monthly billing data (reports 400/403 -> SFVOTBILLING 401/404) for the PREVIOUS month
+# into finance.ote_monthly_settlement_data (+ ote_monthly_settlement_summary). OTE settles a month around
+# the 11th-12th of the next one, so it runs at 18:00 from the 11th on and does nothing once the month is
+# loaded (the runner checks fetch_log first and then does not contact OTE).
+0 18 11-31 * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 -m ote_soap.billing >> /var/log/ote.log 2>&1
+
 # OTE-CR - Download DAM matching curves every 10 min from 14:00-21:59 (published ~14:00).
 # Chains upload + backfill_da_60min in the same run so da_period_summary/curve_depth
 # and their _60min aggregates land seconds after the source. Self-stops once

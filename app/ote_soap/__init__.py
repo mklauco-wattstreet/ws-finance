@@ -19,4 +19,8 @@ Modules:
     exchange_rate_parser  SFVOTEXCHRATE (426) -> one row per valid date (offline, XSD-validated)
     exchange_rate  CLI/cron: request 425, wait for the 426, upsert into
               finance.ote_exchange_rate
+    billing_parser  SFVOTBILLING (401 / 404) -> message data, one line per <Data>, one summary per
+              <Summary> (offline, XSD-validated)
+    billing   CLI/cron: request 400 and 403 for a month, wait for the 401 and 404, update / insert
+              finance.ote_monthly_settlement_data, upsert finance.ote_monthly_settlement_summary
 """

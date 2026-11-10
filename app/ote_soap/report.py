@@ -14,6 +14,8 @@ over, so EVERY picked-up message is saved to disk even when it is not ours.
                          a pickup that has no table of its own (file saved first;
                          a database error is only a warning)
     ReportRunError       the run failed; the text goes to the log and fetch_log.error
+      ReportTimeout      ... because nothing arrived within the timeout
+      ReportNoData       ... because OTE answered our request with reason code 9001 and no data
     LOCK_WAIT_S          how long a runner waits for the queue lock
 
 A runner passes a predicate "is this payload element the kind of message I wait
@@ -45,6 +47,7 @@ REGISTER_COLUMNS = (
 )
 REGISTER_SQL = f"INSERT INTO {REGISTER_TABLE} ({', '.join(REGISTER_COLUMNS)}) VALUES %s"
 QUEUE_EMPTY_CODE = "922"  # RESPONSE@message-code of "the queue holds nothing"
+NO_DATA_REASON_CODE = "9001"  # Reason@code of "no data for the requested interval"
 
 # Verdicts of classify()
 OURS, FAILED, WAIT, UNRELATED = "ours", "failed", "wait", "unrelated"
@@ -52,6 +55,14 @@ OURS, FAILED, WAIT, UNRELATED = "ours", "failed", "wait", "unrelated"
 
 class ReportRunError(RuntimeError):
     """The run failed; the message is the reason (goes to the log and to fetch_log.error)."""
+
+
+class ReportTimeout(ReportRunError):
+    """No answer to our request arrived within the timeout."""
+
+
+class ReportNoData(ReportRunError):
+    """OTE answered our request without the wanted element and with reason code 9001 (no data)."""
 
 
 # --- queue matching ---------------------------------------------------------
@@ -108,7 +119,7 @@ def wait_for_report(
         if n and clock() + poll_s > deadline:
             if last_empty is not None:
                 logger.info("Last queue answer before the timeout: %s", describe(last_empty))
-            raise ReportRunError(f"timeout: no {label} for request {request_id} within {timeout_s:g} s")
+            raise ReportTimeout(f"timeout: no {label} for request {request_id} within {timeout_s:g} s")
         sleep(poll_s)
         n += 1
         resp, path = pickup(client, n, logger, save_empty_queue=False)
@@ -117,7 +128,10 @@ def wait_for_report(
             logger.info("Got our %s in pickup %d (%s)", label, n, path.name if path else "-")
             return element
         if verdict == FAILED:
-            raise ReportRunError(f"OTE answered request {request_id} without {label} data: {describe(resp)}")
+            error = f"OTE answered request {request_id} without {label} data: {describe(resp)}"
+            if any(r.get("code") == NO_DATA_REASON_CODE for r in resp.reasons):
+                raise ReportNoData(error)
+            raise ReportRunError(error)
         if verdict == UNRELATED:
             logger.warning("picked up unrelated message (%s) saved to %s", describe(resp), path)
             register_messages(resp, path, logger)

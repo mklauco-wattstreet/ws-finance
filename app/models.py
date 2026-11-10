@@ -451,6 +451,99 @@ class OteSoapMessage(Base):
     created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
 
 
+class OteMonthlySettlementData(Base):
+    """OTE monthly settlement data (Podklady pro fakturaci), one row per <Data> line
+    of an SFVOTBILLING message: code 401 (invoice_from_ote=0, Watt Street invoices OTE)
+    or 404 (invoice_from_ote=1, OTE invoices Watt Street).
+
+    Created outside Alembic and filled by the trader web app's XML upload; since
+    migration 088 also loaded from OTE SOAP by app/ote_soap/billing.py (source='soap').
+    Migration 088 added currency, the extra amount/tax/payment columns, value_date,
+    message_id, request_id, source and the unique key. created_at/updated_at are naive
+    timestamps, as in the live table. Period totals live in OteMonthlySettlementSummary.
+    """
+    __tablename__ = 'ote_monthly_settlement_data'
+    __table_args__ = (
+        PrimaryKeyConstraint('id', name='monthly_settlement_data_pkey'),
+        UniqueConstraint('trade_date', 'variable_symbol', 'trade_type', 'version', 'invoice_from_ote',
+                         name='ote_monthly_settlement_data_line_key', postgresql_nulls_not_distinct=True),
+        Index('idx_monthly_settlement_trade_date', 'trade_date'),
+        Index('idx_monthly_settlement_variable_symbol', 'variable_symbol'),
+        Index('idx_monthly_settlement_trade_type', 'trade_type'),
+        Index('idx_monthly_settlement_invoice_from_ote', 'invoice_from_ote'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, autoincrement=True)
+    header: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    variable_symbol: Mapped[Optional[str]] = mapped_column(String(255))
+    trade_type: Mapped[Optional[str]] = mapped_column(String(100))
+    version: Mapped[Optional[int]] = mapped_column(Integer)
+    invoice_from_ote: Mapped[Optional[int]] = mapped_column(Integer)
+    volume_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 4))
+    exchange_rate_czk_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 6))
+    original_amount_net_czk: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    original_amount_net_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    original_vat_czk: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    original_vat_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    payment_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    currency: Mapped[Optional[str]] = mapped_column(String(3))
+    original_amount_czk: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    original_amount_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    original_etax_czk: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    original_etax_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    payment_czk: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    value_date: Mapped[Optional[date]] = mapped_column(Date)
+    message_id: Mapped[Optional[str]] = mapped_column(String(35))
+    request_id: Mapped[Optional[str]] = mapped_column(String(35))
+    source: Mapped[Optional[str]] = mapped_column(String(10))
+
+
+class OteMonthlySettlementSummary(Base):
+    """OTE monthly settlement period totals (migration 088): one row per <Summary>
+    element of an SFVOTBILLING message (code 401 or 404). The XSD requires exactly one
+    Summary per TradeType, so one row per trade type x version. Kept apart from
+    OteMonthlySettlementData because that table is summed row by row. Loaded by
+    app/ote_soap/billing.py, upserted on ote_monthly_settlement_summary_key. Numeric
+    columns have no precision or scale: stored exactly as OTE sent them.
+    """
+    __tablename__ = 'ote_monthly_settlement_summary'
+    __table_args__ = (
+        PrimaryKeyConstraint('id', name='ote_monthly_settlement_summary_pkey'),
+        UniqueConstraint('date_from', 'date_to', 'invoice_from_ote', 'trade_type', 'version',
+                         name='ote_monthly_settlement_summary_key', postgresql_nulls_not_distinct=True),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, autoincrement=True)
+    date_from: Mapped[date] = mapped_column(Date, nullable=False)
+    date_to: Mapped[date] = mapped_column(Date, nullable=False)
+    invoice_from_ote: Mapped[int] = mapped_column(Integer, nullable=False)
+    message_code: Mapped[str] = mapped_column(String(3), nullable=False)
+    trade_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    version: Mapped[Optional[int]] = mapped_column(Integer)
+    currency: Mapped[Optional[str]] = mapped_column(String(3))
+    volume_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric)
+    original_amount_czk: Mapped[Optional[Decimal]] = mapped_column(Numeric)
+    original_amount_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric)
+    original_amount_net_czk: Mapped[Optional[Decimal]] = mapped_column(Numeric)
+    original_amount_net_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric)
+    original_etax_czk: Mapped[Optional[Decimal]] = mapped_column(Numeric)
+    original_etax_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric)
+    original_vat_czk: Mapped[Optional[Decimal]] = mapped_column(Numeric)
+    original_vat_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric)
+    payment_czk: Mapped[Optional[Decimal]] = mapped_column(Numeric)
+    payment_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric)
+    message_id: Mapped[str] = mapped_column(String(35), nullable=False)
+    request_id: Mapped[Optional[str]] = mapped_column(String(35))
+    message_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+
+
 class EntsoeLoad(Base):
     """ENTSO-E load data (actual and forecast, 15-minute intervals).
 

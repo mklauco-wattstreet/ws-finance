@@ -1,0 +1,515 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- edited with XMLSpy v2013 rel. 2 sp2 (x64) (http://www.altova.com) by Standa (Logica Czech Republic s.r.o.) -->
+<xs:schema xmlns="http://www.ote-cr.cz/schema/sfvot/billing" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:ote="http://www.ote-cr.cz/schema/globals" xmlns:ds="http://www.w3.org/2000/09/xmldsig#" targetNamespace="http://www.ote-cr.cz/schema/sfvot/billing" elementFormDefault="qualified" attributeFormDefault="unqualified">
+	<xs:import namespace="http://www.ote-cr.cz/schema/globals" schemaLocation="./ote_globals.xsd"/>
+	<xs:import namespace="http://www.w3.org/2000/09/xmldsig#" schemaLocation="./xmldsig-core-schema.xsd"/>
+	<xs:element name="SFVOTBILLING">
+		<xs:annotation>
+			<xs:documentation xml:lang="CS">Hlavni element spolecny pro vsechny financni reporty</xs:documentation>
+			<xs:documentation xml:lang="EN">Root element containing basic message data</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="SenderIdentification" type="ote:SenderIdentificationType">
+					<xs:annotation>
+						<xs:documentation xml:lang="CS">Identifikace odesilatele zpravy, tzn. OTE, a.s.</xs:documentation>
+						<xs:documentation xml:lang="EN">EAN13 Sender identification - OTE, a.s.</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="ReceiverIdentification" type="ote:ReceiverIdentificationType">
+					<xs:annotation>
+						<xs:documentation xml:lang="CS">Identifikace prijemce, resp. odesilatele pozadavku</xs:documentation>
+						<xs:documentation xml:lang="EN">Message receiver identification</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Reference" type="ote:ReferenceType" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation xml:lang="CS">Reference na předešlou zprávu. Pokud není element obsažen v cílovém XML nebyl report generován na základě XML požadavku.</xs:documentation>
+						<xs:documentation xml:lang="EN">Reference to the previous message, if any.</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Billing">
+					<xs:annotation>
+						<xs:documentation xml:lang="CS">Podklady pro fakturaci</xs:documentation>
+						<xs:documentation xml:lang="EN">Billing Report</xs:documentation>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:sequence>
+							<xs:element name="Rut" minOccurs="0" maxOccurs="unbounded">
+								<xs:annotation>
+									<xs:documentation xml:lang="CS">Data participanta</xs:documentation>
+									<xs:documentation xml:lang="EN">Participant data</xs:documentation>
+								</xs:annotation>
+								<xs:complexType>
+									<xs:sequence>
+										<xs:element name="TradeType" maxOccurs="unbounded">
+											<xs:annotation>
+												<xs:documentation xml:lang="CS">Informace o zúčtování</xs:documentation>
+												<xs:documentation xml:lang="EN">Settlement information</xs:documentation>
+											</xs:annotation>
+											<xs:complexType>
+												<xs:sequence>
+													<xs:element name="Data" maxOccurs="unbounded">
+														<xs:annotation>
+															<xs:documentation xml:lang="CS">Data dle obchodních dnů</xs:documentation>
+															<xs:documentation xml:lang="EN">Data by trade date</xs:documentation>
+														</xs:annotation>
+														<xs:complexType>
+															<xs:attribute name="origAmountCzk" type="xs:decimal">
+																<xs:annotation>
+																	<xs:documentation xml:lang="CS">Částka s daní</xs:documentation>
+																	<xs:documentation xml:lang="EN">The amount with tax</xs:documentation>
+																</xs:annotation>
+															</xs:attribute>
+															<xs:attribute name="origAmountEur" type="xs:decimal">
+																<xs:annotation>
+																	<xs:documentation xml:lang="CS">Částka s daní</xs:documentation>
+																	<xs:documentation xml:lang="EN">The amount with tax</xs:documentation>
+																</xs:annotation>
+															</xs:attribute>
+															<xs:attribute name="origAmountNetCzk" type="xs:decimal">
+																<xs:annotation>
+																	<xs:documentation xml:lang="CS">Částka bez DPH</xs:documentation>
+																	<xs:documentation xml:lang="EN">The amount without VAT</xs:documentation>
+																</xs:annotation>
+															</xs:attribute>
+															<xs:attribute name="origAmountNetEur" type="xs:decimal">
+																<xs:annotation>
+																	<xs:documentation xml:lang="CS">Částka bez DPH</xs:documentation>
+																	<xs:documentation xml:lang="EN">The amount without VAT</xs:documentation>
+																</xs:annotation>
+															</xs:attribute>
+															<xs:attribute name="origEtaxCzk" type="xs:decimal">
+																<xs:annotation>
+																	<xs:documentation xml:lang="CS">Daň z elektřiny</xs:documentation>
+																	<xs:documentation xml:lang="EN">The electricity tax</xs:documentation>
+																</xs:annotation>
+															</xs:attribute>
+															<xs:attribute name="origEtaxEur" type="xs:decimal">
+																<xs:annotation>
+																	<xs:documentation xml:lang="CS">Daň z elektřiny</xs:documentation>
+																	<xs:documentation xml:lang="EN">The electricity tax</xs:documentation>
+																</xs:annotation>
+															</xs:attribute>
+															<xs:attribute name="origVatCzk" type="xs:decimal">
+																<xs:annotation>
+																	<xs:documentation xml:lang="CS">DPH</xs:documentation>
+																	<xs:documentation xml:lang="EN">VAT</xs:documentation>
+																</xs:annotation>
+															</xs:attribute>
+															<xs:attribute name="origVatEur" type="xs:decimal">
+																<xs:annotation>
+																	<xs:documentation xml:lang="CS">DPH</xs:documentation>
+																	<xs:documentation xml:lang="EN">VAT</xs:documentation>
+																</xs:annotation>
+															</xs:attribute>
+															<xs:attribute name="paymentCzk" type="xs:decimal">
+																<xs:annotation>
+																	<xs:documentation xml:lang="CS">Platba</xs:documentation>
+																	<xs:documentation xml:lang="EN">Payment</xs:documentation>
+																</xs:annotation>
+															</xs:attribute>
+															<xs:attribute name="paymentEur" type="xs:decimal">
+																<xs:annotation>
+																	<xs:documentation xml:lang="CS">Platba</xs:documentation>
+																	<xs:documentation xml:lang="EN">Payment</xs:documentation>
+																</xs:annotation>
+															</xs:attribute>
+															<xs:attribute name="tradeDate" type="xs:date" use="required">
+																<xs:annotation>
+																	<xs:documentation xml:lang="CS">Datum obchodu</xs:documentation>
+																	<xs:documentation xml:lang="EN">Trade date</xs:documentation>
+																</xs:annotation>
+															</xs:attribute>
+															<xs:attribute name="valueDate" type="xs:date">
+																<xs:annotation>
+																	<xs:documentation xml:lang="CS">Datum splatnosti</xs:documentation>
+																	<xs:documentation xml:lang="EN">Value date</xs:documentation>
+																</xs:annotation>
+															</xs:attribute>
+															<xs:attribute name="varSymb" type="xs:integer">
+																<xs:annotation>
+																	<xs:documentation xml:lang="CS">Variabilní symbol</xs:documentation>
+																	<xs:documentation xml:lang="EN">Reference #</xs:documentation>
+																</xs:annotation>
+															</xs:attribute>
+															<xs:attribute name="volume" type="xs:decimal">
+																<xs:annotation>
+																	<xs:documentation xml:lang="CS">Množství</xs:documentation>
+																	<xs:documentation xml:lang="EN">Volume</xs:documentation>
+																</xs:annotation>
+															</xs:attribute>
+															<xs:attribute name="exchRate" type="xs:decimal">
+																<xs:annotation>
+																	<xs:documentation xml:lang="CS">Směnný kurz EUR</xs:documentation>
+																	<xs:documentation xml:lang="EN">Exchange rate EUR</xs:documentation>
+																</xs:annotation>
+															</xs:attribute>
+														</xs:complexType>
+													</xs:element>
+													<xs:element name="Summary">
+														<xs:annotation>
+															<xs:documentation xml:lang="CS">Sumární hodnoty</xs:documentation>
+															<xs:documentation xml:lang="EN">Summary</xs:documentation>
+														</xs:annotation>
+														<xs:complexType>
+															<xs:attribute name="origAmountCzk" type="xs:decimal">
+																<xs:annotation>
+																	<xs:documentation xml:lang="CS">Částka s daní</xs:documentation>
+																	<xs:documentation xml:lang="EN">The amount with tax</xs:documentation>
+																</xs:annotation>
+															</xs:attribute>
+															<xs:attribute name="origAmountEur" type="xs:decimal">
+																<xs:annotation>
+																	<xs:documentation xml:lang="CS">Částka s daní</xs:documentation>
+																	<xs:documentation xml:lang="EN">The amount with tax</xs:documentation>
+																</xs:annotation>
+															</xs:attribute>
+															<xs:attribute name="origAmountNetCzk" type="xs:decimal">
+																<xs:annotation>
+																	<xs:documentation xml:lang="CS">Částka bez DPH</xs:documentation>
+																	<xs:documentation xml:lang="EN">The amount without VAT</xs:documentation>
+																</xs:annotation>
+															</xs:attribute>
+															<xs:attribute name="origAmountNetEur" type="xs:decimal">
+																<xs:annotation>
+																	<xs:documentation xml:lang="CS">Částka bez DPH</xs:documentation>
+																	<xs:documentation xml:lang="EN">The amount without VAT</xs:documentation>
+																</xs:annotation>
+															</xs:attribute>
+															<xs:attribute name="origEtaxCzk" type="xs:decimal">
+																<xs:annotation>
+																	<xs:documentation xml:lang="CS">Daň z elektřiny</xs:documentation>
+																	<xs:documentation xml:lang="EN">The electricity tax</xs:documentation>
+																</xs:annotation>
+															</xs:attribute>
+															<xs:attribute name="origEtaxEur" type="xs:decimal">
+																<xs:annotation>
+																	<xs:documentation xml:lang="CS">Daň z elektřiny</xs:documentation>
+																	<xs:documentation xml:lang="EN">The electricity tax</xs:documentation>
+																</xs:annotation>
+															</xs:attribute>
+															<xs:attribute name="origVatCzk" type="xs:decimal">
+																<xs:annotation>
+																	<xs:documentation xml:lang="CS">DPH</xs:documentation>
+																	<xs:documentation xml:lang="EN">VAT</xs:documentation>
+																</xs:annotation>
+															</xs:attribute>
+															<xs:attribute name="origVatEur" type="xs:decimal">
+																<xs:annotation>
+																	<xs:documentation xml:lang="CS">DPH</xs:documentation>
+																	<xs:documentation xml:lang="EN">VAT</xs:documentation>
+																</xs:annotation>
+															</xs:attribute>
+															<xs:attribute name="paymentCzk" type="xs:decimal">
+																<xs:annotation>
+																	<xs:documentation xml:lang="CS">Platba</xs:documentation>
+																	<xs:documentation xml:lang="EN">Payment</xs:documentation>
+																</xs:annotation>
+															</xs:attribute>
+															<xs:attribute name="paymentEur" type="xs:decimal">
+																<xs:annotation>
+																	<xs:documentation xml:lang="CS">Platba</xs:documentation>
+																	<xs:documentation xml:lang="EN">Payment</xs:documentation>
+																</xs:annotation>
+															</xs:attribute>
+															<xs:attribute name="volume" type="xs:decimal">
+																<xs:annotation>
+																	<xs:documentation xml:lang="CS">Množství</xs:documentation>
+																	<xs:documentation xml:lang="EN">Volume</xs:documentation>
+																</xs:annotation>
+															</xs:attribute>
+														</xs:complexType>
+													</xs:element>
+												</xs:sequence>
+												<xs:attribute name="curr" use="required">
+													<xs:annotation>
+														<xs:documentation xml:lang="CS">Měna zúčtování</xs:documentation>
+														<xs:documentation xml:lang="EN">The settlement currency</xs:documentation>
+													</xs:annotation>
+													<xs:simpleType>
+														<xs:restriction base="xs:string">
+															<xs:enumeration value="CZK"/>
+															<xs:enumeration value="EUR"/>
+														</xs:restriction>
+													</xs:simpleType>
+												</xs:attribute>
+												<xs:attribute name="tradeType" use="required">
+													<xs:annotation>
+														<xs:documentation xml:lang="CS">
+                                                Typ obchodu 
+                                                 DT - denní trh,
+                                                 DM- - denní trh - odběr,
+                                                 DM+ - denní trh - dodávka,
+                                                 VD+ - VDT dodávka,
+                                                 VD- - VDT odběr,
+                                                 BTD - Blokový trh - denní,
+                                                 DE1 - Odchylky,
+                                                 DE2 - Vícenáklady,
+                                                 IEP - Kladné odchylky,
+                                                 IEM - Záporné odchylky
+                                                 AC+ - ACT dodávka
+                                                 AC- - ACT nedodávka
+                                                 PSK - Agregovaná RE
+                                                 PP1 - Popl. za služby
+                                                 PP2 - Popl. za spotřebu
+                                                 PP3 - Popl. za zobchod. en.
+                                                 PP4 - Popl. za CDS
+                                                 PP5 - Popl. za VD trh
+                                                 PP6 - Popl. za vyrovnávací trh
+                                                 PP7 - Popl. za obchod. na BT
+                                                 PP8 - Popl. za doplnění FZ
+                                                 EMD - Vypořádání stavu nouze z koord. DT
+                                                 DSK - DT export-import
+                                                 DS- - DT export-import – odběr
+                                                 DS+ - DT export-import - dodávka
+                                                 PRF - Platba za profil - služby z řízení úzkého místa
+                                                 SD- - Shipping na DT – odběr
+                                                 SD+ - Shipping na DT - dodávka
+                                                 R01 - Fixní poplatek REMIT
+                                                 R02 - Poplatek REMIT reporting – transakce
+                                                 R03 - Poplatek REMIT reporting – příkaz
+                                                 VT+ - Dodávka RE+ z VT
+                                                 VT- - Dodávka RE- z VT
+                                                 SV- Shipping na VDT – odběr
+                                                 SV+ Shipping na VDT – dodávka
+                                                 TR+ - Dodávka RE+ z TERRE
+                                                 TR-  Dodávka RE- z TERRE
+
+                                                 PC-	Dodávka RE- z PICASSO
+													PC+	Dodávka RE+ z PICASSO
+													MA-	Dodávka RE- z MARI s plánovanou aktivací
+													MA+	Dodávka RE+ z MARI s plánovanou aktivací
+													MR-	Dodávka RE- MARI s přímou aktivací
+													MR+	Dodávka RE- MARI s přímou aktivací
+												 DA+ - Vnitrodenní aukce - dodávka
+												 DA- - Vnitrodenní aukce - odběr
+												 SA+ - Shipping na IDA - dodávka
+												 SA- - Shipping na IDA – odběr  
+												 PP9     Popl. zavnitrodenní aukce    
+
+       </xs:documentation>
+														<xs:documentation xml:lang="EN">
+                                                Trade type 
+                                                 DT - Day-ahead market,
+                                                 DM- - Day-ahead market - consumption,
+                                                 DM+ - Day-ahead market - supply,
+                                                 VD+ - IM supply,
+                                                 VD- - IM consumption,
+                                                 BTD - Block market,
+                                                 DE1 - Imbalance,
+                                                 DE2 - Additional costs,
+                                                 IEP - Positive imbalance,
+                                                 IEM - Negative imbalance
+                                                 AC+ - ACT - Positive relating energy
+                                                 AC- - ACT - Negative relating energy
+                                                 PSK - Agregated RE
+                                                 PP1 - Fees - services
+                                                 PP2 - Fees - consumption
+                                                 PP3 - Fees - trading day
+                                                 PP4 - Fees - CDS
+                                                 PP5 - Fees - IM
+                                                 PP6 - Fees - BM
+                                                 PP7 - Fee for BM
+                                                 PP8 - Fee for compensation
+                                                 EMD - Settlement of emergency from Day-ahead market CZ-SK
+                                                 DSK - DT export-import
+                                                 DS- - DT export-import - consumption
+                                                 DS+ - DT export-import - supply
+                                                 PRF - Settlement for PRF
+                                                 SD- - Shipping on DM – consumption
+                                                 SD+ - Shipping on DM - supply
+                                                 R01 - REMIT fixed fee
+                                                 R02 - REMIT transaction fee
+                                                 R03 - REMIT order fee
+                                                 VT+ - Positive RE from BalM
+                                                 VT- - Negative RE from BalM
+                                                 SV- Shipping on IM - consumption
+                                                 SV+ Shipping on IM - supply
+                                                 TR+ - Positive RE from TERRE
+												 TR-  Negative RE from TERRE
+												 DA+ - Intraday auction - delivery
+													DA- - Intraday auction - collection
+													SA+ - Shipping to IDA - delivery
+													SA- - Shipping to IDA - collection
+													PP9 Fees - IDA
+                                                        </xs:documentation>
+													</xs:annotation>
+													<xs:simpleType>
+														<xs:restriction base="xs:string">
+															<xs:enumeration value="DT"/>
+															<xs:enumeration value="DM-"/>
+															<xs:enumeration value="DM+"/>
+															<xs:enumeration value="VD+"/>
+															<xs:enumeration value="VD-"/>
+															<xs:enumeration value="BTD"/>
+															<xs:enumeration value="DE1"/>
+															<xs:enumeration value="DE2"/>
+															<xs:enumeration value="IEP"/>
+															<xs:enumeration value="IEM"/>
+															<xs:enumeration value="AC+"/>
+															<xs:enumeration value="AC-"/>
+															<xs:enumeration value="PSK"/>
+															<xs:enumeration value="PP1"/>
+															<xs:enumeration value="PP2"/>
+															<xs:enumeration value="PP3"/>
+															<xs:enumeration value="PP4"/>
+															<xs:enumeration value="PP5"/>
+															<xs:enumeration value="PP6"/>
+															<xs:enumeration value="PP7"/>
+															<xs:enumeration value="PP8"/>
+															<xs:enumeration value="EMD"/>
+															<xs:enumeration value="DSK"/>
+															<xs:enumeration value="PRF"/>
+															<xs:enumeration value="SD-"/>
+															<xs:enumeration value="SD+"/>
+															<xs:enumeration value="R01"/>
+															<xs:enumeration value="R02"/>
+															<xs:enumeration value="R03"/>
+															<xs:enumeration value="VT+"/>
+															<xs:enumeration value="VT-"/>
+															<xs:enumeration value="SV-"/>
+															<xs:enumeration value="SV+"/>
+															<xs:enumeration value="TR+"/>
+															<xs:enumeration value="TR-"/>
+															<xs:enumeration value="PC-"/>
+															<xs:enumeration value="PC+"/>
+															<xs:enumeration value="MA-"/>
+															<xs:enumeration value="MA+"/>
+															<xs:enumeration value="MR-"/>
+															<xs:enumeration value="MR+"/>
+															<xs:enumeration value="DA+"/>
+															<xs:enumeration value="DA-"/>
+															<xs:enumeration value="SA+"/>
+															<xs:enumeration value="SA-"/>
+															<xs:enumeration value="PP9"/>
+														</xs:restriction>
+													</xs:simpleType>
+												</xs:attribute>
+												<xs:attribute name="version" use="required">
+													<xs:annotation>
+														<xs:documentation xml:lang="CS">Typ zúčtování (0 zálohy, 1 platby)</xs:documentation>
+														<xs:documentation xml:lang="EN">Settlement type (0 daily, 1 monthly)</xs:documentation>
+													</xs:annotation>
+													<xs:simpleType>
+														<xs:restriction base="xs:integer">
+															<xs:enumeration value="0"/>
+															<xs:enumeration value="1"/>
+														</xs:restriction>
+													</xs:simpleType>
+												</xs:attribute>
+											</xs:complexType>
+										</xs:element>
+									</xs:sequence>
+									<xs:attribute name="dic" type="xs:string">
+										<xs:annotation>
+											<xs:documentation xml:lang="CS">DIČ</xs:documentation>
+											<xs:documentation xml:lang="EN">TAX number</xs:documentation>
+										</xs:annotation>
+									</xs:attribute>
+									<xs:attribute name="ean" type="xs:string">
+										<xs:annotation>
+											<xs:documentation xml:lang="CS">EAN identifikace participanta</xs:documentation>
+											<xs:documentation xml:lang="EN">EAN participant identification</xs:documentation>
+										</xs:annotation>
+									</xs:attribute>
+									<xs:attribute name="ico" type="xs:string">
+										<xs:annotation>
+											<xs:documentation xml:lang="CS">IČ</xs:documentation>
+											<xs:documentation xml:lang="EN">Registration number</xs:documentation>
+										</xs:annotation>
+									</xs:attribute>
+									<xs:attribute name="id" type="xs:integer">
+										<xs:annotation>
+											<xs:documentation xml:lang="CS">Jednoznačný identifikátor účastníka trhu</xs:documentation>
+											<xs:documentation xml:lang="EN">The participant's unique id</xs:documentation>
+										</xs:annotation>
+									</xs:attribute>
+									<xs:attribute name="name" type="xs:string">
+										<xs:annotation>
+											<xs:documentation xml:lang="CS">Zkrácený název účastníka trhu</xs:documentation>
+											<xs:documentation xml:lang="EN">The participant's short name</xs:documentation>
+										</xs:annotation>
+									</xs:attribute>
+								</xs:complexType>
+							</xs:element>
+						</xs:sequence>
+						<xs:attribute name="date" type="xs:dateTime" use="required">
+							<xs:annotation>
+								<xs:documentation xml:lang="CS">Čas generování</xs:documentation>
+								<xs:documentation xml:lang="EN">Production timestamp</xs:documentation>
+							</xs:annotation>
+						</xs:attribute>
+						<xs:attribute name="dateFrom" type="xs:dateTime" use="required">
+							<xs:annotation>
+								<xs:documentation xml:lang="CS">Datum od</xs:documentation>
+								<xs:documentation xml:lang="EN">Date from</xs:documentation>
+							</xs:annotation>
+						</xs:attribute>
+						<xs:attribute name="dateTo" type="xs:dateTime" use="required">
+							<xs:annotation>
+								<xs:documentation xml:lang="CS">Datum do</xs:documentation>
+								<xs:documentation xml:lang="EN">Date to</xs:documentation>
+							</xs:annotation>
+						</xs:attribute>
+						<xs:attribute name="title" type="xs:string" use="required">
+							<xs:annotation>
+								<xs:documentation xml:lang="CS">Název reportu</xs:documentation>
+								<xs:documentation xml:lang="EN">Report title</xs:documentation>
+							</xs:annotation>
+						</xs:attribute>
+						<xs:attribute name="ote" type="xs:boolean" use="required">
+							<xs:annotation>
+								<xs:documentation xml:lang="CS">Je-li nastaveno (1, true) jedna se o Podklady pro fakturaci OTE, v opacnem pripade (0, false) o Podklady pro fakturaci</xs:documentation>
+								<xs:documentation xml:lang="EN">If set (1, true) OTE is on debet side, otherwise (0, false) OTE is on credit side</xs:documentation>
+							</xs:annotation>
+						</xs:attribute>
+					</xs:complexType>
+				</xs:element>
+				<xs:element ref="ds:Signature" minOccurs="0"/>
+			</xs:sequence>
+			<xs:attribute name="answer-required" type="xs:boolean" use="required">
+				<xs:annotation>
+					<xs:documentation xml:lang="CS">Indikace pozadavku na odpoved</xs:documentation>
+					<xs:documentation xml:lang="EN">Indication of request for response 1=YES, 0=NO</xs:documentation>
+				</xs:annotation>
+			</xs:attribute>
+			<xs:attribute name="date-time" type="xs:dateTime" use="required">
+				<xs:annotation>
+					<xs:documentation xml:lang="CS">Datum a cas zpravy</xs:documentation>
+					<xs:documentation xml:lang="EN">Date and time of message</xs:documentation>
+				</xs:annotation>
+			</xs:attribute>
+			<xs:attribute name="dtd-release" type="xs:string" use="required" fixed="1">
+				<xs:annotation>
+					<xs:documentation xml:lang="CS">Rezervovano pro pristi verze. Zatim konstanta '1'</xs:documentation>
+					<xs:documentation xml:lang="EN">Reserved for incoming versions. So far a constant '1'</xs:documentation>
+				</xs:annotation>
+			</xs:attribute>
+			<xs:attribute name="dtd-version" type="xs:unsignedByte" use="required" fixed="1">
+				<xs:annotation>
+					<xs:documentation xml:lang="CS">Rezervovano pro prist verze. Zatim konstanta '1'</xs:documentation>
+					<xs:documentation xml:lang="EN">Reserved for incoming versions; so far a constant '1'</xs:documentation>
+				</xs:annotation>
+			</xs:attribute>
+			<xs:attribute name="id" type="ote:msg-id" use="required">
+				<xs:annotation>
+					<xs:documentation xml:lang="CS">Identifikator zpravy</xs:documentation>
+					<xs:documentation xml:lang="EN">Message Identification</xs:documentation>
+				</xs:annotation>
+			</xs:attribute>
+			<xs:attribute name="message-code" use="required">
+				<xs:annotation>
+					<xs:documentation xml:lang="CS">Kod zpravy upresnujici obsah zpravy.</xs:documentation>
+					<xs:documentation xml:lang="EN">Message code that specifies the message content.</xs:documentation>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:enumeration value="401"/>
+						<xs:enumeration value="404"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:attribute>
+		</xs:complexType>
+	</xs:element>
+</xs:schema>
