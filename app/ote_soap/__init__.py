@@ -10,4 +10,7 @@ Modules:
     messages  SFVOTREQ (report request) and COMMONREQ 921 (queue pickup) builders
     client    HTTPS transport, response parsing
     fetch     CLI: request a report, collect queued messages, save raw XML to disk
+    limits_parser  SFVOTLIMITS (464) -> one long row per value (offline, XSD-validated)
+    limits    CLI/cron: request 463, wait for the 464, pivot to one row per snapshot,
+              upsert into finance.ote_limit_snapshot
 """

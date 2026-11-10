@@ -9,9 +9,9 @@ from typing import Optional
 
 from sqlalchemy import (
     BigInteger, Boolean, CheckConstraint, Date, DateTime, Index, Integer, Numeric, SmallInteger, String,
-    Text, UniqueConstraint, PrimaryKeyConstraint
+    Text, UniqueConstraint, PrimaryKeyConstraint, text
 )
-from sqlalchemy.dialects.postgresql import TIMESTAMP
+from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from config import DB_SCHEMA
@@ -338,20 +338,21 @@ class OteFinancialSecurityTrend(Base):
 
 class OteLimitSnapshot(Base):
     """OTE SOAP report 463 / data 464 SFVOTLIMITS - snapshot of the participant's
-    financial-security limits (migration 086, loaded by ote_soap/limits.py).
-    One row per value per snapshot; no per-order or per-trade rows. Amounts in
-    CZK, utilization values negative as sent by OTE. data_group is one of
-    additional / utilization / limits / vat / totals.
+    financial-security limits (migration 086, loaded every 5 minutes by
+    ote_soap/limits.py).
+    One row per snapshot (per participant and commodity), one column per number
+    OTE sends; no per-order or per-trade rows. The 19 *_czk columns are plain
+    NUMERIC (stored exactly as OTE sent them), utilization values are negative as
+    sent by OTE. other_values is a JSON array of every <Data> value without a
+    column of its own (bonityCoef, bonityUtilization, other utilization codes,
+    VatData rows, any non-CZK value), so nothing OTE sends is dropped.
     """
     __tablename__ = 'ote_limit_snapshot'
     __table_args__ = (
         PrimaryKeyConstraint('id', name='ote_limit_snapshot_pkey'),
-        CheckConstraint("data_group IN ('additional', 'utilization', 'limits', 'vat', 'totals')",
-                        name='ote_limit_snapshot_data_group_check'),
-        UniqueConstraint('message_id', 'participant_ean', 'commodity', 'data_group', 'value_type', 'vat_period',
-                         name='ote_limit_snapshot_value_key', postgresql_nulls_not_distinct=True),
-        Index('ix_ote_limit_snapshot_snapshot_at', 'snapshot_at'),
-        Index('ix_ote_limit_snapshot_type_snapshot_at', 'data_group', 'value_type', 'snapshot_at'),
+        UniqueConstraint('message_id', 'participant_ean', 'commodity',
+                         name='ote_limit_snapshot_message_key', postgresql_nulls_not_distinct=True),
+        Index('ix_ote_limit_snapshot_snapshot_at', text('snapshot_at DESC')),
         {'schema': DB_SCHEMA}
     )
 
@@ -369,11 +370,26 @@ class OteLimitSnapshot(Base):
     participant_eic: Mapped[Optional[str]] = mapped_column(String(20))
     participant_ic: Mapped[Optional[str]] = mapped_column(String(20))
     commodity: Mapped[str] = mapped_column(String(1), nullable=False)
-    data_group: Mapped[str] = mapped_column(String(12), nullable=False)
-    value_type: Mapped[str] = mapped_column(String(20), nullable=False)
-    vat_period: Mapped[Optional[str]] = mapped_column(String(7))
-    value: Mapped[Decimal] = mapped_column(Numeric(20, 6), nullable=False)
-    currency: Mapped[Optional[str]] = mapped_column(String(3))
+    im_limit_czk: Mapped[Optional[Decimal]] = mapped_column(Numeric)
+    im_utilization_czk: Mapped[Optional[Decimal]] = mapped_column(Numeric)
+    im_free_resources_czk: Mapped[Optional[Decimal]] = mapped_column(Numeric)
+    total_limit_czk: Mapped[Optional[Decimal]] = mapped_column(Numeric)
+    total_utilization_czk: Mapped[Optional[Decimal]] = mapped_column(Numeric)
+    free_resources_czk: Mapped[Optional[Decimal]] = mapped_column(Numeric)
+    fs_limit_czk: Mapped[Optional[Decimal]] = mapped_column(Numeric)
+    dynamic_limit_czk: Mapped[Optional[Decimal]] = mapped_column(Numeric)
+    utilization_vdt_czk: Mapped[Optional[Decimal]] = mapped_column(Numeric)
+    utilization_ida_czk: Mapped[Optional[Decimal]] = mapped_column(Numeric)
+    utilization_dt_czk: Mapped[Optional[Decimal]] = mapped_column(Numeric)
+    utilization_dev_czk: Mapped[Optional[Decimal]] = mapped_column(Numeric)
+    utilization_tdd_czk: Mapped[Optional[Decimal]] = mapped_column(Numeric)
+    utilization_pop_czk: Mapped[Optional[Decimal]] = mapped_column(Numeric)
+    utilization_act_czk: Mapped[Optional[Decimal]] = mapped_column(Numeric)
+    utilization_re_czk: Mapped[Optional[Decimal]] = mapped_column(Numeric)
+    utilization_revf_czk: Mapped[Optional[Decimal]] = mapped_column(Numeric)
+    utilization_lim_vdt_czk: Mapped[Optional[Decimal]] = mapped_column(Numeric)
+    warning_limit_czk: Mapped[Optional[Decimal]] = mapped_column(Numeric)
+    other_values: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
     created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
     updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
 

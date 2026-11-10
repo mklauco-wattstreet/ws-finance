@@ -65,6 +65,11 @@
 10 1-23 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && flock -n /tmp/ote_portal_session.lock /usr/local/bin/python3 ote_portal_session.py >> /var/log/ote.log 2>&1
 10 0 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && flock -n /tmp/ote_portal_session.lock /usr/local/bin/python3 ote_portal_session.py --limit-yesterday >> /var/log/ote.log 2>&1
 
+# OTE-CR - OTE SOAP live limit snapshot every 5 minutes (minutes 2,7,...,57 - chosen to avoid the
+# 14,29,44,59 / 0,15,30,45 bursts and the portal session at minute 10) into finance.ote_limit_snapshot.
+# Takes the queue lock /tmp/ote_soap_queue.lock; per-order history still comes from the portal session.
+2-59/5 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 -m ote_soap.limits >> /var/log/ote.log 2>&1
+
 # OTE-CR - Download DAM matching curves every 10 min from 14:00-21:59 (published ~14:00).
 # Chains upload + backfill_da_60min in the same run so da_period_summary/curve_depth
 # and their _60min aggregates land seconds after the source. Self-stops once
