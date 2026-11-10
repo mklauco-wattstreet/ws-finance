@@ -3,6 +3,8 @@
 OTE SOAP - financial reports (FZ), exploration stage.
 
 Writes every request and every response as raw XML files; touches NO database.
+An answer OTE rejects (SOAP Fault, HTTP error, non-XML) is kept too, as
+rejected_<code>_<id> / collect_<n>_error.
 Files go to $OTE_SOAP_OUT_DIR (default /app/downloads/ote_soap/<YYYY-MM-DD>/).
 
 The FZ scenario is asynchronous (D1.4.4 section 8.1): ReportService only
@@ -17,53 +19,30 @@ Usage (inside the container, cwd /app/scripts):
         financial report codes (SFVOTREQ.xsd), 2 s apart. Dates default to today.
     python3 -m ote_soap.fetch --collect [--max 100]
         Pick up queued messages (COMMONREQ 921) until the queue is empty or --max.
+        Takes the queue lock (/tmp/ote_soap_queue.lock, shared with ote_soap.limits);
+        exit 3 if another process holds it.
     --debug   verbose logging
 """
 
 import sentry_init  # noqa: F401  (must be first)
 
 import argparse
-import os
 import sys
 import time
 from datetime import date, datetime
-from pathlib import Path
 
 from lxml import etree
 
 from common import setup_logging
-from config import OTE_CERT_PASSWORD, OTE_CERT_PATH
-from ote_soap.client import BASE_URL, SIGN_ALG, OteResponse, OteSoapClient, OteSoapError
-from ote_soap.messages import PRAGUE, SFVOTREQ_CODES, new_message_id, queue_pickup_request, report_request
-from ote_soap.wssec import Credentials, verify_own_envelope
+from ote_soap.client import BASE_URL, SIGN_ALG, OteSoapClient, OteSoapError
+from ote_soap.messages import PRAGUE, SFVOTREQ_CODES, new_message_id, report_request
+from ote_soap.shared import (
+    OUT_ROOT, QueueLockHeld, load_credentials, out_dir, pickup, queue_lock, save, send_report,
+)
+from ote_soap.wssec import verify_own_envelope
 
-OUT_ROOT = Path(os.getenv("OTE_SOAP_OUT_DIR", "/app/downloads/ote_soap"))
 REQUEST_GAP_S = 2  # pause between requests in --code all (OTE's per-code minimum delay is unpublished)
-
-
-def _out_dir() -> Path:
-    path = OUT_ROOT / datetime.now(PRAGUE).strftime("%Y-%m-%d")
-    path.mkdir(parents=True, exist_ok=True)
-    return path
-
-
-def _save(name: str, data: bytes) -> Path:
-    path = _out_dir() / f"{datetime.now(PRAGUE).strftime('%H%M%S')}_{name}.xml"
-    path.write_bytes(data)
-    return path
-
-
-def _describe(resp: OteResponse) -> str:
-    reasons = "; ".join(
-        f"{r.get('code', '?')} {r.get('text', '')}".strip() for r in resp.reasons
-    ) or "-"
-    payload = ", ".join(
-        f"{etree.QName(p).localname}[{p.get('message-code', '?')}]" for p in resp.payload
-    ) or "none"
-    return (
-        f"RETURN_CODE={resp.return_code} RESPONSE={resp.response_code or '-'} "
-        f"reasons=[{reasons}] reference={resp.reference_id or '-'} payload={payload}"
-    )
+EXIT_LOCK_HELD = 3  # exit 2 is already "OTE call failed"
 
 
 def _parse_codes(value: str) -> list[str]:
@@ -79,22 +58,12 @@ def _parse_codes(value: str) -> list[str]:
     return codes
 
 
-def _load_credentials(logger) -> Credentials:
-    if not OTE_CERT_PATH:
-        raise SystemExit("OTE_CERT_PATH is not set")
-    creds = Credentials.from_pkcs12(OTE_CERT_PATH, OTE_CERT_PASSWORD)
-    logger.info("Certificate: %s (valid until %s), password [CONFIGURED]", creds.subject, creds.not_valid_after.date())
-    if creds.not_valid_after < datetime.now(creds.not_valid_after.tzinfo):
-        raise SystemExit(f"Certificate expired on {creds.not_valid_after.date()}")
-    return creds
-
-
 def do_dry_run(client: OteSoapClient, codes: list[str], d_from: date, d_to: date, logger) -> int:
     for code in codes:
         msg_id = new_message_id()
         envelope = client.build(report_request(code, d_from, d_to, msg_id))
         verify_own_envelope(envelope, client.creds)
-        path = _save(f"dryrun_request_{code}_{msg_id}", envelope)
+        path = save(f"dryrun_request_{code}_{msg_id}", envelope)
         logger.info("Report %s (%s): signature self-check OK (%s), %d bytes, written to %s (not sent)",
                     code, SFVOTREQ_CODES[code], client.sign_alg, len(envelope), path.name)
         if len(codes) == 1:
@@ -103,18 +72,7 @@ def do_dry_run(client: OteSoapClient, codes: list[str], d_from: date, d_to: date
 
 
 def do_request(client: OteSoapClient, code: str, d_from: date, d_to: date, logger) -> int:
-    msg_id = new_message_id()
-    payload = report_request(code, d_from, d_to, msg_id)
-    logger.info("Requesting report %s (%s) for %s..%s, request id %s",
-                code, SFVOTREQ_CODES[code], d_from, d_to, msg_id)
-    try:
-        resp = client.send("reportService", payload)
-    finally:
-        if client.last_request:
-            _save(f"request_{code}_{msg_id}", client.last_request)
-    path = _save(f"response_{code}_{msg_id}", resp.raw)
-    logger.info("ReportService answered: %s", _describe(resp))
-    logger.info("Response saved to %s", path)
+    _, resp = send_report(client, code, d_from, d_to, logger)
     return 0 if resp.return_code == "0" else 1
 
 
@@ -138,17 +96,13 @@ def do_request_many(client: OteSoapClient, codes: list[str], d_from: date, d_to:
 def do_collect(client: OteSoapClient, max_messages: int, logger) -> int:
     received = 0
     for n in range(1, max_messages + 1):
-        msg_id = new_message_id()
-        resp = client.send("commonService", queue_pickup_request(msg_id))
-        names = "_".join(f"{etree.QName(p).localname}-{p.get('message-code', 'x')}" for p in resp.payload) or "empty"
-        path = _save(f"collect_{n:03d}_{names}", resp.raw)
-        logger.info("Pickup %d: %s -> %s", n, _describe(resp), path.name)
+        resp, _ = pickup(client, n, logger)
         if not resp.payload:
             break
         received += 1
     else:
         logger.warning("Stopped after --max %d pickups; the queue may hold more", max_messages)
-    logger.info("Collected %d message(s) into %s", received, _out_dir())
+    logger.info("Collected %d message(s) into %s", received, out_dir())
     return 0
 
 
@@ -173,13 +127,17 @@ def main() -> int:
 
     logger.info("OTE SOAP endpoint %s, signing %s, output %s", BASE_URL, SIGN_ALG, OUT_ROOT)
     codes = args.code
-    client = OteSoapClient(_load_credentials(logger))
+    client = OteSoapClient(load_credentials(logger))
     try:
         if args.dry_run:
             return do_dry_run(client, codes, d_from, d_to, logger)
         if args.request:
             return do_request_many(client, codes, d_from, d_to, logger)
-        return do_collect(client, args.max, logger)
+        with queue_lock():
+            return do_collect(client, args.max, logger)
+    except QueueLockHeld as exc:
+        logger.error("%s; not collecting", exc)
+        return EXIT_LOCK_HELD
     except OteSoapError as exc:
         logger.error("%s", exc)
         return 2

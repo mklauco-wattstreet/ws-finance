@@ -1,0 +1,411 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- edited with XMLSpy v2010 (http://www.altova.com) by Vaclav Snasel (Logica Czech Republic s.r.o.) -->
+<!-- edited with XMLSPY v5 rel. 4 U (http://www.xmlspy.com) by Ondrej Holub (Logica CZ) -->
+<xsd:schema xmlns="http://www.ote-cr.cz/schema/globals" xmlns:xsd="http://www.w3.org/2001/XMLSchema" targetNamespace="http://www.ote-cr.cz/schema/globals" elementFormDefault="qualified" attributeFormDefault="unqualified">
+	<xsd:simpleType name="ean">
+		<xsd:annotation>
+			<xsd:documentation>Typ pro EAN</xsd:documentation>
+			<xsd:documentation>EAN type</xsd:documentation>
+		</xsd:annotation>
+		<xsd:restriction base="xsd:string">
+			<xsd:pattern value="\d+"/>
+		</xsd:restriction>
+	</xsd:simpleType>
+	<xsd:simpleType name="pod_id">
+		<xsd:annotation>
+			<xsd:documentation>Typ pro OPM (EAN, EIC)</xsd:documentation>
+			<xsd:documentation>POD type (EAN, EIC)</xsd:documentation>
+		</xsd:annotation>
+		<xsd:restriction base="xsd:string">
+			<xsd:minLength value="16"/>
+			<xsd:maxLength value="18"/>
+			<xsd:pattern value="\c{16}"/>
+			<xsd:pattern value="\d{18}"/>
+		</xsd:restriction>
+	</xsd:simpleType>
+	<xsd:simpleType name="mp_id">
+		<xsd:annotation>
+			<xsd:documentation>Typ pro pseudo-EIC kód</xsd:documentation>
+			<xsd:documentation>EIC code type</xsd:documentation>
+		</xsd:annotation>
+		<xsd:restriction base="xsd:string">
+			<xsd:minLength value="13"/>
+			<xsd:maxLength value="16"/>
+			<xsd:pattern value="\d{13}"/>
+			<xsd:pattern value="\c{16}"/>
+		</xsd:restriction>
+	</xsd:simpleType>
+	<xsd:simpleType name="ean13">
+		<xsd:annotation>
+			<xsd:documentation>Typ pro EAN 13 znaků</xsd:documentation>
+			<xsd:documentation>EAN 13 type</xsd:documentation>
+		</xsd:annotation>
+		<xsd:restriction base="ean">
+			<xsd:length value="13"/>
+		</xsd:restriction>
+	</xsd:simpleType>
+	<xsd:simpleType name="ean18">
+		<xsd:annotation>
+			<xsd:documentation>Typ pro EAN 18 znaků</xsd:documentation>
+			<xsd:documentation>EAN 18 type</xsd:documentation>
+		</xsd:annotation>
+		<xsd:restriction base="ean">
+			<xsd:length value="18"/>
+		</xsd:restriction>
+	</xsd:simpleType>
+	<xsd:simpleType name="ean13_18">
+		<xsd:annotation>
+			<xsd:documentation>Typ pro EAN 13 - 18 znaků</xsd:documentation>
+			<xsd:documentation>EAN 13 - 18 type</xsd:documentation>
+		</xsd:annotation>
+		<xsd:restriction base="xsd:string">
+			<xsd:pattern value="\d{13}(\d{5})?"/>
+		</xsd:restriction>
+	</xsd:simpleType>
+	<xsd:simpleType name="msg-id">
+		<xsd:annotation>
+			<xsd:documentation>Typ pro číslo zprávy</xsd:documentation>
+			<xsd:documentation>Message number type</xsd:documentation>
+		</xsd:annotation>
+		<xsd:restriction base="xsd:string">
+			<xsd:maxLength value="35"/>
+			<xsd:minLength value="1"/>
+		</xsd:restriction>
+	</xsd:simpleType>
+	<xsd:simpleType name="external-bid-id">
+		<xsd:annotation>
+			<xsd:documentation>Klientské id nabídky</xsd:documentation>
+			<xsd:documentation>Client order id</xsd:documentation>
+		</xsd:annotation>
+		<xsd:restriction base="xsd:string">
+            <xsd:pattern value="\d{1,18}"/>
+		</xsd:restriction>
+	</xsd:simpleType>	
+	<xsd:simpleType name="trade_id">
+		<xsd:annotation>
+			<xsd:documentation>Typ pro číslo obchodu</xsd:documentation>
+			<xsd:documentation>Trade number type</xsd:documentation>
+		</xsd:annotation>
+		<xsd:restriction base="xsd:string">
+			<xsd:pattern value="[123456789]\d{0,17}"/>
+		</xsd:restriction>
+	</xsd:simpleType>
+	<xsd:simpleType name="task_id">
+		<xsd:annotation>
+			<xsd:documentation>Typ pro číslo úlohy</xsd:documentation>
+			<xsd:documentation>Task number type</xsd:documentation>
+		</xsd:annotation>
+		<xsd:restriction base="xsd:string">
+			<xsd:pattern value="[123456789]\d{0,9}"/>
+		</xsd:restriction>
+	</xsd:simpleType>
+	<xsd:simpleType name="language">
+		<xsd:annotation>
+			<xsd:documentation>Typ pro jazyk</xsd:documentation>
+			<xsd:documentation>Language type</xsd:documentation>
+		</xsd:annotation>
+		<xsd:restriction base="xsd:string">
+			<xsd:length value="2"/>
+			<xsd:enumeration value="EN"/>
+			<xsd:enumeration value="CS"/>
+		</xsd:restriction>
+	</xsd:simpleType>
+	<xsd:simpleType name="voltage-level">
+		<xsd:annotation>
+			<xsd:documentation>Typ pro napěťovou úroveň </xsd:documentation>
+			<xsd:documentation>Voltage level type</xsd:documentation>
+		</xsd:annotation>
+		<xsd:restriction base="xsd:string">
+			<xsd:enumeration value="CV0">
+				<xsd:annotation>
+					<xsd:documentation xml:lang="CS">ostatní</xsd:documentation>
+					<xsd:documentation xml:lang="EN">others</xsd:documentation>
+				</xsd:annotation>
+			</xsd:enumeration>
+			<xsd:enumeration value="CV1">
+				<xsd:annotation>
+					<xsd:documentation xml:lang="CS">400 kV</xsd:documentation>
+					<xsd:documentation xml:lang="EN">400 kV</xsd:documentation>
+				</xsd:annotation>
+			</xsd:enumeration>
+			<xsd:enumeration value="CV2">
+				<xsd:annotation>
+					<xsd:documentation xml:lang="CS">220 kV</xsd:documentation>
+					<xsd:documentation xml:lang="EN">220 kV</xsd:documentation>
+				</xsd:annotation>
+			</xsd:enumeration>
+			<xsd:enumeration value="CV3">
+				<xsd:annotation>
+					<xsd:documentation xml:lang="CS">110 kV</xsd:documentation>
+					<xsd:documentation xml:lang="EN">110 kV</xsd:documentation>
+				</xsd:annotation>
+			</xsd:enumeration>
+			<xsd:enumeration value="CV4">
+				<xsd:annotation>
+					<xsd:documentation xml:lang="CS">35 kV</xsd:documentation>
+					<xsd:documentation xml:lang="EN">35 kV</xsd:documentation>
+				</xsd:annotation>
+			</xsd:enumeration>
+			<xsd:enumeration value="CV5">
+				<xsd:annotation>
+					<xsd:documentation xml:lang="CS">22 kV</xsd:documentation>
+					<xsd:documentation xml:lang="EN">22 kV</xsd:documentation>
+				</xsd:annotation>
+			</xsd:enumeration>
+			<xsd:enumeration value="CV6">
+				<xsd:annotation>
+					<xsd:documentation xml:lang="CS">10 kV</xsd:documentation>
+					<xsd:documentation xml:lang="EN">10 kV</xsd:documentation>
+				</xsd:annotation>
+			</xsd:enumeration>
+			<xsd:enumeration value="CV7">
+				<xsd:annotation>
+					<xsd:documentation xml:lang="CS">6 kV</xsd:documentation>
+					<xsd:documentation xml:lang="EN">6 kV</xsd:documentation>
+				</xsd:annotation>
+			</xsd:enumeration>
+			<xsd:enumeration value="CV8">
+				<xsd:annotation>
+					<xsd:documentation xml:lang="CS">3 kV</xsd:documentation>
+					<xsd:documentation xml:lang="EN">3 kV</xsd:documentation>
+				</xsd:annotation>
+			</xsd:enumeration>
+			<xsd:enumeration value="CV9">
+				<xsd:annotation>
+					<xsd:documentation xml:lang="CS">0,4 kV</xsd:documentation>
+					<xsd:documentation xml:lang="EN">0,4 kV</xsd:documentation>
+				</xsd:annotation>
+			</xsd:enumeration>
+		</xsd:restriction>
+	</xsd:simpleType>
+	<xsd:complexType name="SenderIdentificationType">
+		<xsd:annotation>
+			<xsd:documentation>Typ pro identifikaci odesílatele zprávy</xsd:documentation>
+		</xsd:annotation>
+		<xsd:attribute name="id" use="required">
+			<xsd:annotation>
+				<xsd:documentation xml:lang="CS">Identifikátor odesílatele (tvůrce obchodního pokynu) - EAN13 nebo EIC kod</xsd:documentation>
+				<xsd:documentation xml:lang="EN">EAN13 Sender identification (author of trade instruction)</xsd:documentation>
+			</xsd:annotation>
+			<xsd:simpleType>
+				<xsd:restriction base="mp_id"/>
+			</xsd:simpleType>
+		</xsd:attribute>
+		<xsd:attribute name="coding-scheme" use="required">
+			<xsd:annotation>
+				<xsd:documentation xml:lang="CS">Druh identifikátoru - 14-EAN13, 15-EIC</xsd:documentation>
+				<xsd:documentation xml:lang="EN">Identification type - 14=EAN13, 15=EIC</xsd:documentation>
+			</xsd:annotation>
+			<xsd:simpleType>
+				<xsd:restriction base="xsd:string">
+					<xsd:enumeration value="14"/>
+					<xsd:enumeration value="15">
+						<xsd:annotation>
+							<xsd:documentation xml:lang="CS">EIC kod</xsd:documentation>
+							<xsd:documentation xml:lang="EN">EIC code</xsd:documentation>
+						</xsd:annotation>
+					</xsd:enumeration>
+				</xsd:restriction>
+			</xsd:simpleType>
+		</xsd:attribute>
+	</xsd:complexType>
+	<xsd:complexType name="ResSenderIdentificationType">
+		<xsd:annotation>
+			<xsd:documentation>Typ pro identifikaci odesílatele zprávy</xsd:documentation>
+		</xsd:annotation>
+		<xsd:attribute name="id" use="required">
+			<xsd:annotation>
+				<xsd:documentation xml:lang="CS">Identifikátor odesílatele (tvůrce obchodního pokynu) - EAN13 nebo EIC kod</xsd:documentation>
+				<xsd:documentation xml:lang="EN">EAN13 Sender identification (author of trade instruction)</xsd:documentation>
+			</xsd:annotation>
+			<xsd:simpleType>
+				<xsd:restriction base="mp_id"/>
+			</xsd:simpleType>
+		</xsd:attribute>
+		<xsd:attribute name="coding-scheme" use="required">
+			<xsd:annotation>
+				<xsd:documentation xml:lang="CS">Druh identifikátoru - 14-EAN13, 15-EIC</xsd:documentation>
+				<xsd:documentation xml:lang="EN">Identification type - 14=EAN13, 15=EIC</xsd:documentation>
+			</xsd:annotation>
+			<xsd:simpleType>
+				<xsd:restriction base="xsd:string">
+					<xsd:enumeration value="14"/>
+					<xsd:enumeration value="15">
+						<xsd:annotation>
+							<xsd:documentation xml:lang="CS">EIC kod</xsd:documentation>
+							<xsd:documentation xml:lang="EN">EIC code</xsd:documentation>
+						</xsd:annotation>
+					</xsd:enumeration>
+				</xsd:restriction>
+			</xsd:simpleType>
+		</xsd:attribute>
+		<xsd:attribute name="role">
+			<xsd:annotation>
+				<xsd:documentation>Role účastníka</xsd:documentation>
+			</xsd:annotation>
+			<xsd:simpleType>
+				<xsd:restriction base="xsd:string">
+					<xsd:enumeration value="V">
+						<xsd:annotation>
+							<xsd:documentation xml:lang="CS">Výrobce</xsd:documentation>
+							<xsd:documentation xml:lang="EN"/>
+						</xsd:annotation>
+					</xsd:enumeration>
+					<xsd:enumeration value="D">
+						<xsd:annotation>
+							<xsd:documentation xml:lang="CS">Distributor</xsd:documentation>
+							<xsd:documentation xml:lang="EN"/>
+						</xsd:annotation>
+					</xsd:enumeration>
+					<xsd:enumeration value="P">
+						<xsd:annotation>
+							<xsd:documentation xml:lang="CS">Povinně vykupující</xsd:documentation>
+							<xsd:documentation xml:lang="EN"/>
+						</xsd:annotation>
+					</xsd:enumeration>
+					<xsd:enumeration value="Z">
+						<xsd:annotation>
+							<xsd:documentation xml:lang="CS">Zprostředkovatel</xsd:documentation>
+							<xsd:documentation xml:lang="EN"/>
+						</xsd:annotation>
+					</xsd:enumeration>
+				</xsd:restriction>
+			</xsd:simpleType>
+		</xsd:attribute>
+	</xsd:complexType>
+	<xsd:complexType name="ReceiverIdentificationType">
+		<xsd:annotation>
+			<xsd:documentation>Typ pro identifikaci příjemce zprávy</xsd:documentation>
+		</xsd:annotation>
+		<xsd:attribute name="id" type="mp_id" use="required">
+			<xsd:annotation>
+				<xsd:documentation xml:lang="CS">Identifikátor příjemce - EAN13 nebo EIC</xsd:documentation>
+				<xsd:documentation xml:lang="EN">Message receiver identification - EAN13 or EIC</xsd:documentation>
+			</xsd:annotation>
+		</xsd:attribute>
+		<xsd:attribute name="coding-scheme" use="required">
+			<xsd:annotation>
+				<xsd:documentation xml:lang="CS">Druh identifikátoru - 14-EAN13, 15-EIC</xsd:documentation>
+				<xsd:documentation xml:lang="EN">Identification type - 14=EAN13, 15=EIC</xsd:documentation>
+			</xsd:annotation>
+			<xsd:simpleType>
+				<xsd:restriction base="xsd:string">
+					<xsd:enumeration value="14"/>
+					<xsd:enumeration value="15">
+						<xsd:annotation>
+							<xsd:documentation xml:lang="CS">EIC kod</xsd:documentation>
+							<xsd:documentation xml:lang="EN">EIC code</xsd:documentation>
+						</xsd:annotation>
+					</xsd:enumeration>
+				</xsd:restriction>
+			</xsd:simpleType>
+		</xsd:attribute>
+	</xsd:complexType>
+	<xsd:complexType name="ResReceiverIdentificationType">
+		<xsd:annotation>
+			<xsd:documentation>Typ pro identifikaci příjemce zprávy</xsd:documentation>
+		</xsd:annotation>
+		<xsd:attribute name="id" type="mp_id" use="required">
+			<xsd:annotation>
+				<xsd:documentation xml:lang="CS">Identifikátor příjemce - EAN13 nebo EIC</xsd:documentation>
+				<xsd:documentation xml:lang="EN">Message receiver identification - EAN13 or EIC</xsd:documentation>
+			</xsd:annotation>
+		</xsd:attribute>
+		<xsd:attribute name="coding-scheme" use="required">
+			<xsd:annotation>
+				<xsd:documentation xml:lang="CS">Druh identifikátoru - 14-EAN13, 15-EIC</xsd:documentation>
+				<xsd:documentation xml:lang="EN">Identification type - 14=EAN13, 15=EIC</xsd:documentation>
+			</xsd:annotation>
+			<xsd:simpleType>
+				<xsd:restriction base="xsd:string">
+					<xsd:enumeration value="14"/>
+					<xsd:enumeration value="15">
+						<xsd:annotation>
+							<xsd:documentation xml:lang="CS">EIC kod</xsd:documentation>
+							<xsd:documentation xml:lang="EN">EIC code</xsd:documentation>
+						</xsd:annotation>
+					</xsd:enumeration>
+				</xsd:restriction>
+			</xsd:simpleType>
+		</xsd:attribute>
+		<xsd:attribute name="role">
+			<xsd:annotation>
+				<xsd:documentation>Role účastníka</xsd:documentation>
+			</xsd:annotation>
+			<xsd:simpleType>
+				<xsd:restriction base="xsd:string">
+					<xsd:enumeration value="V">
+						<xsd:annotation>
+							<xsd:documentation xml:lang="CS">Výrobce</xsd:documentation>
+							<xsd:documentation xml:lang="EN"/>
+						</xsd:annotation>
+					</xsd:enumeration>
+					<xsd:enumeration value="D">
+						<xsd:annotation>
+							<xsd:documentation xml:lang="CS">Distributor</xsd:documentation>
+							<xsd:documentation xml:lang="EN"/>
+						</xsd:annotation>
+					</xsd:enumeration>
+					<xsd:enumeration value="P">
+						<xsd:annotation>
+							<xsd:documentation xml:lang="CS">Povinně vykupující</xsd:documentation>
+							<xsd:documentation xml:lang="EN"/>
+						</xsd:annotation>
+					</xsd:enumeration>
+					<xsd:enumeration value="Z">
+						<xsd:annotation>
+							<xsd:documentation xml:lang="CS">Zprostředkovatel</xsd:documentation>
+							<xsd:documentation xml:lang="EN"/>
+						</xsd:annotation>
+					</xsd:enumeration>
+				</xsd:restriction>
+			</xsd:simpleType>
+		</xsd:attribute>
+	</xsd:complexType>
+	<xsd:complexType name="DataProviderType">
+		<xsd:annotation>
+			<xsd:documentation>Typ pro identifikaci poskytovatele dat</xsd:documentation>
+		</xsd:annotation>
+		<xsd:attribute name="id" type="mp_id" use="required">
+			<xsd:annotation>
+				<xsd:documentation xml:lang="CS">Identifikátor poskytovatele dat - EAN13 nebo EIC</xsd:documentation>
+				<xsd:documentation xml:lang="EN">Data provider identification EAN13 or EIC</xsd:documentation>
+			</xsd:annotation>
+		</xsd:attribute>
+		<xsd:attribute name="coding-scheme" use="required">
+			<xsd:annotation>
+				<xsd:documentation xml:lang="CS">Druh identifikátoru - 14-EAN13, 15-EIC</xsd:documentation>
+				<xsd:documentation xml:lang="EN">Identification type - 14=EAN13, 15=EIC</xsd:documentation>
+			</xsd:annotation>
+			<xsd:simpleType>
+				<xsd:restriction base="xsd:string">
+					<xsd:enumeration value="14"/>
+					<xsd:enumeration value="15">
+						<xsd:annotation>
+							<xsd:documentation xml:lang="CS">EIC kod</xsd:documentation>
+							<xsd:documentation xml:lang="EN">EIC code</xsd:documentation>
+						</xsd:annotation>
+					</xsd:enumeration>
+					<xsd:enumeration value="9"/>
+				</xsd:restriction>
+			</xsd:simpleType>
+		</xsd:attribute>
+	</xsd:complexType>
+	<xsd:complexType name="ReferenceType">
+		<xsd:annotation>
+			<xsd:documentation>Typ pro referenční zprávu</xsd:documentation>
+		</xsd:annotation>
+		<xsd:attribute name="id" use="required">
+			<xsd:annotation>
+				<xsd:documentation xml:lang="CS">Identifikace předešlé zprávy</xsd:documentation>
+				<xsd:documentation xml:lang="EN">Previous message identification</xsd:documentation>
+			</xsd:annotation>
+			<xsd:simpleType>
+				<xsd:restriction base="xsd:string">
+					<xsd:minLength value="1"/>
+					<xsd:maxLength value="35"/>
+				</xsd:restriction>
+			</xsd:simpleType>
+		</xsd:attribute>
+	</xsd:complexType>
+</xsd:schema>

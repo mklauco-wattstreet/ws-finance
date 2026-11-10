@@ -114,12 +114,20 @@ class OteSoapClient:
         self.sign_alg = sign_alg
         self.session = _session()
         self.last_request: bytes = b""
+        # Raw answer of the most recent send(), kept even when send() raises
+        # (SOAP Fault, HTTP >= 400, non-XML, empty body) so callers can save it.
+        self.last_response: bytes = b""
+        self.last_status: int | None = None
 
     def build(self, payload: etree._Element) -> bytes:
         return build_signed_envelope(payload, self.creds, self.sign_alg)
 
     def send(self, service: str, payload: etree._Element) -> OteResponse:
-        """Sign and POST. The exact bytes sent are kept in self.last_request."""
+        """Sign and POST. The exact bytes sent are kept in self.last_request;
+        the raw HTTP answer and its status in self.last_response / self.last_status
+        (also when this raises). Both answer fields are cleared at the start of each call."""
+        self.last_response = b""
+        self.last_status = None
         url = f"{self.base_url}/{service}"
         envelope = self.build(payload)
         self.last_request = envelope
@@ -134,6 +142,8 @@ class OteSoapClient:
         except requests.RequestException as exc:
             raise OteSoapError(f"HTTP request to {url} failed: {exc}") from exc
 
+        self.last_response = resp.content
+        self.last_status = resp.status_code
         logger.debug("HTTP %s, %d bytes", resp.status_code, len(resp.content))
         if resp.status_code >= 400 and b"Fault" not in resp.content:
             raise OteSoapError(f"HTTP {resp.status_code} from {url}: {resp.text[:500]}")

@@ -336,6 +336,48 @@ class OteFinancialSecurityTrend(Base):
     updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
 
 
+class OteLimitSnapshot(Base):
+    """OTE SOAP report 463 / data 464 SFVOTLIMITS - snapshot of the participant's
+    financial-security limits (migration 086, loaded by ote_soap/limits.py).
+    One row per value per snapshot; no per-order or per-trade rows. Amounts in
+    CZK, utilization values negative as sent by OTE. data_group is one of
+    additional / utilization / limits / vat / totals.
+    """
+    __tablename__ = 'ote_limit_snapshot'
+    __table_args__ = (
+        PrimaryKeyConstraint('id', name='ote_limit_snapshot_pkey'),
+        CheckConstraint("data_group IN ('additional', 'utilization', 'limits', 'vat', 'totals')",
+                        name='ote_limit_snapshot_data_group_check'),
+        UniqueConstraint('message_id', 'participant_ean', 'commodity', 'data_group', 'value_type', 'vat_period',
+                         name='ote_limit_snapshot_value_key', postgresql_nulls_not_distinct=True),
+        Index('ix_ote_limit_snapshot_snapshot_at', 'snapshot_at'),
+        Index('ix_ote_limit_snapshot_type_snapshot_at', 'data_group', 'value_type', 'snapshot_at'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, autoincrement=True)
+    snapshot_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    message_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    message_id: Mapped[str] = mapped_column(String(35), nullable=False)
+    request_id: Mapped[Optional[str]] = mapped_column(String(35))
+    message_code: Mapped[str] = mapped_column(String(3), nullable=False)
+    report_title: Mapped[Optional[str]] = mapped_column(Text)
+    participant_ean: Mapped[Optional[str]] = mapped_column(String(20))
+    participant_name: Mapped[Optional[str]] = mapped_column(Text)
+    participant_id: Mapped[Optional[int]] = mapped_column(BigInteger)
+    participant_dic: Mapped[Optional[str]] = mapped_column(String(20))
+    participant_eic: Mapped[Optional[str]] = mapped_column(String(20))
+    participant_ic: Mapped[Optional[str]] = mapped_column(String(20))
+    commodity: Mapped[str] = mapped_column(String(1), nullable=False)
+    data_group: Mapped[str] = mapped_column(String(12), nullable=False)
+    value_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    vat_period: Mapped[Optional[str]] = mapped_column(String(7))
+    value: Mapped[Decimal] = mapped_column(Numeric(20, 6), nullable=False)
+    currency: Mapped[Optional[str]] = mapped_column(String(3))
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+
+
 class EntsoeLoad(Base):
     """ENTSO-E load data (actual and forecast, 15-minute intervals).
 

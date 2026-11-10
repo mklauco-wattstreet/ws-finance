@@ -1,0 +1,692 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- edited with XMLSpy v2013 rel. 2 (x64) (http://www.altova.com) by Vaclav Snasel (Logica Czech Republic s.r.o.) -->
+<xs:schema xmlns="http://www.ote-cr.cz/schema/sfvot/limits" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:ote="http://www.ote-cr.cz/schema/globals" xmlns:ds="http://www.w3.org/2000/09/xmldsig#" targetNamespace="http://www.ote-cr.cz/schema/sfvot/limits" elementFormDefault="qualified" attributeFormDefault="unqualified">
+	<xs:import namespace="http://www.ote-cr.cz/schema/globals" schemaLocation="./ote_globals.xsd"/>
+	<xs:import namespace="http://www.w3.org/2000/09/xmldsig#" schemaLocation="./xmldsig-core-schema.xsd"/>
+	<xs:element name="SFVOTLIMITS">
+		<xs:annotation>
+			<xs:documentation xml:lang="CS">Hlavni element</xs:documentation>
+			<xs:documentation xml:lang="EN">Root element containing basic message data</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="SenderIdentification" type="ote:SenderIdentificationType">
+					<xs:annotation>
+						<xs:documentation xml:lang="CS">Identifikace odesilatele zpravy, tzn. OTE, a.s.</xs:documentation>
+						<xs:documentation xml:lang="EN">EAN13 Sender identification - OTE, a.s.</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="ReceiverIdentification" type="ote:ReceiverIdentificationType">
+					<xs:annotation>
+						<xs:documentation xml:lang="CS">Identifikace prijemce, resp. odesilatele pozadavku</xs:documentation>
+						<xs:documentation xml:lang="EN">Message receiver identification</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Reference" type="ote:ReferenceType" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation xml:lang="CS">Reference na predeslou zpravu. Pokud neni element obsazen v cilovem XML nebyl report generovan na zaklade XML pozadavku.</xs:documentation>
+						<xs:documentation xml:lang="EN">Reference to the previous message, if any.</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Limits">
+					<xs:annotation>
+						<xs:documentation xml:lang="CS">Aktualni stav limitu</xs:documentation>
+						<xs:documentation xml:lang="EN">Current limit status</xs:documentation>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:sequence>
+							<xs:element name="Participant" minOccurs="0" maxOccurs="unbounded">
+								<xs:annotation>
+									<xs:documentation xml:lang="CS">Data participanta</xs:documentation>
+									<xs:documentation xml:lang="EN">Participant data</xs:documentation>
+								</xs:annotation>
+								<xs:complexType>
+									<xs:sequence>
+										<xs:element name="DataGroups" maxOccurs="2">
+											<xs:annotation>
+												<xs:documentation xml:lang="CS">Rozdeleni skupin dat</xs:documentation>
+												<xs:documentation xml:lang="EN">Data groups</xs:documentation>
+											</xs:annotation>
+											<xs:complexType>
+												<xs:sequence>
+													<xs:element name="AdditionalData">
+														<xs:annotation>
+															<xs:documentation xml:lang="CS">Doplnujici informace</xs:documentation>
+															<xs:documentation xml:lang="EN">Additional information</xs:documentation>
+														</xs:annotation>
+														<xs:complexType>
+															<xs:sequence>
+																<xs:element name="Data" maxOccurs="unbounded">
+																	<xs:annotation>
+																		<xs:documentation xml:lang="CS">Data</xs:documentation>
+																		<xs:documentation xml:lang="EN">Data</xs:documentation>
+																	</xs:annotation>
+																	<xs:complexType>
+																		<xs:attribute name="type" use="required">
+																			<xs:annotation>
+																				<xs:documentation xml:lang="CS">
+                                                                                    Popis typu
+                                                                                        warningLimit        Mez varovani
+                                                                                        bonityCoef          Koeficient bonity
+                                                                                </xs:documentation>
+																				<xs:documentation xml:lang="EN">
+                                                                                    Type description
+                                                                                        warningLimit        Warning limit
+                                                                                        bonityCoef          Bonity coefficient
+                                                                                </xs:documentation>
+																			</xs:annotation>
+																			<xs:simpleType>
+																				<xs:restriction base="xs:string">
+																					<xs:enumeration value="warningLimit"/>
+																					<xs:enumeration value="bonityCoef"/>
+																				</xs:restriction>
+																			</xs:simpleType>
+																		</xs:attribute>
+																		<xs:attribute name="value" type="xs:decimal" use="required">
+																			<xs:annotation>
+																				<xs:documentation xml:lang="CS">Hodnota</xs:documentation>
+																				<xs:documentation xml:lang="EN">Value</xs:documentation>
+																			</xs:annotation>
+																		</xs:attribute>
+																		<xs:attribute name="currency" use="optional">
+																			<xs:annotation>
+																				<xs:documentation xml:lang="CS">Měna</xs:documentation>
+																				<xs:documentation xml:lang="EN">Currency</xs:documentation>
+																			</xs:annotation>
+																			<xs:simpleType>
+																				<xs:restriction base="xs:string">
+																					<xs:enumeration value="CZK"/>
+																				</xs:restriction>
+																			</xs:simpleType>
+																		</xs:attribute>
+																	</xs:complexType>
+																</xs:element>
+															</xs:sequence>
+														</xs:complexType>
+													</xs:element>
+													<xs:element name="UtilizationData">
+														<xs:annotation>
+															<xs:documentation xml:lang="CS">Hodnoty utilizaci</xs:documentation>
+															<xs:documentation xml:lang="EN">Utilization values</xs:documentation>
+														</xs:annotation>
+														<xs:complexType>
+															<xs:sequence>
+																<xs:element name="Data" maxOccurs="unbounded">
+																	<xs:annotation>
+																		<xs:documentation xml:lang="CS">Data</xs:documentation>
+																		<xs:documentation xml:lang="EN">Data</xs:documentation>
+																	</xs:annotation>
+																	<xs:complexType>
+																		<xs:attribute name="type" use="required">
+																			<xs:annotation>
+																				<xs:documentation xml:lang="CS">
+                                                                                    Popis typu utilizace
+                                                                                        BT      blokovy trh - elektrina
+                                                                                        VDT     vnitrodenni trh - elektrina
+                                                                                        DT      denni trh - elektrina
+                                                                                        DEV     skutecne odchylky - elektrina
+                                                                                        PRED    predikovane odchylky - elektrina
+                                                                                        TDD     clearing - elektrina
+                                                                                        POP     poplatky - elektrina
+                                                                                        ACT     regulacni energie - elektrina
+                                                                                        VT      vyrovnavaci trh - elektrina
+                                                                                        RE      rizikova expozice - elektrina
+                                                                                        REVF    Riziková expozice flex/výluč. pokynů DT
+                                                                                        POCEPS  predikovana odchylka CEPS - elektrina
+                                                                                        LIM_VDT Utilizace limitu pro VDT - elektrina
+                                                                                        DTP     denni trh - plyn
+                                                                                        VDP     vnitrodenni trh - plyn
+                                                                                        DP2     bilancni plyn zavazky - plyn
+                                                                                        DP1     bilancni plyn predikce - plyn
+                                                                                        DP3     mimotolerancni odchylka - plyn
+                                                                                        DP4     Utilizace finančně vypořádané odchylky
+                                                                                        DP6     trh s NT - plyn
+                                                                                        TDP     clearing - plyn
+                                                                                        PLP     poplatky - plyn
+                                                                                        ZTR     clering ztraty - plyn
+                                                                                        FLP     Utilizace obchodu na trhu s flexibilitou
+                                                                                        DVP     Utilizace zavazku z vyhodnoceni odchylek
+                                                                                        LIM_VDP  Utilizace limitu pro VDT - plyn
+                                                                                        IDA - vnitrodenní aukce pro komoditu elektřina
+                                                                                </xs:documentation>
+																				<xs:documentation xml:lang="EN">
+                                                                                    Utilization type description
+                                                                                        BT      block market - electricity
+                                                                                        VDT     intra-day market - electricity
+                                                                                        DT      day-ahead market - electricity
+                                                                                        DEV     real imbalances - electricity
+                                                                                        PRED    predicted imbalances - electricity
+                                                                                        TDD     clearing - electricity
+                                                                                        POP     fees - electricity
+                                                                                        ACT     regulating energy - electricity
+                                                                                        VT      balancing market - electricity
+                                                                                        RE      real imbalances - electricity
+                                                                                        REVF    Risk exposure flex/excl. bids DM
+                                                                                        POCEPS  predicted imbalance CEPS - electricity
+                                                                                        LIM_VDT Utilization of limit for IM - electricity
+                                                                                        DTP     day-ahead market - gas
+                                                                                        VDP     intra-day market - gas
+                                                                                        DP2     balance gas payables - gas
+                                                                                        DP1     balance gas prediction - gas
+                                                                                        DP3     off-tolerance - gas
+                                                                                        DP4     Utilization of balance gas - aggreg. payments
+                                                                                        DP6     NT market - gas
+                                                                                        TDP     clearing - gas
+                                                                                        PLP     fees - gas
+                                                                                        ZTR      loss clearing - gas
+                                                                                        FLP     Utilization of flexibility market
+                                                                                        DVP     Utilization of payables from imbalance evaluation
+                                                                                        LIM_VDP  Utilization of limit for IM - gas
+                                                                                        IDA - intraday auction for the electricity commodity
+                                                                                </xs:documentation>
+																			</xs:annotation>
+																			<xs:simpleType>
+																				<xs:restriction base="xs:string">
+																					<xs:enumeration value="BT"/>
+																					<xs:enumeration value="VDT"/>
+																					<xs:enumeration value="DT"/>
+																					<xs:enumeration value="DEV"/>
+																					<xs:enumeration value="PRED"/>
+																					<xs:enumeration value="TDD"/>
+																					<xs:enumeration value="POP"/>
+																					<xs:enumeration value="ACT"/>
+																					<xs:enumeration value="VT"/>
+																					<xs:enumeration value="RE"/>
+																					<xs:enumeration value="REVF"/>
+																					<xs:enumeration value="LIM_VDT"/>
+																					<xs:enumeration value="POCEPS"/>
+																					<xs:enumeration value="DTP"/>
+																					<xs:enumeration value="VDP"/>
+																					<xs:enumeration value="DP2"/>
+																					<xs:enumeration value="DP1"/>
+																					<xs:enumeration value="DP3"/>
+																					<xs:enumeration value="DP4"/>
+																					<xs:enumeration value="DP6"/>
+																					<xs:enumeration value="TDP"/>
+																					<xs:enumeration value="PLP"/>
+																					<xs:enumeration value="ZTR"/>
+																					<xs:enumeration value="FLP"/>
+																					<xs:enumeration value="DVP"/>
+																					<xs:enumeration value="LIM_VDP"/>
+																					<xs:enumeration value="IDA"/>
+																				</xs:restriction>
+																			</xs:simpleType>
+																		</xs:attribute>
+																		<xs:attribute name="value" type="xs:decimal" use="required">
+																			<xs:annotation>
+																				<xs:documentation xml:lang="CS">Hodnota utilizace</xs:documentation>
+																				<xs:documentation xml:lang="EN">Utilization value</xs:documentation>
+																			</xs:annotation>
+																		</xs:attribute>
+																		<xs:attribute name="currency" use="required">
+																			<xs:annotation>
+																				<xs:documentation xml:lang="CS">Měna</xs:documentation>
+																				<xs:documentation xml:lang="EN">Currency</xs:documentation>
+																			</xs:annotation>
+																			<xs:simpleType>
+																				<xs:restriction base="xs:string">
+																					<xs:enumeration value="CZK"/>
+																				</xs:restriction>
+																			</xs:simpleType>
+																		</xs:attribute>
+																	</xs:complexType>
+																</xs:element>
+															</xs:sequence>
+														</xs:complexType>
+													</xs:element>
+													<xs:element name="LimitsData">
+														<xs:annotation>
+															<xs:documentation xml:lang="CS">Hodnoty limitu</xs:documentation>
+															<xs:documentation xml:lang="EN">Limits values</xs:documentation>
+														</xs:annotation>
+														<xs:complexType>
+															<xs:sequence>
+																<xs:element name="Data" maxOccurs="unbounded">
+																	<xs:annotation>
+																		<xs:documentation xml:lang="CS">Data</xs:documentation>
+																		<xs:documentation xml:lang="EN">Data</xs:documentation>
+																	</xs:annotation>
+																	<xs:complexType>
+																		<xs:attribute name="type" use="required">
+																			<xs:annotation>
+																				<xs:documentation xml:lang="CS">
+                                                                                    Popis typu limitu
+                                                                                        fsLimit             Limit financniho zajisteni
+                                                                                        dynamicLimit        Dynamicky limit
+                                                                                </xs:documentation>
+																				<xs:documentation xml:lang="EN">
+                                                                                    Limit type description
+                                                                                        fsLimit             Financial security limit
+                                                                                        dynamicLimit        Dynamic limit
+                                                                                </xs:documentation>
+																			</xs:annotation>
+																			<xs:simpleType>
+																				<xs:restriction base="xs:string">
+																					<xs:enumeration value="fsLimit"/>
+																					<xs:enumeration value="dynamicLimit"/>
+																				</xs:restriction>
+																			</xs:simpleType>
+																		</xs:attribute>
+																		<xs:attribute name="value" type="xs:decimal" use="required">
+																			<xs:annotation>
+																				<xs:documentation xml:lang="CS">Hodnota limitu</xs:documentation>
+																				<xs:documentation xml:lang="EN">Limit value</xs:documentation>
+																			</xs:annotation>
+																		</xs:attribute>
+																		<xs:attribute name="currency" use="required">
+																			<xs:annotation>
+																				<xs:documentation xml:lang="CS">Měna</xs:documentation>
+																				<xs:documentation xml:lang="EN">Currency</xs:documentation>
+																			</xs:annotation>
+																			<xs:simpleType>
+																				<xs:restriction base="xs:string">
+																					<xs:enumeration value="CZK"/>
+																				</xs:restriction>
+																			</xs:simpleType>
+																		</xs:attribute>
+																	</xs:complexType>
+																</xs:element>
+															</xs:sequence>
+														</xs:complexType>
+													</xs:element>
+													<xs:element name="VatData" minOccurs="0">
+														<xs:annotation>
+															<xs:documentation xml:lang="CS">Neuhrazene DPH dynamickeho limitu</xs:documentation>
+															<xs:documentation xml:lang="EN">Not payed VAT in dynamic limit</xs:documentation>
+														</xs:annotation>
+														<xs:complexType>
+															<xs:sequence>
+																<xs:element name="Data" maxOccurs="unbounded">
+																	<xs:annotation>
+																		<xs:documentation xml:lang="CS">Data</xs:documentation>
+																		<xs:documentation xml:lang="EN">Data</xs:documentation>
+																	</xs:annotation>
+																	<xs:complexType>
+																		<xs:attribute name="type" use="required">
+																			<xs:annotation>
+																				<xs:documentation xml:lang="CS">
+                                                                                    Popis typu obchodu komodity elektrina (E)
+                                                                                        AC+     - ACT dodavka
+                                                                                        AC-     - ACT nedodavka
+                                                                                        BTD     - blokovy trh - denni
+                                                                                        DE1     - odchylky
+                                                                                        DE2     - vicenaklady
+                                                                                        DIF     - dispozice PXE futures
+                                                                                        DIS     - dispozice na denni trh
+                                                                                        DIX     - dispozice PXE
+                                                                                        EC0     - netting za obchody v0 - elektrina (CZK)
+                                                                                        EE0     - netting za obchody v0 - elektrina (EUR)
+                                                                                        EMD     - vyporadani stavu nouze z koordin. DT
+                                                                                        EMG     - stav nouze pro CR
+                                                                                        IEM     - zaporne odchylky
+                                                                                        IEP     - kladne odchylky
+                                                                                        DT      - denni trh s elektrinou
+                                                                                        PF0     - PXE futures - netting
+                                                                                        PF1     - PXE futures - SZ
+                                                                                        PF2     - PXE futures kumulativni
+                                                                                        PP1     - popl. za sluzby
+                                                                                        PP2     - popl. za spotrebu
+                                                                                        PP3     - popl. za zobchod. energii
+                                                                                        PP4     - popl. za CDS
+                                                                                        PP5     - popl. za VD trh
+                                                                                        PP6     - popl. za vyrovnavaci trh
+                                                                                        PP7     - popl. za obchod. na blokovem trhu
+                                                                                        PP8     - popl. za doplneni FZ
+                                                                                        PSK     - agregovana RE
+                                                                                        DT-PXE  - PXE
+                                                                                        TDD     - clearing
+                                                                                        VD+     - vnitrodenni trh dodavka
+                                                                                        VD-     - vnitrodenni trh odber
+                                                                                    Popis typu obchodu komodity plyn (G)
+                                                                                        DD+     - denni trh s plynem - nakup
+                                                                                        DD-     - denni trh s plynem - prodej
+                                                                                        DID     - dispozice pro plyn - denni trh
+                                                                                        DP2     - skutecna odchylka - plyn
+                                                                                        DP3     - mimotolerancni odchylka - plyn
+                                                                                        DP4     - agregovana hodnota plateb za bilancni plyn
+                                                                                        DP5     - agregovana hodnota plateb za mimotolerancni odchylky
+                                                                                        EMP     - stav nouze - plyn
+                                                                                        GC0     - netting za obchody v0 - plyn (CZK)
+                                                                                        GE0     - netting za obchody v0 - plyn (EUR)
+                                                                                        PL1     - poplatek plyn – rocni zuctovani
+                                                                                        PL2     - poplatek plyn – zuctováni odchylek
+                                                                                        PL3     - poplatek plyn - obchodovani na DT
+                                                                                        PL4     - poplatek plyn - mesicni poskytovani skutecnych hodnot
+                                                                                        PL5     - poplatek plyn - obchodovani na VDT
+                                                                                        TDP     - clearing za plyn
+                                                                                        VP+     - vnitrodenni trh s plynem - prodej
+                                                                                        VP-     - vnitrodenni trh s plynem - nakup
+                                                                                </xs:documentation>
+																				<xs:documentation xml:lang="EN">
+                                                                                    Trade type description, commodity electricity (E)
+                                                                                        AC+     - regulating energy positive
+                                                                                        AC-     - regulating energy negative
+                                                                                        BTD     - block market - daily
+                                                                                        DE1     - imbalance
+                                                                                        DE2     - additional costs
+                                                                                        DIF     - PXE futures disposition
+                                                                                        DIS     - day-ahead market disposition
+                                                                                        DIX     - PXE disposition
+                                                                                        EC0     - netting for trades v0 - electricity (CZK)
+                                                                                        EE0     - netting for trades v0 - electricity (EUR)
+                                                                                        EMD     - settlement of emergency from day-ahead market CZ-SK
+                                                                                        EMG     - emergency state - CZ
+                                                                                        IEM     - imbalance negative
+                                                                                        IEP     - imbalance positive
+                                                                                        DT      - day-ahead market
+                                                                                        PF0     - PXE futures - netting
+                                                                                        PF1     - PXE futures - settlement subject
+                                                                                        PF2     - PXE futures cumulative
+                                                                                        PP1     - settlement fee
+                                                                                        PP2     - consumption fee
+                                                                                        PP3     - day-ahead market fee
+                                                                                        PP4     - CDS access fee
+                                                                                        PP5     - intra-day fee
+                                                                                        PP6     - balancing market fee
+                                                                                        PP7     - block market fee
+                                                                                        PP8     - compensation fee
+                                                                                        PSK     - agregated RE
+                                                                                        DT-PXE  - PXE
+                                                                                        TDD     - clearing
+                                                                                        VD+     - intra-day market sale
+                                                                                        VD-     - intra-day market purchase
+                                                                                    Trade type description, commodity gas (G)
+                                                                                        DD+     - day-ahead market - purchase
+                                                                                        DD-     - day-ahead market - sale
+                                                                                        DID     - day-ahead market bid
+                                                                                        DP2     - real imbalance
+                                                                                        DP3     - off-tolerance deviation
+                                                                                        DP4     - aggreg. payment balalance gas
+                                                                                        DP5     - aggreg. payment for off-tolerance deviation
+                                                                                        EMP     - emergency state - gas
+                                                                                        GC0     - netting for trades v0 - gas (CZK)
+                                                                                        GE0     - netting for trades v0 - gas (EUR)
+                                                                                        PL1     - annual fee
+                                                                                        PL2     - settlement imbalance fee
+                                                                                        PL3     - day-ahead market fee
+                                                                                        PL4     - access metering data fee
+                                                                                        PL5     - intra-day fee
+                                                                                        TDP     - clearing for gas
+                                                                                        VP+     - intra-day market sell
+                                                                                        VP-     - intra-day market buy
+                                                                                </xs:documentation>
+																			</xs:annotation>
+																			<xs:simpleType>
+																				<xs:restriction base="xs:string">
+																					<xs:enumeration value="AC+"/>
+																					<xs:enumeration value="AC-"/>
+																					<xs:enumeration value="BTD"/>
+																					<xs:enumeration value="DE1"/>
+																					<xs:enumeration value="DE2"/>
+																					<xs:enumeration value="DIF"/>
+																					<xs:enumeration value="DIS"/>
+																					<xs:enumeration value="DIX"/>
+																					<xs:enumeration value="EC0"/>
+																					<xs:enumeration value="EE0"/>
+																					<xs:enumeration value="EMD"/>
+																					<xs:enumeration value="EMG"/>
+																					<xs:enumeration value="IEM"/>
+																					<xs:enumeration value="IEP"/>
+																					<xs:enumeration value="DT"/>
+																					<xs:enumeration value="PF0"/>
+																					<xs:enumeration value="PF1"/>
+																					<xs:enumeration value="PF2"/>
+																					<xs:enumeration value="PP1"/>
+																					<xs:enumeration value="PP2"/>
+																					<xs:enumeration value="PP3"/>
+																					<xs:enumeration value="PP4"/>
+																					<xs:enumeration value="PP5"/>
+																					<xs:enumeration value="PP6"/>
+																					<xs:enumeration value="PP7"/>
+																					<xs:enumeration value="PP8"/>
+																					<xs:enumeration value="PSK"/>
+																					<xs:enumeration value="DT-PXE"/>
+																					<xs:enumeration value="TDD"/>
+																					<xs:enumeration value="VD+"/>
+																					<xs:enumeration value="VD-"/>
+																					<xs:enumeration value="DD+"/>
+																					<xs:enumeration value="DD-"/>
+																					<xs:enumeration value="DID"/>
+																					<xs:enumeration value="DP2"/>
+																					<xs:enumeration value="DP3"/>
+																					<xs:enumeration value="DP4"/>
+																					<xs:enumeration value="DP5"/>
+																					<xs:enumeration value="EMP"/>
+																					<xs:enumeration value="GC0"/>
+																					<xs:enumeration value="GE0"/>
+																					<xs:enumeration value="PL1"/>
+																					<xs:enumeration value="PL2"/>
+																					<xs:enumeration value="PL3"/>
+																					<xs:enumeration value="PL4"/>
+																					<xs:enumeration value="PL5"/>
+																					<xs:enumeration value="TDP"/>
+																					<xs:enumeration value="VP+"/>
+																					<xs:enumeration value="VP-"/>
+																				</xs:restriction>
+																			</xs:simpleType>
+																		</xs:attribute>
+																		<xs:attribute name="value" type="xs:decimal" use="required">
+																			<xs:annotation>
+																				<xs:documentation xml:lang="CS">Hodnota DPH</xs:documentation>
+																				<xs:documentation xml:lang="EN">VAT value</xs:documentation>
+																			</xs:annotation>
+																		</xs:attribute>
+																		<xs:attribute name="period" type="xs:gYearMonth" use="required">
+																			<xs:annotation>
+																				<xs:documentation xml:lang="CS">Hodnota DPH</xs:documentation>
+																				<xs:documentation xml:lang="EN">VAT value</xs:documentation>
+																			</xs:annotation>
+																		</xs:attribute>
+																		<xs:attribute name="currency" use="required">
+																			<xs:annotation>
+																				<xs:documentation xml:lang="CS">Měna</xs:documentation>
+																				<xs:documentation xml:lang="EN">Currency</xs:documentation>
+																			</xs:annotation>
+																			<xs:simpleType>
+																				<xs:restriction base="xs:string">
+																					<xs:enumeration value="CZK"/>
+																				</xs:restriction>
+																			</xs:simpleType>
+																		</xs:attribute>
+																	</xs:complexType>
+																</xs:element>
+															</xs:sequence>
+														</xs:complexType>
+													</xs:element>
+													<xs:element name="TotalsData">
+														<xs:annotation>
+															<xs:documentation xml:lang="CS">Vysledny stav financniho zajisteni</xs:documentation>
+															<xs:documentation xml:lang="EN">Totals of financial security</xs:documentation>
+														</xs:annotation>
+														<xs:complexType>
+															<xs:sequence>
+																<xs:element name="Data" maxOccurs="unbounded">
+																	<xs:annotation>
+																		<xs:documentation xml:lang="CS">Data</xs:documentation>
+																		<xs:documentation xml:lang="EN">Data</xs:documentation>
+																	</xs:annotation>
+																	<xs:complexType>
+																		<xs:attribute name="type" use="required">
+																			<xs:annotation>
+																				<xs:documentation xml:lang="CS">
+                                                                                    Popis
+                                                                                        limit               Celkovy limit financniho zajisteni
+                                                                                        utilization         Celkova utilizace
+                                                                                        bonityUtilization   Celkova utilizace s koef. bonity
+                                                                                        freeResources       Volne prostredky
+                                                                                        limitIM             Limit financniho zajisteni pro trhy VDT s elektřinou nebo VDT s plynem 
+                                                                                        utilizationIM       Celková utilizace VDT s elektřinou nebo VDT s plynem 
+                                                                                        freeResourcesIM     Volne prostredky pro VDT elektřina nebo VDT plyn
+                                                                                </xs:documentation>
+																				<xs:documentation xml:lang="EN">
+                                                                                    Total type
+                                                                                        limit               Total limit
+                                                                                        utilization         Total utilization
+                                                                                        bonityUtilization   Total utilization with bonity coeff.
+                                                                                        freeResources       Disponsible financial
+                                                                                        limitIM             Limit for IM electricity or IM gas
+                                                                                        utilizationIM       Utilization of limit for IM electricity or IM gas
+                                                                                        freeResourcesIM     Free limit IM elektricity or IM gas                                                                                    
+                                                            
+                                                                                </xs:documentation>
+																			</xs:annotation>
+																			<xs:simpleType>
+																				<xs:restriction base="xs:string">
+																					<xs:enumeration value="limit"/>
+																					<xs:enumeration value="utilization"/>
+																					<xs:enumeration value="bonityUtilization"/>
+																					<xs:enumeration value="freeResources"/>
+																					<xs:enumeration value="limitIM"/>
+																					<xs:enumeration value="utilizationIM"/>
+																					<xs:enumeration value="freeResourcesIM"/>
+																				</xs:restriction>
+																			</xs:simpleType>
+																		</xs:attribute>
+																		<xs:attribute name="value" type="xs:decimal" use="required">
+																			<xs:annotation>
+																				<xs:documentation xml:lang="CS">Hodnota</xs:documentation>
+																				<xs:documentation xml:lang="EN">Value</xs:documentation>
+																			</xs:annotation>
+																		</xs:attribute>
+																		<xs:attribute name="currency" use="required">
+																			<xs:annotation>
+																				<xs:documentation xml:lang="CS">Měna</xs:documentation>
+																				<xs:documentation xml:lang="EN">Currency</xs:documentation>
+																			</xs:annotation>
+																			<xs:simpleType>
+																				<xs:restriction base="xs:string">
+																					<xs:enumeration value="CZK"/>
+																				</xs:restriction>
+																			</xs:simpleType>
+																		</xs:attribute>
+																	</xs:complexType>
+																</xs:element>
+															</xs:sequence>
+														</xs:complexType>
+													</xs:element>
+												</xs:sequence>
+												<xs:attribute name="commodity" use="required">
+													<xs:annotation>
+														<xs:documentation xml:lang="CS">Komodita (E elektrina, G plyn)</xs:documentation>
+														<xs:documentation xml:lang="EN">Commodity (E electricity, G gas)</xs:documentation>
+													</xs:annotation>
+													<xs:simpleType>
+														<xs:restriction base="xs:string">
+															<xs:enumeration value="E"/>
+															<xs:enumeration value="G"/>
+														</xs:restriction>
+													</xs:simpleType>
+												</xs:attribute>
+											</xs:complexType>
+										</xs:element>
+									</xs:sequence>
+									<xs:attribute name="dic" type="xs:string">
+										<xs:annotation>
+											<xs:documentation xml:lang="CS">DIC</xs:documentation>
+											<xs:documentation xml:lang="EN">TAX number</xs:documentation>
+										</xs:annotation>
+									</xs:attribute>
+									<xs:attribute name="ean" type="xs:string">
+										<xs:annotation>
+											<xs:documentation xml:lang="CS">EAN identifikace participanta</xs:documentation>
+											<xs:documentation xml:lang="EN">EAN participant identification</xs:documentation>
+										</xs:annotation>
+									</xs:attribute>
+									<xs:attribute name="eic" type="xs:string">
+										<xs:annotation>
+											<xs:documentation xml:lang="CS">EIC identifikace participanta</xs:documentation>
+											<xs:documentation xml:lang="EN">EIC participant identification</xs:documentation>
+										</xs:annotation>
+									</xs:attribute>
+									<xs:attribute name="ic" type="xs:string">
+										<xs:annotation>
+											<xs:documentation xml:lang="CS">IC</xs:documentation>
+											<xs:documentation xml:lang="EN">Registration number</xs:documentation>
+										</xs:annotation>
+									</xs:attribute>
+									<xs:attribute name="name" type="xs:string">
+										<xs:annotation>
+											<xs:documentation xml:lang="CS">Zkraceny nazev ucastnika trhu</xs:documentation>
+											<xs:documentation xml:lang="EN">The participant's short name</xs:documentation>
+										</xs:annotation>
+									</xs:attribute>
+									<xs:attribute name="particId" type="xs:integer">
+										<xs:annotation>
+											<xs:documentation xml:lang="CS">Jednoznacny identifikator ucastnika trhu</xs:documentation>
+											<xs:documentation xml:lang="EN">The participant's unique id</xs:documentation>
+										</xs:annotation>
+									</xs:attribute>
+								</xs:complexType>
+							</xs:element>
+						</xs:sequence>
+						<xs:attribute name="date" type="xs:dateTime" use="required">
+							<xs:annotation>
+								<xs:documentation xml:lang="CS">Cas generovani</xs:documentation>
+								<xs:documentation xml:lang="EN">Production timestamp</xs:documentation>
+							</xs:annotation>
+						</xs:attribute>
+						<xs:attribute name="title" type="xs:string" use="required">
+							<xs:annotation>
+								<xs:documentation xml:lang="CS">Nazev reportu</xs:documentation>
+								<xs:documentation xml:lang="EN">Report title</xs:documentation>
+							</xs:annotation>
+						</xs:attribute>
+					</xs:complexType>
+				</xs:element>
+				<xs:element ref="ds:Signature" minOccurs="0"/>
+			</xs:sequence>
+			<xs:attribute name="answer-required" type="xs:boolean" use="required">
+				<xs:annotation>
+					<xs:documentation xml:lang="CS">Indikace pozadavku na odpoved</xs:documentation>
+					<xs:documentation xml:lang="EN">Indication of request for response 1=YES, 0=NO</xs:documentation>
+				</xs:annotation>
+			</xs:attribute>
+			<xs:attribute name="date-time" type="xs:dateTime" use="required">
+				<xs:annotation>
+					<xs:documentation xml:lang="CS">Datum a cas zpravy</xs:documentation>
+					<xs:documentation xml:lang="EN">Date and time of message</xs:documentation>
+				</xs:annotation>
+			</xs:attribute>
+			<xs:attribute name="dtd-release" type="xs:string" use="required" fixed="1">
+				<xs:annotation>
+					<xs:documentation xml:lang="CS">Rezervovano pro pristi verze. Zatim konstanta '1'</xs:documentation>
+					<xs:documentation xml:lang="EN">Reserved for incoming versions. So far a constant '1'</xs:documentation>
+				</xs:annotation>
+			</xs:attribute>
+			<xs:attribute name="dtd-version" type="xs:unsignedByte" use="required" fixed="1">
+				<xs:annotation>
+					<xs:documentation xml:lang="CS">Rezervovano pro pristi verze. Zatim konstanta '1'</xs:documentation>
+					<xs:documentation xml:lang="EN">Reserved for incoming versions; so far a constant '1'</xs:documentation>
+				</xs:annotation>
+			</xs:attribute>
+			<xs:attribute name="id" type="ote:msg-id" use="required">
+				<xs:annotation>
+					<xs:documentation xml:lang="CS">Identifikator zpravy</xs:documentation>
+					<xs:documentation xml:lang="EN">Message Identification</xs:documentation>
+				</xs:annotation>
+			</xs:attribute>
+			<xs:attribute name="message-code" use="required">
+				<xs:annotation>
+					<xs:documentation xml:lang="CS">Kod zpravy upresnujici obsah zpravy</xs:documentation>
+					<xs:documentation xml:lang="EN">Message code that specifies the message content</xs:documentation>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:enumeration value="464">
+							<xs:annotation>
+								<xs:documentation xml:lang="CS">Stav finančního limitu</xs:documentation>
+								<xs:documentation xml:lang="EN">Financial status limit</xs:documentation>
+							</xs:annotation>
+						</xs:enumeration>
+						<xs:enumeration value="482">
+							<xs:annotation>
+								<xs:documentation xml:lang="CS">Aktuální stav limitu VDT elektrina nebo VDT plyn</xs:documentation>
+								<xs:documentation xml:lang="EN">Current value of limit IM electricity or IM gas </xs:documentation>
+							</xs:annotation>
+						</xs:enumeration>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:attribute>
+		</xs:complexType>
+	</xs:element>
+</xs:schema>
