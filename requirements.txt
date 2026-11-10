@@ -20,6 +20,10 @@ brotli>=1.1.0  # Required for Brotli decompression in requests
 fastapi>=0.110.0
 uvicorn>=0.29.0
 
+# OTE SOAP web services (app/ote_soap): XML build/C14N + WS-Security signing
+lxml>=5.2.0
+cryptography>=42.0.0
+
 # Monitoring
 sentry-sdk>=2.0.0
 
