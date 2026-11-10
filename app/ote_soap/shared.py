@@ -1,5 +1,5 @@
 """
-Helpers shared by the OTE SOAP command-line entry points (fetch, limits).
+Helpers shared by the OTE SOAP command-line entry points (fetch, limits, exchange_rate).
 
     - raw-XML files on disk (every request, receipt, queue message, rejected answer)
     - one-line description of an OTE answer
@@ -7,12 +7,14 @@ Helpers shared by the OTE SOAP command-line entry points (fetch, limits).
       answer saved even when OTE rejects the call
     - the queue lock: only one process at a time may empty the OTE queue,
       because OTE removes a message from the queue as soon as it hands it over
+      (a runner waits for it, ote_soap.fetch --collect does not)
 """
 
 from __future__ import annotations
 
 import fcntl
 import os
+import time
 from contextlib import contextmanager
 from datetime import date, datetime
 from pathlib import Path
@@ -34,17 +36,26 @@ class QueueLockHeld(RuntimeError):
 
 
 @contextmanager
-def queue_lock(path: str = QUEUE_LOCK_PATH) -> Iterator[None]:
-    """Exclusive, non-blocking lock for the whole time the queue is read.
+def queue_lock(path: str = QUEUE_LOCK_PATH, wait_s: float = 0) -> Iterator[None]:
+    """Exclusive lock for the whole time the queue is read.
 
-    Raises QueueLockHeld at once if another process holds it. The lock is
-    released when the block ends or the process dies (flock is per open file).
+    wait_s = 0 (default): fail at once when another process holds it.
+    wait_s > 0: retry the non-blocking flock about once per second until wait_s
+    has passed. Raises QueueLockHeld when the lock could not be taken. The lock
+    is released when the block ends or the process dies (flock is per open file).
     """
     with open(path, "a") as handle:
-        try:
-            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError as exc:
-            raise QueueLockHeld(f"OTE queue lock {path} is held by another process") from exc
+        deadline = time.monotonic() + wait_s
+        while True:
+            try:
+                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError as exc:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    waited = f" for {wait_s:g} s" if wait_s > 0 else ""
+                    raise QueueLockHeld(f"OTE queue lock {path} is held by another process{waited}") from exc
+                time.sleep(min(1.0, remaining))
         try:
             yield
         finally:

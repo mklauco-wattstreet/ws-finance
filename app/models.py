@@ -394,6 +394,63 @@ class OteLimitSnapshot(Base):
     updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
 
 
+class OteExchangeRate(Base):
+    """OTE SOAP report 425 / data 426 SFVOTEXCHRATE - OTE settlement exchange rate,
+    CZK per 1 EUR (migration 087, loaded daily by ote_soap/exchange_rate.py).
+    One row per valid_date (upsert ON CONFLICT (valid_date)). OTE's own settlement
+    rate, differs from the CNB fixing in cnb_exchange_rate. The rate columns are
+    plain NUMERIC (stored exactly as OTE sent them) and nullable: today OTE sends
+    only OteFinalRate.
+    """
+    __tablename__ = 'ote_exchange_rate'
+    __table_args__ = (
+        PrimaryKeyConstraint('id', name='ote_exchange_rate_pkey'),
+        UniqueConstraint('valid_date', name='ote_exchange_rate_valid_date_key'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, autoincrement=True)
+    valid_date: Mapped[date] = mapped_column(Date, nullable=False)
+    ote_final_rate: Mapped[Optional[Decimal]] = mapped_column(Numeric)
+    ote_final_vdt_rate: Mapped[Optional[Decimal]] = mapped_column(Numeric)
+    ote_final_ida_rate: Mapped[Optional[Decimal]] = mapped_column(Numeric)
+    message_id: Mapped[str] = mapped_column(String(35), nullable=False)
+    request_id: Mapped[Optional[str]] = mapped_column(String(35))
+    message_code: Mapped[str] = mapped_column(String(3), nullable=False)
+    message_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+
+
+class OteSoapMessage(Base):
+    """Register of OTE SOAP messages picked up from the queue that have no table of
+    their own (migration 087). One row per message: shows that OTE delivered
+    something we have no loader for yet and where its raw XML file is
+    (downloads/ote_soap/<YYYY-MM-DD>/file_name). The content is not stored here.
+    Limit snapshots (464) and exchange rates (426) loaded by their own runners get
+    no row. No unique constraint besides the primary key.
+    """
+    __tablename__ = 'ote_soap_message'
+    __table_args__ = (
+        PrimaryKeyConstraint('id', name='ote_soap_message_pkey'),
+        Index('ix_ote_soap_message_received_at', text('received_at DESC')),
+        Index('ix_ote_soap_message_code', 'message_code'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, autoincrement=True)
+    received_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, server_default=text('CURRENT_TIMESTAMP'))
+    message_type: Mapped[Optional[str]] = mapped_column(String(40))
+    message_code: Mapped[Optional[str]] = mapped_column(String(3))
+    message_id: Mapped[Optional[str]] = mapped_column(String(35))
+    request_id: Mapped[Optional[str]] = mapped_column(String(35))
+    response_code: Mapped[Optional[str]] = mapped_column(String(3))
+    reason_code: Mapped[Optional[str]] = mapped_column(String(10))
+    reason_text: Mapped[Optional[str]] = mapped_column(Text)
+    file_name: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+
+
 class EntsoeLoad(Base):
     """ENTSO-E load data (actual and forecast, 15-minute intervals).
 

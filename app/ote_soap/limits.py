@@ -19,9 +19,12 @@ The answer arrives asynchronously in the queue that is emptied one message at a
 time with COMMONREQ 921 (D1.4.4 section 8.1). OTE removes a message from the
 queue once it hands it over, so EVERY picked-up message is saved to
 $OTE_SOAP_OUT_DIR (same names as ote_soap.fetch --collect) even when it is not
-ours. Our answer is the SFVOTLIMITS whose Reference@id is our request id. The
-whole run holds the queue lock /tmp/ote_soap_queue.lock, shared with
-ote_soap.fetch --collect.
+ours; an unrelated one is also registered in finance.ote_soap_message (a database
+problem there is only a warning). Our answer is the SFVOTLIMITS whose Reference@id
+is our request id. The request/queue/match logic is shared with ote_soap.exchange_rate
+(ote_soap/report.py). The whole run holds the queue lock /tmp/ote_soap_queue.lock,
+shared with ote_soap.fetch --collect and ote_soap.exchange_rate; it waits up to
+60 s for it. The fetch_log row is written before the lock is taken.
 
 Usage (inside the container, cwd /app/scripts):
     python3 -m ote_soap.limits [--dry-run] [--debug] [--timeout 60] [--poll 2]
@@ -31,7 +34,8 @@ Usage (inside the container, cwd /app/scripts):
         --poll      seconds between queue pickups while the queue is empty
 
 Exit codes: 0 ok, 1 failed (rejected, timeout, no data, format error, database
-error), 2 queue lock held by another process.
+error), 2 queue lock still held by another process after 60 s (fetch_log row
+"failed" is written).
 """
 
 import sentry_init  # noqa: F401  (must be first)
@@ -41,12 +45,11 @@ sentry_init.set_module("ote")
 import argparse
 import json
 import sys
-import time
 from contextlib import closing
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, Callable
+from typing import Any
 
 import psycopg2
 from lxml import etree
@@ -55,12 +58,11 @@ from psycopg2 import extras
 import fetch_log
 from common import setup_logging
 from config import DB_HOST, DB_NAME, DB_PASSWORD, DB_PORT, DB_SCHEMA, DB_USER
-from ote_soap.client import BASE_URL, SIGN_ALG, OteResponse, OteSoapClient, OteSoapError
+from ote_soap.client import BASE_URL, SIGN_ALG, OteSoapClient, OteSoapError
 from ote_soap.limits_parser import LimitsFormatError, is_limits_message, parse_limits
 from ote_soap.messages import PRAGUE
-from ote_soap.shared import (
-    OUT_ROOT, QueueLockHeld, describe, load_credentials, pickup, queue_lock, send_report,
-)
+from ote_soap.report import LOCK_WAIT_S, ReportRunError, ask_and_wait
+from ote_soap.shared import OUT_ROOT, QueueLockHeld, load_credentials, queue_lock
 
 REPORT_CODE = "463"
 FETCH_SOURCE = "ote"
@@ -111,11 +113,8 @@ UPSERT_SQL = (
     + ", updated_at = CURRENT_TIMESTAMP RETURNING (xmax = 0) AS inserted"
 )
 
-# Verdicts of classify()
-OURS, FAILED, WAIT, UNRELATED = "ours", "failed", "wait", "unrelated"
 
-
-class LimitsRunError(RuntimeError):
+class LimitsRunError(ReportRunError):
     """The run failed; the message is the reason (goes to the log and to fetch_log.error)."""
 
 
@@ -127,62 +126,6 @@ class RunResult:
     other: int  # of those, the number in other_values
     inserted: int | None  # None in a dry run
     updated: int | None
-
-
-# --- queue matching ---------------------------------------------------------
-
-def reference_id(element: etree._Element) -> str | None:
-    """Reference@id of an OTE message element (the id of the request it answers)."""
-    for child in element:
-        if isinstance(child.tag, str) and etree.QName(child).localname == "Reference":
-            return child.get("id")
-    return None
-
-
-def classify(resp: OteResponse, request_id: str) -> tuple[str, etree._Element | None]:
-    """Decide what a queue pickup is. Returns (verdict, SFVOTLIMITS element for OURS).
-
-    OURS       an SFVOTLIMITS answering our request
-    FAILED     a queue item answers our request but carries no SFVOTLIMITS (no data, error)
-    WAIT       plain "queue empty" (RESPONSE 922, no payload)
-    UNRELATED  any other message
-    """
-    for element in resp.payload:
-        if is_limits_message(element) and reference_id(element) == request_id:
-            return OURS, element
-    if resp.reference_id == request_id or any(reference_id(p) == request_id for p in resp.payload):
-        return FAILED, None
-    if not resp.payload and resp.response_code == "922":
-        return WAIT, None
-    return UNRELATED, None
-
-
-def wait_for_limits(
-    client: OteSoapClient, request_id: str, timeout_s: float, poll_s: float, logger,
-    sleep: Callable[[float], None] = time.sleep, clock: Callable[[], float] = time.monotonic,
-) -> etree._Element:
-    """Poll the queue until our SFVOTLIMITS arrives. Every handed-over message is saved."""
-    deadline = clock() + timeout_s
-    last_empty: OteResponse | None = None
-    n = 0
-    while True:
-        if n and clock() + poll_s > deadline:
-            if last_empty is not None:
-                logger.info("Last queue answer before the timeout: %s", describe(last_empty))
-            raise LimitsRunError(f"timeout: no SFVOTLIMITS for request {request_id} within {timeout_s:g} s")
-        sleep(poll_s)
-        n += 1
-        resp, path = pickup(client, n, logger, save_empty_queue=False)
-        verdict, element = classify(resp, request_id)
-        if verdict == OURS and element is not None:
-            logger.info("Got our SFVOTLIMITS in pickup %d (%s)", n, path.name if path else "-")
-            return element
-        if verdict == FAILED:
-            raise LimitsRunError(f"OTE answered request {request_id} without limits data: {describe(resp)}")
-        if verdict == UNRELATED:
-            logger.warning("picked up unrelated message (%s) saved to %s", describe(resp), path)
-        else:
-            last_empty = resp
 
 
 # --- rows -------------------------------------------------------------------
@@ -294,11 +237,8 @@ def execute(args: argparse.Namespace, logger) -> RunResult:
     client = OteSoapClient(creds)
 
     today = datetime.now(PRAGUE).date()
-    request_id, receipt = send_report(client, REPORT_CODE, today, today, logger)
-    if receipt.return_code != "0":
-        raise LimitsRunError(f"request {request_id} not accepted: {describe(receipt)}")
-
-    element = wait_for_limits(client, request_id, args.timeout, args.poll, logger)
+    element = ask_and_wait(client, REPORT_CODE, today, today, is_limits_message, "SFVOTLIMITS",
+                           args.timeout, args.poll, logger)
     rows = parse_rows(element)
     snapshot_at = rows[0]["snapshot_at"]
     values, other = count_values(rows)
@@ -312,12 +252,18 @@ def execute(args: argparse.Namespace, logger) -> RunResult:
 
 
 def run_logged(args: argparse.Namespace, logger) -> int:
-    """One fetch_log row around execute(); returns the exit code."""
+    """One fetch_log row around the locked execute(); returns the exit code."""
     now = datetime.now(PRAGUE)  # the snapshot is taken seconds after this
     run = fetch_log.start(FETCH_SOURCE, FETCH_DATASET, dry_run=args.dry_run, data_from=now, data_to=now)
     try:
-        result = execute(args, logger)
-    except (LimitsRunError, OteSoapError) as exc:
+        with queue_lock(wait_s=LOCK_WAIT_S):
+            result = execute(args, logger)
+    except QueueLockHeld:
+        reason = f"queue lock held by another process for {LOCK_WAIT_S:g} s"
+        logger.error("OTE limit snapshot not run: %s", reason)
+        fetch_log.finish(run, "failed", error=reason)
+        return EXIT_LOCK_HELD
+    except (ReportRunError, OteSoapError) as exc:
         reason = str(exc)
     except Exception as exc:  # unexpected: still leave a failed row
         logger.exception("Unexpected error")
@@ -353,12 +299,7 @@ def main() -> int:
     logger = setup_logging(args.debug)
     logger.info("OTE SOAP endpoint %s, signing %s, output %s%s", BASE_URL, SIGN_ALG, OUT_ROOT,
                 " (dry run)" if args.dry_run else "")
-    try:
-        with queue_lock():
-            return run_logged(args, logger)
-    except QueueLockHeld as exc:
-        logger.error("OTE limit snapshot not run: %s", exc)
-        return EXIT_LOCK_HELD
+    return run_logged(args, logger)
 
 
 if __name__ == "__main__":

@@ -70,6 +70,12 @@
 # Takes the queue lock /tmp/ote_soap_queue.lock; per-order history still comes from the portal session.
 2-59/5 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 -m ote_soap.limits >> /var/log/ote.log 2>&1
 
+# OTE-CR - OTE SOAP settlement exchange rate (report 425/426) once a day at 01:00 into
+# finance.ote_exchange_rate. Asks for yesterday and today because OTE does not document when the
+# day's rate is published; re-running is idempotent (one row per date, upsert).
+# Shares the queue lock /tmp/ote_soap_queue.lock with the limit snapshot (which runs at 00:57 and 01:02).
+0 1 * * * export $(cat /etc/environment_for_cron | xargs) && cd /app/scripts && /usr/local/bin/python3 -m ote_soap.exchange_rate >> /var/log/ote.log 2>&1
+
 # OTE-CR - Download DAM matching curves every 10 min from 14:00-21:59 (published ~14:00).
 # Chains upload + backfill_da_60min in the same run so da_period_summary/curve_depth
 # and their _60min aggregates land seconds after the source. Self-stops once

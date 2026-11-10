@@ -2,7 +2,9 @@
 """
 OTE SOAP - financial reports (FZ), exploration stage.
 
-Writes every request and every response as raw XML files; touches NO database.
+Writes every request and every response as raw XML files. The only database
+write is the register of collected queue messages (--collect, see below); a
+database problem there is a warning, never an error.
 An answer OTE rejects (SOAP Fault, HTTP error, non-XML) is kept too, as
 rejected_<code>_<id> / collect_<n>_error.
 Files go to $OTE_SOAP_OUT_DIR (default /app/downloads/ote_soap/<YYYY-MM-DD>/).
@@ -17,10 +19,14 @@ Usage (inside the container, cwd /app/scripts):
     python3 -m ote_soap.fetch --request [--code 463|400,403,406|all] [--from YYYY-MM-DD --to YYYY-MM-DD]
         Send SFVOTREQ to ReportService for one code, a comma list, or all
         financial report codes (SFVOTREQ.xsd), 2 s apart. Dates default to today.
-    python3 -m ote_soap.fetch --collect [--max 100]
+    python3 -m ote_soap.fetch --collect [--max 100] [--no-db]
         Pick up queued messages (COMMONREQ 921) until the queue is empty or --max.
-        Takes the queue lock (/tmp/ote_soap_queue.lock, shared with ote_soap.limits);
-        exit 3 if another process holds it.
+        Every non-empty pickup is saved as raw XML first and then registered in
+        finance.ote_soap_message (this tool has no loader, so nothing it collects
+        has a table of its own). --no-db skips the register on purpose; an
+        unreachable database only logs a warning.
+        Takes the queue lock (/tmp/ote_soap_queue.lock, shared with ote_soap.limits
+        and ote_soap.exchange_rate) without waiting; exit 3 if another process holds it.
     --debug   verbose logging
 """
 
@@ -36,6 +42,7 @@ from lxml import etree
 from common import setup_logging
 from ote_soap.client import BASE_URL, SIGN_ALG, OteSoapClient, OteSoapError
 from ote_soap.messages import PRAGUE, SFVOTREQ_CODES, new_message_id, report_request
+from ote_soap.report import is_queue_empty, register_messages
 from ote_soap.shared import (
     OUT_ROOT, QueueLockHeld, load_credentials, out_dir, pickup, queue_lock, save, send_report,
 )
@@ -93,13 +100,15 @@ def do_request_many(client: OteSoapClient, codes: list[str], d_from: date, d_to:
     return 1 if failed else 0
 
 
-def do_collect(client: OteSoapClient, max_messages: int, logger) -> int:
+def do_collect(client: OteSoapClient, max_messages: int, register: bool, logger) -> int:
     received = 0
     for n in range(1, max_messages + 1):
-        resp, _ = pickup(client, n, logger)
-        if not resp.payload:
-            break
+        resp, path = pickup(client, n, logger)
+        if is_queue_empty(resp) or not (resp.payload or resp.response_code):
+            break  # nothing in the queue (or nothing parseable to register)
         received += 1
+        if register:
+            register_messages(resp, path, logger)
     else:
         logger.warning("Stopped after --max %d pickups; the queue may hold more", max_messages)
     logger.info("Collected %d message(s) into %s", received, out_dir())
@@ -117,6 +126,7 @@ def main() -> int:
     parser.add_argument("--from", dest="date_from", type=date.fromisoformat, help="YYYY-MM-DD, default today")
     parser.add_argument("--to", dest="date_to", type=date.fromisoformat, help="YYYY-MM-DD, default today")
     parser.add_argument("--max", type=int, default=100, help="max pickups for --collect (default 100)")
+    parser.add_argument("--no-db", action="store_true", help="--collect: do not register the messages in the database")
     parser.add_argument("--debug", action="store_true")
     args = parser.parse_args()
 
@@ -134,7 +144,7 @@ def main() -> int:
         if args.request:
             return do_request_many(client, codes, d_from, d_to, logger)
         with queue_lock():
-            return do_collect(client, args.max, logger)
+            return do_collect(client, args.max, not args.no_db, logger)
     except QueueLockHeld as exc:
         logger.error("%s; not collecting", exc)
         return EXIT_LOCK_HELD

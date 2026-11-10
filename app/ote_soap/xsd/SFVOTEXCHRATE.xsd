@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- edited with XMLSpy v2013 rel. 2 (x64) (http://www.altova.com) by Vaclav Snasel (Logica Czech Republic s.r.o.) -->
+<xs:schema xmlns="http://www.ote-cr.cz/schema/sfvot/exchrate" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:ote="http://www.ote-cr.cz/schema/globals" xmlns:ds="http://www.w3.org/2000/09/xmldsig#" targetNamespace="http://www.ote-cr.cz/schema/sfvot/exchrate" elementFormDefault="qualified" attributeFormDefault="unqualified">
+	<xs:import namespace="http://www.ote-cr.cz/schema/globals" schemaLocation="./ote_globals.xsd"/>
+	<xs:import namespace="http://www.w3.org/2000/09/xmldsig#" schemaLocation="./xmldsig-core-schema.xsd"/>
+	<xs:element name="SFVOTEXCHRATE">
+		<xs:annotation>
+			<xs:documentation xml:lang="CS">Hlavni element spolecny pro vsechny financni reporty</xs:documentation>
+			<xs:documentation xml:lang="EN">Root element containing basic message data</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="SenderIdentification" type="ote:SenderIdentificationType">
+					<xs:annotation>
+						<xs:documentation xml:lang="CS">Identifikace odesilatele zpravy, tzn. OTE, a.s.</xs:documentation>
+						<xs:documentation xml:lang="EN">EAN13 Sender identification - OTE, a.s.</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="ReceiverIdentification" type="ote:ReceiverIdentificationType">
+					<xs:annotation>
+						<xs:documentation xml:lang="CS">Identifikace prijemce, resp. odesilatele pozadavku</xs:documentation>
+						<xs:documentation xml:lang="EN">Message receiver identification</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Reference" type="ote:ReferenceType" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation xml:lang="CS">Reference na předešlou zprávu. Pokud není element obsažen v cílovém XML nebyl report generován na základě XML požadavku.</xs:documentation>
+						<xs:documentation xml:lang="EN">Reference to the previous message, if any.</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="ExchRates">
+					<xs:annotation>
+						<xs:documentation xml:lang="CS">Vypořádací kurz</xs:documentation>
+						<xs:documentation xml:lang="EN">Exchange rate</xs:documentation>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:sequence>
+							<xs:element name="OteFinalRate" minOccurs="0" maxOccurs="unbounded">
+								<xs:annotation>
+									<xs:documentation xml:lang="CS">Obsahuje hodnotu vypořádacího kurzu OTE pro daný den</xs:documentation>
+									<xs:documentation xml:lang="EN">The OTE final rate value</xs:documentation>
+								</xs:annotation>
+								<xs:complexType>
+									<xs:simpleContent>
+										<xs:extension base="xs:decimal">
+											<xs:attribute name="validDate" type="xs:date" use="required">
+												<xs:annotation>
+													<xs:documentation xml:lang="CS">Datum platnosti kurzu</xs:documentation>
+													<xs:documentation xml:lang="EN">Rate valid date</xs:documentation>
+												</xs:annotation>
+											</xs:attribute>
+										</xs:extension>
+									</xs:simpleContent>
+								</xs:complexType>
+							</xs:element>
+							<xs:element name="OteFinalVdtRate" minOccurs="0" maxOccurs="unbounded">
+								<xs:annotation>
+									<xs:documentation xml:lang="CS">Obsahuje hodnotu vypořádacího kurzu OTE pro trh VDT pro daný den</xs:documentation>
+									<xs:documentation xml:lang="EN">The OTE final rate value for IM trades</xs:documentation>
+								</xs:annotation>
+								<xs:complexType>
+									<xs:simpleContent>
+										<xs:extension base="xs:decimal">
+											<xs:attribute name="validDate" type="xs:date" use="required">
+												<xs:annotation>
+													<xs:documentation xml:lang="CS">Datum platnosti kurzu</xs:documentation>
+													<xs:documentation xml:lang="EN">Rate valid date</xs:documentation>
+												</xs:annotation>
+											</xs:attribute>
+										</xs:extension>
+									</xs:simpleContent>
+								</xs:complexType>
+							</xs:element>
+							<xs:element name="OteFinalIdaRate" minOccurs="0" maxOccurs="unbounded">
+								<xs:annotation>
+									<xs:documentation xml:lang="CS">Obsahuje hodnotu vypořádacího kurzu OTE pro trh IDA pro daný den</xs:documentation>
+									<xs:documentation xml:lang="EN">The OTE final rate value IDA market</xs:documentation>
+								</xs:annotation>
+								<xs:complexType>
+									<xs:simpleContent>
+										<xs:extension base="xs:decimal">
+											<xs:attribute name="validDate" type="xs:date" use="required">
+												<xs:annotation>
+													<xs:documentation xml:lang="CS">Datum platnosti kurzu</xs:documentation>
+													<xs:documentation xml:lang="EN">Rate valid date</xs:documentation>
+												</xs:annotation>
+											</xs:attribute>
+										</xs:extension>
+									</xs:simpleContent>
+								</xs:complexType>
+							</xs:element>
+						</xs:sequence>
+					</xs:complexType>
+				</xs:element>
+				<xs:element ref="ds:Signature" minOccurs="0"/>
+			</xs:sequence>
+			<xs:attribute name="answer-required" type="xs:boolean" use="required">
+				<xs:annotation>
+					<xs:documentation xml:lang="CS">Indikace pozadavku na odpoved</xs:documentation>
+					<xs:documentation xml:lang="EN">Indication of request for response 1=YES, 0=NO</xs:documentation>
+				</xs:annotation>
+			</xs:attribute>
+			<xs:attribute name="date-time" type="xs:dateTime" use="required">
+				<xs:annotation>
+					<xs:documentation xml:lang="CS">Datum a cas zpravy</xs:documentation>
+					<xs:documentation xml:lang="EN">Date and time of message</xs:documentation>
+				</xs:annotation>
+			</xs:attribute>
+			<xs:attribute name="dtd-release" type="xs:string" use="required" fixed="1">
+				<xs:annotation>
+					<xs:documentation xml:lang="CS">Rezervovano pro pristi verze. Zatim konstanta '1'</xs:documentation>
+					<xs:documentation xml:lang="EN">Reserved for incoming versions. So far a constant '1'</xs:documentation>
+				</xs:annotation>
+			</xs:attribute>
+			<xs:attribute name="dtd-version" type="xs:unsignedByte" use="required" fixed="1">
+				<xs:annotation>
+					<xs:documentation xml:lang="CS">Rezervovano pro prist verze. Zatim konstanta '1'</xs:documentation>
+					<xs:documentation xml:lang="EN">Reserved for incoming versions; so far a constant '1'</xs:documentation>
+				</xs:annotation>
+			</xs:attribute>
+			<xs:attribute name="id" type="ote:msg-id" use="required">
+				<xs:annotation>
+					<xs:documentation xml:lang="CS">Identifikator zpravy</xs:documentation>
+					<xs:documentation xml:lang="EN">Message Identification</xs:documentation>
+				</xs:annotation>
+			</xs:attribute>
+			<xs:attribute name="message-code" use="required">
+				<xs:annotation>
+					<xs:documentation xml:lang="CS">Kod zpravy upresnujici obsah zpravy.</xs:documentation>
+					<xs:documentation xml:lang="EN">Message code that specifies the message content.</xs:documentation>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:enumeration value="426">
+							<xs:annotation>
+								<xs:documentation xml:lang="CS">Vypořádací kurz OTE</xs:documentation>
+								<xs:documentation xml:lang="EN">OTE settlement exchange rate</xs:documentation>
+							</xs:annotation>
+						</xs:enumeration>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:attribute>
+		</xs:complexType>
+	</xs:element>
+</xs:schema>
