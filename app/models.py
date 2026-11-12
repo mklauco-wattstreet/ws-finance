@@ -423,18 +423,29 @@ class OteExchangeRate(Base):
 
 
 class OteSoapMessage(Base):
-    """Register of OTE SOAP messages picked up from the queue that have no table of
-    their own (migration 087). One row per message: shows that OTE delivered
-    something we have no loader for yet and where its raw XML file is
-    (downloads/ote_soap/<YYYY-MM-DD>/file_name). The content is not stored here.
-    Limit snapshots (464) and exchange rates (426) loaded by their own runners get
-    no row. No unique constraint besides the primary key.
+    """Register of every OTE SOAP message, sent or received (migration 087, extended
+    by 089). One row per message: direction 'out' = requests we send (report requests
+    SFVOTREQ, queue pickups COMMONREQ 921), direction 'in' = answers from OTE
+    (receipts, "queue empty" 922, data messages, the 424 limit warning, failed calls).
+    The message XML is not stored here: it is in downloads/ote_soap/<YYYY-MM-DD>/file_name
+    when file_name is set. reply_to_id links an 'in' row to the 'out' row of the same
+    HTTP call; fetch_log_id links to the fetch_log run (NULL for ote_soap.fetch). Neither
+    has a foreign key. level (ok/warning/error) is set by the writer; outcome is only set
+    on an 'out' report request a runner waited for. No unique constraint besides the
+    primary key.
     """
     __tablename__ = 'ote_soap_message'
     __table_args__ = (
         PrimaryKeyConstraint('id', name='ote_soap_message_pkey'),
+        CheckConstraint("direction IN ('in', 'out')", name='ote_soap_message_direction_check'),
+        CheckConstraint("level IN ('ok', 'warning', 'error')", name='ote_soap_message_level_check'),
+        CheckConstraint("outcome IN ('delivered', 'no_data', 'timeout', 'failed')", name='ote_soap_message_outcome_check'),
         Index('ix_ote_soap_message_received_at', text('received_at DESC')),
         Index('ix_ote_soap_message_code', 'message_code'),
+        Index('ix_ote_soap_message_message_id', 'message_id'),
+        Index('ix_ote_soap_message_request_id', 'request_id'),
+        Index('ix_ote_soap_message_fetch_log_id', 'fetch_log_id'),
+        Index('ix_ote_soap_message_problem', text('received_at DESC'), postgresql_where=text("level <> 'ok'")),
         {'schema': DB_SCHEMA}
     )
 
@@ -447,8 +458,19 @@ class OteSoapMessage(Base):
     response_code: Mapped[Optional[str]] = mapped_column(String(3))
     reason_code: Mapped[Optional[str]] = mapped_column(String(10))
     reason_text: Mapped[Optional[str]] = mapped_column(Text)
-    file_name: Mapped[str] = mapped_column(Text, nullable=False)
+    file_name: Mapped[Optional[str]] = mapped_column(Text)
     created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+    direction: Mapped[str] = mapped_column(String(3), nullable=False, server_default=text("'in'"))
+    service: Mapped[Optional[str]] = mapped_column(String(20))
+    reply_to_id: Mapped[Optional[int]] = mapped_column(BigInteger)
+    fetch_log_id: Mapped[Optional[int]] = mapped_column(BigInteger)
+    http_status: Mapped[Optional[int]] = mapped_column(Integer)
+    return_code: Mapped[Optional[str]] = mapped_column(String(10))
+    reason_type: Mapped[Optional[str]] = mapped_column(String(3))
+    result_code: Mapped[Optional[str]] = mapped_column(String(10))
+    level: Mapped[str] = mapped_column(String(7), nullable=False, server_default=text("'ok'"))
+    outcome: Mapped[Optional[str]] = mapped_column(String(10))
+    error: Mapped[Optional[str]] = mapped_column(Text)
 
 
 class OteMonthlySettlementData(Base):
