@@ -68,6 +68,14 @@ def _session() -> requests.Session:
     return session
 
 
+def reference_id(element: etree._Element) -> str | None:
+    """Reference@id of an OTE message element (the id of the request it answers)."""
+    for child in element:
+        if isinstance(child.tag, str) and etree.QName(child).localname == "Reference":
+            return child.get("id")
+    return None
+
+
 def parse_response(raw: bytes) -> OteResponse:
     try:
         root = etree.fromstring(raw)

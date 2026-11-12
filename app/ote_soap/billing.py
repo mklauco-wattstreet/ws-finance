@@ -41,14 +41,16 @@ is written; the writing of both reports is ONE transaction.
 The answers arrive asynchronously in the OTE queue (ote_soap/report.py); the run holds the
 queue lock /tmp/ote_soap_queue.lock (shared with the other OTE SOAP runners) and waits up
 to 60 s for it. The fetch_log row (source "ote", dataset "soap_billing", data_from /
-data_to = first / last day of the month) is written before the lock is taken.
+data_to = first / last day of the month) is written before the lock is taken. Every
+request and every answer is one finance.ote_soap_message row linked to that fetch_log row.
 
 Usage (inside the container, cwd /app/scripts):
     python3 -m ote_soap.billing [--month YYYY-MM] [--dry-run] [--debug] [--force]
                                 [--timeout 40] [--poll 2]
         --month     month to load (default the previous month, never before FIRST_MONTH)
-        --dry-run   the requests ARE sent and the queue IS read (files are saved); the line
-                    table is only read (to compare), nothing is written to either table
+        --dry-run   the requests ARE sent and the queue IS read (files are saved, the messages
+                    are logged); the line table is only read (to compare), nothing is written
+                    to either table
         --force     load even though fetch_log says the month is already loaded
         --timeout   seconds to wait for EACH answer after its request was accepted (default 40:
                     OTE answers within seconds, and the cron run at 18:00 holds the queue lock
@@ -82,6 +84,7 @@ from config import DB_HOST, DB_NAME, DB_PASSWORD, DB_PORT, DB_SCHEMA, DB_USER
 from ote_soap.billing_parser import (
     DATA_NUMBERS, SUMMARY_NUMBERS, BillingFormatError, is_billing_message, parse_billing,
 )
+from ote_soap import message_log
 from ote_soap.client import BASE_URL, SIGN_ALG, OteSoapClient, OteSoapError
 from ote_soap.messages import PRAGUE
 from ote_soap.report import (
@@ -655,6 +658,7 @@ def run_logged(args: argparse.Namespace, logger) -> int:
             return EXIT_OK
 
     run = fetch_log.start(FETCH_SOURCE, FETCH_DATASET, dry_run=args.dry_run, data_from=args.first, data_to=args.last)
+    message_log.set_run(run)
     try:
         with queue_lock(wait_s=LOCK_WAIT_S):
             outcome = execute(args, logger)

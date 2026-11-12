@@ -19,7 +19,8 @@ The answer arrives asynchronously in the queue that is emptied one message at a
 time with COMMONREQ 921 (D1.4.4 section 8.1). OTE removes a message from the
 queue once it hands it over, so EVERY picked-up message is saved to
 $OTE_SOAP_OUT_DIR (same names as ote_soap.fetch --collect) even when it is not
-ours; an unrelated one is also registered in finance.ote_soap_message (a database
+ours. Every request and every answer is one finance.ote_soap_message row linked to
+this run's fetch_log row; an unrelated message gets level warning (a database
 problem there is only a warning). Our answer is the SFVOTLIMITS whose Reference@id
 is our request id. The request/queue/match logic is shared with ote_soap.exchange_rate
 (ote_soap/report.py). The whole run holds the queue lock /tmp/ote_soap_queue.lock,
@@ -28,8 +29,9 @@ shared with ote_soap.fetch --collect and ote_soap.exchange_rate; it waits up to
 
 Usage (inside the container, cwd /app/scripts):
     python3 -m ote_soap.limits [--dry-run] [--debug] [--timeout 60] [--poll 2]
-        --dry-run   the request IS sent and the queue IS read (files are saved);
-                    only the database INSERT is skipped and the wide row is printed
+        --dry-run   the request IS sent and the queue IS read (files are saved, the
+                    messages are logged); only the INSERT into ote_limit_snapshot is
+                    skipped and the wide row is printed
         --timeout   seconds to wait for our answer after the request was accepted
         --poll      seconds between queue pickups while the queue is empty
 
@@ -58,6 +60,7 @@ from psycopg2 import extras
 import fetch_log
 from common import setup_logging
 from config import DB_HOST, DB_NAME, DB_PASSWORD, DB_PORT, DB_SCHEMA, DB_USER
+from ote_soap import message_log
 from ote_soap.client import BASE_URL, SIGN_ALG, OteSoapClient, OteSoapError
 from ote_soap.limits_parser import LimitsFormatError, is_limits_message, parse_limits
 from ote_soap.messages import PRAGUE
@@ -255,6 +258,7 @@ def run_logged(args: argparse.Namespace, logger) -> int:
     """One fetch_log row around the locked execute(); returns the exit code."""
     now = datetime.now(PRAGUE)  # the snapshot is taken seconds after this
     run = fetch_log.start(FETCH_SOURCE, FETCH_DATASET, dry_run=args.dry_run, data_from=now, data_to=now)
+    message_log.set_run(run)
     try:
         with queue_lock(wait_s=LOCK_WAIT_S):
             result = execute(args, logger)

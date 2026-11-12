@@ -21,8 +21,9 @@ a DIFFERENT value is logged as a WARNING (date, column, old -> new); the new val
 still written.
 
 The answer arrives asynchronously in the queue (see ote_soap/report.py): every
-picked-up message is saved to $OTE_SOAP_OUT_DIR, unrelated ones are also registered in
-finance.ote_soap_message. Our answer is the SFVOTEXCHRATE whose Reference@id is our
+picked-up message is saved to $OTE_SOAP_OUT_DIR, and every request and every answer is
+one finance.ote_soap_message row linked to this run's fetch_log row (an unrelated
+message gets level warning). Our answer is the SFVOTEXCHRATE whose Reference@id is our
 request id. The run holds the queue lock /tmp/ote_soap_queue.lock (shared with
 ote_soap.limits and ote_soap.fetch --collect) and waits up to 60 s for it; the
 fetch_log row is written before the lock is taken.
@@ -30,8 +31,9 @@ fetch_log row is written before the lock is taken.
 Usage (inside the container, cwd /app/scripts):
     python3 -m ote_soap.exchange_rate [--dry-run] [--debug] [--from YYYY-MM-DD] [--to YYYY-MM-DD]
                                       [--timeout 60] [--poll 2]
-        --dry-run   the request IS sent and the queue IS read (files are saved);
-                    the table is not read or written, the rows are printed
+        --dry-run   the request IS sent and the queue IS read (files are saved, the
+                    messages are logged); ote_exchange_rate is not read or written,
+                    the rows are printed
         --from/--to first / last valid date asked for (default yesterday / today)
         --timeout   seconds to wait for our answer after the request was accepted
         --poll      seconds between queue pickups while the queue is empty
@@ -57,6 +59,7 @@ from psycopg2 import extras
 import fetch_log
 from common import setup_logging
 from config import DB_HOST, DB_NAME, DB_PASSWORD, DB_PORT, DB_SCHEMA, DB_USER
+from ote_soap import message_log
 from ote_soap.client import BASE_URL, SIGN_ALG, OteSoapClient, OteSoapError
 from ote_soap.exchange_rate_parser import (
     COLUMNS, ExchangeRateFormatError, is_exchange_rate_message, parse_exchange_rate,
@@ -213,6 +216,7 @@ def run_logged(args: argparse.Namespace, logger) -> int:
     """One fetch_log row around the locked execute(); returns the exit code."""
     run = fetch_log.start(FETCH_SOURCE, FETCH_DATASET, dry_run=args.dry_run,
                           data_from=args.date_from, data_to=args.date_to)
+    message_log.set_run(run)
     try:
         with queue_lock(wait_s=LOCK_WAIT_S):
             result = execute(args, logger)
