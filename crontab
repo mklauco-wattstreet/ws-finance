@@ -182,6 +182,45 @@
 # always re-fetched; skip_unchanged on the upsert keeps updated_at honest.
 14,29,44,59 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && flock -n /tmp/entsoe_congestion_income.lock /usr/local/bin/python3 -m runners.entsoe_congestion_income_runner >> /var/log/entsoe_congestion_income.log 2>&1 || echo "[cron] congestion_income: skipped (previous run still holding the lock) or exited non-zero" >> /var/log/entsoe_congestion_income.log
 
+# ----------------------------------------------------------------------------
+# Cross-border level 0 collectors (CZ borders: ENTSO-E, JAO Core, CEPS).
+# Each line has its own flock + lock file + log file; no --debug (tracebacks can print the API token),
+# no --start/--end (default cron-mode window). --max-runtime keeps a degraded upstream from outliving
+# the slot: 840 s on the 15-minute lines, 3300 s on the hourly lines.
+# ----------------------------------------------------------------------------
+
+# ENTSO-E - Border flows (A11 physical + A09 scheduled day-ahead / total) per CZ border and direction, every 15 min
+# Window: physical D-2..now, scheduled D-1..D+1 (Prague); whole window re-fetched (values are revised).
+14,29,44,59 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && flock -n /tmp/entsoe_border_flow.lock /usr/local/bin/python3 -m runners.entsoe_border_flow_runner --max-runtime 840 >> /var/log/entsoe_border_flow.log 2>&1 || echo "[cron] border_flow: skipped (previous run still holding the lock) or exited non-zero" >> /var/log/entsoe_border_flow.log
+
+# ENTSO-E - Zone net positions (DA / intraday / scheduled) + congestion costs, every 15 min
+# Window: yesterday..tomorrow, always re-fetched; monthly congestion costs only in the 06:00-06:30 Prague firing.
+14,29,44,59 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && flock -n /tmp/entsoe_net_position.lock /usr/local/bin/python3 -m runners.entsoe_net_position_runner --max-runtime 840 >> /var/log/entsoe_net_position.log 2>&1 || echo "[cron] net_position: skipped (previous run still holding the lock) or exited non-zero" >> /var/log/entsoe_net_position.log
+
+# JAO - Core flow-based day-ahead results + Core ID capacity/auction results, every 15 min
+# Window: yesterday..tomorrow per Prague delivery day (day-ahead D+1 exists from about 13:00 on D); idempotent upserts.
+14,29,44,59 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && flock -n /tmp/jao_core.lock /usr/local/bin/python3 -m runners.jao_core_runner --max-runtime 840 >> /var/log/jao_core.log 2>&1 || echo "[cron] jao_core: skipped (previous run still holding the lock) or exited non-zero" >> /var/log/jao_core.log
+
+# ENTSO-E - Border balancing: limits, border volumes, CZ area volumes (incl. aFRR 4 s volumes), every 15 min
+# Window: yesterday 00:00 through the end of today (Prague); whole window re-fetched (preliminary values are replaced by final ones).
+14,29,44,59 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && flock -n /tmp/entsoe_border_balancing.lock /usr/local/bin/python3 -m runners.entsoe_border_balancing_runner --max-runtime 840 >> /var/log/entsoe_border_balancing.log 2>&1 || echo "[cron] border_balancing: skipped (previous run still holding the lock) or exited non-zero" >> /var/log/entsoe_border_balancing.log
+
+# CEPS - Cross-border power flows per border profile (1-min -> 15-min aggregate), every 15 min
+# Explicit --dataset only (not part of --dataset all). Pipeline has no --max-runtime; window yesterday..tomorrow.
+14,29,44,59 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && flock -n /tmp/ceps_crossborder_flows.lock /usr/local/bin/python3 -m ceps.ceps_soap_pipeline --dataset crossborder_flows >> /var/log/ceps_crossborder_flows.log 2>&1 || echo "[cron] ceps crossborder_flows: skipped (previous run still holding the lock) or exited non-zero" >> /var/log/ceps_crossborder_flows.log
+
+# ENTSO-E - Transmission infrastructure outages (A78) on CZ borders, both directions, hourly at :44
+# Window: outages overlapping [today-1, today+30] (Prague), always re-fetched because outages are revised and cancelled.
+44 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && flock -n /tmp/entsoe_transmission_outages.lock /usr/local/bin/python3 -m runners.entsoe_transmission_outages_runner --max-runtime 3300 >> /var/log/entsoe_transmission_outages.log 2>&1 || echo "[cron] transmission_outages: skipped (previous run still holding the lock) or exited non-zero" >> /var/log/entsoe_transmission_outages.log
+
+# ENTSO-E - Border capacity (A61 forecast, A31 offered, A26 allocated/nominated, A25 use/revenue) per CZ border and direction, hourly at :44
+# Window: intraday items today..tomorrow, day items yesterday..tomorrow, week/month/year items for the current and next unit.
+44 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && flock -n /tmp/entsoe_border_capacity.lock /usr/local/bin/python3 -m runners.entsoe_border_capacity_runner --max-runtime 3300 >> /var/log/entsoe_border_capacity.log 2>&1 || echo "[cron] border_capacity: skipped (previous run still holding the lock) or exited non-zero" >> /var/log/entsoe_border_capacity.log
+
+# CEPS - Emergency exchange (hourly SUM per border and direction), hourly at :44
+# Explicit --dataset only (not part of --dataset all). Pipeline has no --max-runtime; window yesterday..tomorrow; mostly empty.
+44 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && flock -n /tmp/ceps_emergency_exchange.lock /usr/local/bin/python3 -m ceps.ceps_soap_pipeline --dataset emergency_exchange >> /var/log/ceps_emergency_exchange.log 2>&1 || echo "[cron] ceps emergency_exchange: skipped (previous run still holding the lock) or exited non-zero" >> /var/log/ceps_emergency_exchange.log
+
 # ============================================================================
 # CNB - Czech National Bank Exchange Rate
 # ============================================================================
