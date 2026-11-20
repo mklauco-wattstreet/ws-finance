@@ -42,6 +42,10 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from config import DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT
 from ceps.ceps_soap_xml_parser import parse_soap_xml
 from ceps.ceps_soap_uploader import upsert_data
+from ceps.ceps_crossborder import (
+    CROSSBORDER_DATASETS, RECORD_KEY_FIELDS, build_crossborder_body,
+    parse_crossborder, upsert_crossborder,
+)
 
 # SOAP Endpoint
 SOAP_URL = "https://www.ceps.cz/_layouts/CepsData.asmx"
@@ -79,10 +83,14 @@ DATASETS = {
     'estimated_imbalance_price': {
         'operation': 'OdhadovanaCenaOdchylky',
         'soap_action': 'https://www.ceps.cz/CepsData/OdhadovanaCenaOdchylky',
-    }
+    },
+    # Cross-border datasets (ceps/ceps_crossborder.py): explicit --dataset only
+    **CROSSBORDER_DATASETS,
 }
 
 # All datasets for --dataset all
+# The cross-border datasets (crossborder_flows, emergency_exchange) are likewise
+# excluded: they are run explicitly with --dataset <name> and have no cron line.
 # 'imbalance' is intentionally excluded — it is fetched separately on its own
 # 5-minute cron schedule (see crontab), so it must not also be pulled in here.
 ALL_DATASETS = [
@@ -169,6 +177,8 @@ def build_soap_envelope(operation: str, date_from: str, date_to: str) -> str:
             <dateTo>{date_to}</dateTo>
         </{operation}>
         """
+    elif operation in ('CrossborderPowerFlows', 'EmergencyExchange'):
+        body_content = build_crossborder_body(operation, date_from, date_to)
     else:
         body_content = f"""
         <{operation} xmlns="https://www.ceps.cz/CepsData/">
@@ -312,19 +322,28 @@ def process_dataset(
                     logger.error(f"  {dataset}: XML parse failed")
                     failed_chunks += 1
                 else:
-                    records = parse_soap_xml(dataset, result_element)
+                    if dataset in CROSSBORDER_DATASETS:
+                        records = parse_crossborder(dataset, result_element)
+                    else:
+                        records = parse_soap_xml(dataset, result_element)
                     total_parsed += len(records)
 
                     if records and not dry_run:
                         try:
                             # Deduplicate records on the UTC instant (the
                             # local time repeats on the fall-back day)
+                            key_fields = RECORD_KEY_FIELDS.get(dataset, ())
                             seen = {}
                             for record in records:
-                                seen[record['delivery_datetime']] = record
+                                key = (record['delivery_datetime'],
+                                       *(record[f] for f in key_fields))
+                                seen[key] = record
                             deduped_records = list(seen.values())
 
-                            uploaded = upsert_data(dataset, deduped_records, conn, logger)
+                            if dataset in CROSSBORDER_DATASETS:
+                                uploaded = upsert_crossborder(dataset, deduped_records, conn, logger)
+                            else:
+                                uploaded = upsert_data(dataset, deduped_records, conn, logger)
                             total_uploaded += uploaded
                         except Exception as e:
                             logger.error(f"  {dataset}: upload failed: {e}")

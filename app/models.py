@@ -8,7 +8,7 @@ from decimal import Decimal
 from typing import Optional
 
 from sqlalchemy import (
-    BigInteger, Boolean, CheckConstraint, Date, DateTime, Index, Integer, Numeric, SmallInteger, String,
+    BigInteger, Boolean, CheckConstraint, Date, DateTime, ForeignKey, Index, Integer, Numeric, SmallInteger, String,
     Text, UniqueConstraint, PrimaryKeyConstraint, text
 )
 from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP
@@ -2298,3 +2298,523 @@ class FetchLog(Base):
     data_from: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True))
     data_to: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True))
     error: Mapped[Optional[str]] = mapped_column(Text)
+
+
+# ---------------------------------------------------------------------------
+# Cross-border tables (migration 090, docs/cross_border_plan.md section 2.1)
+# ---------------------------------------------------------------------------
+
+_AREA_FK = f'{DB_SCHEMA}.entsoe_areas.id'
+
+
+class EntsoeBorders(Base):
+    """Border register: one row per border (bidding-zone or control-area pair).
+
+    level 0 = CZ borders, level 1 = borders of CZ neighbours. Runners fetch the
+    is_active rows, both directions (app/entsoe/borders.py).
+    """
+    __tablename__ = 'entsoe_borders'
+    __table_args__ = (
+        PrimaryKeyConstraint('border_id', name='entsoe_borders_pkey'),
+        UniqueConstraint('border_code', name='entsoe_borders_border_code_key'),
+        UniqueConstraint('area_a_id', 'area_b_id', name='entsoe_borders_areas_key'),
+        CheckConstraint("kind IN ('bidding_zone', 'control_area')", name='entsoe_borders_kind_check'),
+        CheckConstraint('area_a_id <> area_b_id', name='entsoe_borders_areas_differ_check'),
+        {'schema': DB_SCHEMA}
+    )
+
+    border_id: Mapped[int] = mapped_column(SmallInteger, autoincrement=False)
+    border_code: Mapped[str] = mapped_column(Text, nullable=False)
+    area_a_id: Mapped[int] = mapped_column(Integer, ForeignKey(_AREA_FK, name='entsoe_borders_area_a_fkey'), nullable=False)
+    area_b_id: Mapped[int] = mapped_column(Integer, ForeignKey(_AREA_FK, name='entsoe_borders_area_b_fkey'), nullable=False)
+    kind: Mapped[str] = mapped_column(Text, nullable=False)
+    level: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    capacity_region: Mapped[Optional[str]] = mapped_column(Text)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default='true')
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+
+
+class EntsoeBorderFlows(Base):
+    """Directed 15-min border flows from_area_id -> to_area_id (out_Domain -> in_Domain).
+
+    physical (A11), scheduled day-ahead (A09/A01), scheduled total (A09/A05).
+    """
+    __tablename__ = 'entsoe_border_flows'
+    __table_args__ = (
+        PrimaryKeyConstraint('delivery_datetime', 'from_area_id', 'to_area_id', name='entsoe_border_flows_pkey'),
+        CheckConstraint('from_area_id <> to_area_id', name='entsoe_border_flows_areas_differ_check'),
+        Index('ix_entsoe_border_flows_border_time', 'from_area_id', 'to_area_id', 'delivery_datetime'),
+        {'schema': DB_SCHEMA}
+    )
+
+    delivery_datetime: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    from_area_id: Mapped[int] = mapped_column(Integer, ForeignKey(_AREA_FK, name='entsoe_border_flows_from_fkey'), nullable=False)
+    to_area_id: Mapped[int] = mapped_column(Integer, ForeignKey(_AREA_FK, name='entsoe_border_flows_to_fkey'), nullable=False)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    period: Mapped[int] = mapped_column(Integer, nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    physical_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    scheduled_da_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    scheduled_total_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+
+
+class EntsoeBorderCapacity(Base):
+    """Directed capacity / auction items per period (mixed resolution).
+
+    value is MW except auction_price (EUR/MW) and auction_revenue (EUR); unit says which.
+    """
+    __tablename__ = 'entsoe_border_capacity'
+    __table_args__ = (
+        PrimaryKeyConstraint('period_start', 'from_area_id', 'to_area_id', 'item', 'horizon',
+                             name='entsoe_border_capacity_pkey'),
+        CheckConstraint('from_area_id <> to_area_id', name='entsoe_border_capacity_areas_differ_check'),
+        CheckConstraint(
+            "item IN ('ntc_forecast', 'offered_explicit', 'offered_intraday', 'already_allocated', "
+            "'nominated', 'use_requested', 'use_allocated', 'auction_price', 'auction_revenue')",
+            name='entsoe_border_capacity_item_check'),
+        CheckConstraint(
+            "horizon IN ('day', 'week', 'month', 'year', 'idct', 'ida1', 'ida2', 'ida3')",
+            name='entsoe_border_capacity_horizon_check'),
+        Index('ix_entsoe_border_capacity_border_item_time',
+              'from_area_id', 'to_area_id', 'item', 'horizon', 'period_start'),
+        {'schema': DB_SCHEMA}
+    )
+
+    period_start: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    from_area_id: Mapped[int] = mapped_column(Integer, ForeignKey(_AREA_FK, name='entsoe_border_capacity_from_fkey'), nullable=False)
+    to_area_id: Mapped[int] = mapped_column(Integer, ForeignKey(_AREA_FK, name='entsoe_border_capacity_to_fkey'), nullable=False)
+    item: Mapped[str] = mapped_column(String(20), nullable=False)
+    horizon: Mapped[str] = mapped_column(String(10), nullable=False)
+    period_end: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    resolution: Mapped[Optional[str]] = mapped_column(String(10))
+    value: Mapped[Optional[Decimal]] = mapped_column(Numeric(16, 4))
+    unit: Mapped[Optional[str]] = mapped_column(String(10))
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+
+
+class EntsoeNetPositions(Base):
+    """15-min net positions per area (positive = net export), LIST-partitioned by country_code.
+
+    Day-ahead and intraday allocation (A25/B09), scheduled day-ahead and total (A09/B09).
+    Partition: CZ.
+    """
+    __tablename__ = 'entsoe_net_positions'
+    __table_args__ = (
+        PrimaryKeyConstraint('delivery_datetime', 'area_id', 'country_code', name='entsoe_net_positions_pkey'),
+        Index('ix_entsoe_net_positions_country_trade_date', 'country_code', 'trade_date'),
+        {'schema': DB_SCHEMA}
+    )
+
+    delivery_datetime: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    area_id: Mapped[int] = mapped_column(Integer, ForeignKey(_AREA_FK, name='entsoe_net_positions_area_fkey'), nullable=False)
+    country_code: Mapped[str] = mapped_column(String(5), nullable=False)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    period: Mapped[int] = mapped_column(Integer, nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    net_position_da_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    net_position_intraday_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    sched_net_position_da_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    sched_net_position_total_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+
+
+class EntsoeTransmissionOutages(Base):
+    """ENTSO-E A78 transmission unavailability, one row per document TimeSeries and revision.
+
+    Directed from_area_id (out_Domain) -> to_area_id (in_Domain). The surrogate id
+    is what entsoe_transmission_outage_points references. created_datetime is the
+    publication time (point-in-time gate).
+    """
+    __tablename__ = 'entsoe_transmission_outages'
+    __table_args__ = (
+        PrimaryKeyConstraint('doc_mrid', 'revision_number', 'timeseries_mrid', name='entsoe_transmission_outages_pkey'),
+        UniqueConstraint('id', name='entsoe_transmission_outages_id_key'),
+        CheckConstraint('from_area_id <> to_area_id', name='entsoe_transmission_outages_areas_differ_check'),
+        Index('ix_entsoe_transmission_outages_border_window',
+              'from_area_id', 'to_area_id', 'unavail_start', 'unavail_end'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, autoincrement=True, nullable=False)
+    doc_mrid: Mapped[str] = mapped_column(String(60), nullable=False)
+    revision_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    timeseries_mrid: Mapped[str] = mapped_column(String(60), nullable=False)
+    from_area_id: Mapped[int] = mapped_column(Integer, ForeignKey(_AREA_FK, name='entsoe_transmission_outages_from_fkey'), nullable=False)
+    to_area_id: Mapped[int] = mapped_column(Integer, ForeignKey(_AREA_FK, name='entsoe_transmission_outages_to_fkey'), nullable=False)
+    business_type: Mapped[Optional[str]] = mapped_column(String(3))
+    doc_status: Mapped[Optional[str]] = mapped_column(String(3))
+    created_datetime: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True))
+    asset_mrid: Mapped[Optional[str]] = mapped_column(String(60))
+    asset_name: Mapped[Optional[str]] = mapped_column(String(200))
+    asset_location: Mapped[Optional[str]] = mapped_column(String(200))
+    asset_type: Mapped[Optional[str]] = mapped_column(String(10))
+    unavail_start: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    unavail_end: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    quantity_unit: Mapped[Optional[str]] = mapped_column(String(10))
+    curve_type: Mapped[Optional[str]] = mapped_column(String(3))
+    min_capacity_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    reason_code: Mapped[Optional[str]] = mapped_column(String(10))
+    reason_text: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+
+
+class EntsoeTransmissionOutagePoints(Base):
+    """Available-capacity curve of a transmission outage, one row per point."""
+    __tablename__ = 'entsoe_transmission_outage_points'
+    __table_args__ = (
+        PrimaryKeyConstraint('outage_id', 'point_start', name='entsoe_transmission_outage_points_pkey'),
+        {'schema': DB_SCHEMA}
+    )
+
+    outage_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey(f'{DB_SCHEMA}.entsoe_transmission_outages.id', name='entsoe_transmission_outage_points_outage_fkey',
+                   ondelete='CASCADE'),
+        nullable=False)
+    point_start: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    point_end: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True))
+    capacity_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+
+
+class EntsoeCongestionCosts(Base):
+    """Monthly congestion management costs per area (A92); cost_type names the item."""
+    __tablename__ = 'entsoe_congestion_costs'
+    __table_args__ = (
+        PrimaryKeyConstraint('period_start', 'area_id', 'cost_type', name='entsoe_congestion_costs_pkey'),
+        Index('ix_entsoe_congestion_costs_area_time', 'area_id', 'period_start'),
+        {'schema': DB_SCHEMA}
+    )
+
+    period_start: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    area_id: Mapped[int] = mapped_column(Integer, ForeignKey(_AREA_FK, name='entsoe_congestion_costs_area_fkey'), nullable=False)
+    cost_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    period_end: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    amount_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 3))
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+
+
+_JAO_MARKETS_SQL = "('da', 'ida1', 'ida2', 'ida3')"
+
+
+class JaoCoreMaxNetPosition(Base):
+    """JAO Core maximum net positions per hub (hourly)."""
+    __tablename__ = 'jao_core_max_net_position'
+    __table_args__ = (
+        PrimaryKeyConstraint('delivery_datetime', 'hub', name='jao_core_max_net_position_pkey'),
+        Index('ix_jao_core_max_net_position_hub_time', 'hub', 'delivery_datetime'),
+        {'schema': DB_SCHEMA}
+    )
+
+    delivery_datetime: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    hub: Mapped[str] = mapped_column(String(20), nullable=False)
+    min_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    max_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+
+
+class JaoCoreMaxExchange(Base):
+    """JAO Core maximum bilateral exchanges per hub pair (hourly)."""
+    __tablename__ = 'jao_core_max_exchange'
+    __table_args__ = (
+        PrimaryKeyConstraint('delivery_datetime', 'from_hub', 'to_hub', name='jao_core_max_exchange_pkey'),
+        CheckConstraint('from_hub <> to_hub', name='jao_core_max_exchange_hubs_differ_check'),
+        Index('ix_jao_core_max_exchange_border_time', 'from_hub', 'to_hub', 'delivery_datetime'),
+        {'schema': DB_SCHEMA}
+    )
+
+    delivery_datetime: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    from_hub: Mapped[str] = mapped_column(String(20), nullable=False)
+    to_hub: Mapped[str] = mapped_column(String(20), nullable=False)
+    max_bex_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+
+
+class JaoCoreNetPosition(Base):
+    """JAO Core net positions per hub and market (15 min)."""
+    __tablename__ = 'jao_core_net_position'
+    __table_args__ = (
+        PrimaryKeyConstraint('delivery_datetime', 'hub', 'market', name='jao_core_net_position_pkey'),
+        CheckConstraint(f'market IN {_JAO_MARKETS_SQL}', name='jao_core_net_position_market_check'),
+        Index('ix_jao_core_net_position_hub_time', 'hub', 'market', 'delivery_datetime'),
+        {'schema': DB_SCHEMA}
+    )
+
+    delivery_datetime: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    hub: Mapped[str] = mapped_column(String(20), nullable=False)
+    market: Mapped[str] = mapped_column(String(5), nullable=False)
+    net_position_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+
+
+class JaoCoreScheduledExchange(Base):
+    """JAO Core scheduled exchanges per hub pair and market (15 min)."""
+    __tablename__ = 'jao_core_scheduled_exchange'
+    __table_args__ = (
+        PrimaryKeyConstraint('delivery_datetime', 'from_hub', 'to_hub', 'market',
+                             name='jao_core_scheduled_exchange_pkey'),
+        CheckConstraint('from_hub <> to_hub', name='jao_core_scheduled_exchange_hubs_differ_check'),
+        CheckConstraint(f'market IN {_JAO_MARKETS_SQL}', name='jao_core_scheduled_exchange_market_check'),
+        Index('ix_jao_core_scheduled_exchange_border_time', 'from_hub', 'to_hub', 'market', 'delivery_datetime'),
+        {'schema': DB_SCHEMA}
+    )
+
+    delivery_datetime: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    from_hub: Mapped[str] = mapped_column(String(20), nullable=False)
+    to_hub: Mapped[str] = mapped_column(String(20), nullable=False)
+    market: Mapped[str] = mapped_column(String(5), nullable=False)
+    scheduled_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+
+
+class JaoCorePriceSpread(Base):
+    """JAO Core price spreads per hub pair and market (15 min)."""
+    __tablename__ = 'jao_core_price_spread'
+    __table_args__ = (
+        PrimaryKeyConstraint('delivery_datetime', 'from_hub', 'to_hub', 'market',
+                             name='jao_core_price_spread_pkey'),
+        CheckConstraint('from_hub <> to_hub', name='jao_core_price_spread_hubs_differ_check'),
+        CheckConstraint(f'market IN {_JAO_MARKETS_SQL}', name='jao_core_price_spread_market_check'),
+        Index('ix_jao_core_price_spread_border_time', 'from_hub', 'to_hub', 'market', 'delivery_datetime'),
+        {'schema': DB_SCHEMA}
+    )
+
+    delivery_datetime: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    from_hub: Mapped[str] = mapped_column(String(20), nullable=False)
+    to_hub: Mapped[str] = mapped_column(String(20), nullable=False)
+    market: Mapped[str] = mapped_column(String(5), nullable=False)
+    spread_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 4))
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+
+
+class JaoCoreIntradayAtc(Base):
+    """JAO Core intraday ATC / NTC per hub pair and calculation round A-E (15 min)."""
+    __tablename__ = 'jao_core_intraday_atc'
+    __table_args__ = (
+        PrimaryKeyConstraint('delivery_datetime', 'from_hub', 'to_hub', 'calc_round',
+                             name='jao_core_intraday_atc_pkey'),
+        CheckConstraint('from_hub <> to_hub', name='jao_core_intraday_atc_hubs_differ_check'),
+        CheckConstraint("calc_round IN ('A', 'B', 'C', 'D', 'E')", name='jao_core_intraday_atc_round_check'),
+        Index('ix_jao_core_intraday_atc_border_time', 'from_hub', 'to_hub', 'calc_round', 'delivery_datetime'),
+        {'schema': DB_SCHEMA}
+    )
+
+    delivery_datetime: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    from_hub: Mapped[str] = mapped_column(String(20), nullable=False)
+    to_hub: Mapped[str] = mapped_column(String(20), nullable=False)
+    calc_round: Mapped[str] = mapped_column(String(1), nullable=False)
+    atc_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    ntc_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+
+
+class JaoCoreAllocationConstraint(Base):
+    """JAO Core allocation constraints per hub and market (15 min)."""
+    __tablename__ = 'jao_core_allocation_constraint'
+    __table_args__ = (
+        PrimaryKeyConstraint('delivery_datetime', 'hub', 'market', name='jao_core_allocation_constraint_pkey'),
+        CheckConstraint(f'market IN {_JAO_MARKETS_SQL}', name='jao_core_allocation_constraint_market_check'),
+        Index('ix_jao_core_allocation_constraint_hub_time', 'hub', 'market', 'delivery_datetime'),
+        {'schema': DB_SCHEMA}
+    )
+
+    delivery_datetime: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    hub: Mapped[str] = mapped_column(String(20), nullable=False)
+    market: Mapped[str] = mapped_column(String(5), nullable=False)
+    limit_up_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    limit_down_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+
+
+class CepsCrossborderFlows1Min(Base):
+    """CEPS CrossborderPowerFlows at 1-minute granularity (migration 091).
+
+    Actual and planned flow per border profile PSE (PL), SEPS (SK), APG (AT), TenneT (DE),
+    50HzT (DE); ceps_* is their sum. Positive = import into CZ, negative = export.
+    Planned values are an hourly step function repeated on every minute.
+    Partitioned by year on delivery_timestamp.
+    """
+    __tablename__ = 'ceps_crossborder_flows_1min'
+    __table_args__ = (
+        PrimaryKeyConstraint('delivery_timestamp', 'id', name='ceps_crossborder_flows_1min_pkey'),
+        UniqueConstraint('delivery_datetime', 'delivery_timestamp',
+                         name='ceps_crossborder_flows_1min_delivery_datetime_key'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, autoincrement=True)
+    delivery_timestamp: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    delivery_datetime: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    pse_actual_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    pse_planned_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    seps_actual_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    seps_planned_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    apg_actual_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    apg_planned_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    tennet_actual_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    tennet_planned_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    fiftyhertz_actual_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    fiftyhertz_planned_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    ceps_actual_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    ceps_planned_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+
+
+class CepsCrossborderFlows15Min(Base):
+    """CEPS CrossborderPowerFlows aggregated to 15-minute intervals (migration 091).
+
+    mean / median / last_at_interval of every 1-min column. Partitioned by year on trade_date.
+    """
+    __tablename__ = 'ceps_crossborder_flows_15min'
+    __table_args__ = (
+        PrimaryKeyConstraint('trade_date', 'time_interval', 'id', name='ceps_crossborder_flows_15min_pkey'),
+        UniqueConstraint('delivery_datetime', 'trade_date',
+                         name='ceps_crossborder_flows_15min_delivery_datetime_key'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, autoincrement=True)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    delivery_datetime: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    pse_actual_mean_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    pse_actual_median_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    pse_actual_last_at_interval_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    pse_planned_mean_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    pse_planned_median_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    pse_planned_last_at_interval_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    seps_actual_mean_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    seps_actual_median_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    seps_actual_last_at_interval_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    seps_planned_mean_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    seps_planned_median_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    seps_planned_last_at_interval_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    apg_actual_mean_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    apg_actual_median_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    apg_actual_last_at_interval_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    apg_planned_mean_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    apg_planned_median_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    apg_planned_last_at_interval_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    tennet_actual_mean_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    tennet_actual_median_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    tennet_actual_last_at_interval_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    tennet_planned_mean_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    tennet_planned_median_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    tennet_planned_last_at_interval_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    fiftyhertz_actual_mean_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    fiftyhertz_actual_median_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    fiftyhertz_actual_last_at_interval_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    fiftyhertz_planned_mean_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    fiftyhertz_planned_median_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    fiftyhertz_planned_last_at_interval_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    ceps_actual_mean_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    ceps_actual_median_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    ceps_actual_last_at_interval_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    ceps_planned_mean_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    ceps_planned_median_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    ceps_planned_last_at_interval_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+
+
+class CepsEmergencyExchange60Min(Base):
+    """CEPS EmergencyExchange summed per hour, long format (migration 091).
+
+    border_direction e.g. CAD_CEPS_50HZT (CEPS to 50Hertz); exchange_type R.
+    Sparse: most days have no rows. Partitioned by year on trade_date.
+    """
+    __tablename__ = 'ceps_emergency_exchange_60min'
+    __table_args__ = (
+        PrimaryKeyConstraint('trade_date', 'time_interval', 'id', name='ceps_emergency_exchange_60min_pkey'),
+        UniqueConstraint('delivery_datetime', 'trade_date', 'border_direction', 'exchange_type',
+                         name='ceps_emergency_exchange_60min_delivery_datetime_key'),
+        {'schema': DB_SCHEMA}
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, autoincrement=True)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    delivery_datetime: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    border_direction: Mapped[str] = mapped_column(String(40), nullable=False)
+    exchange_type: Mapped[str] = mapped_column(String(10), nullable=False)
+    energy_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 5))
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+
+
+class EntsoeBorderBalancing(Base):
+    """Directed 15-min cross-border balancing data from_area_id -> to_area_id (migration 092).
+
+    limit_mw: balancing exchange limit (A31/A26, out_Domain -> in_Domain), process mfrr / afrr / netting.
+    exchanged_mwh: netted/exchanged energy (A30/A45, connecting_Domain -> acquiring_Domain), process
+    mfrr_sa (A60) / mfrr_da (A61) / netting (A63) / afrr (A51).
+    """
+    __tablename__ = 'entsoe_border_balancing'
+    __table_args__ = (
+        PrimaryKeyConstraint('delivery_datetime', 'from_area_id', 'to_area_id', 'process',
+                             name='entsoe_border_balancing_pkey'),
+        CheckConstraint('from_area_id <> to_area_id', name='entsoe_border_balancing_areas_differ_check'),
+        CheckConstraint("process IN ('netting', 'afrr', 'mfrr', 'mfrr_sa', 'mfrr_da')",
+                        name='entsoe_border_balancing_process_check'),
+        Index('ix_entsoe_border_balancing_border_process_time',
+              'from_area_id', 'to_area_id', 'process', 'delivery_datetime'),
+        {'schema': DB_SCHEMA}
+    )
+
+    delivery_datetime: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    from_area_id: Mapped[int] = mapped_column(Integer, ForeignKey(_AREA_FK, name='entsoe_border_balancing_from_fkey'), nullable=False)
+    to_area_id: Mapped[int] = mapped_column(Integer, ForeignKey(_AREA_FK, name='entsoe_border_balancing_to_fkey'), nullable=False)
+    process: Mapped[str] = mapped_column(String(12), nullable=False)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    period: Mapped[int] = mapped_column(Integer, nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    limit_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    exchanged_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 4))
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+
+
+class EntsoeAreaBalancingExchange(Base):
+    """15-min energy an area exchanges with the European balancing platforms (migration 092).
+
+    ENTSO-E B17/B09. import_mwh = TimeSeries with acquiring_Domain = area (area receives energy),
+    export_mwh = connecting_Domain = area (area delivers); MWh per 15 min, NULL = side not reported.
+    process netting (A63) / mfrr_sa (A60) / mfrr_da (A61) / afrr (A51, 4-second points summed).
+    LIST-partitioned by country_code (partition: CZ).
+    """
+    __tablename__ = 'entsoe_area_balancing_exchange'
+    __table_args__ = (
+        PrimaryKeyConstraint('delivery_datetime', 'area_id', 'country_code', 'process',
+                             name='entsoe_area_balancing_exchange_pkey'),
+        CheckConstraint("process IN ('netting', 'afrr', 'mfrr_sa', 'mfrr_da')",
+                        name='entsoe_area_balancing_exchange_process_check'),
+        Index('ix_entsoe_area_balancing_exchange_country_trade_date', 'country_code', 'trade_date'),
+        {'schema': DB_SCHEMA}
+    )
+
+    delivery_datetime: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    area_id: Mapped[int] = mapped_column(Integer, ForeignKey(_AREA_FK, name='entsoe_area_balancing_exchange_area_fkey'), nullable=False)
+    country_code: Mapped[str] = mapped_column(String(5), nullable=False)
+    process: Mapped[str] = mapped_column(String(12), nullable=False)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    period: Mapped[int] = mapped_column(Integer, nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    import_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 4))
+    export_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 4))
+    doc_status: Mapped[Optional[str]] = mapped_column(String(3))
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')

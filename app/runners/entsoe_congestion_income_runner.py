@@ -231,9 +231,18 @@ class CongestionIncomeRunner(BaseRunner):
                 # intraday). Deliberately does NOT use
                 # _run_with_availability_check(), which would skip a date as
                 # soon as any row exists for it - wrong for revisable data.
-                period_start, period_end = self._default_window_utc()
+                # The window (11 days) exceeds the client's 7-day request cap,
+                # so it must be split into MAX_CHUNK_DAYS requests.
+                window_start, window_end = self._default_window_utc()
                 with self.database_connection() as conn:
-                    total_records = self._process_chunk(period_start, period_end, conn)
+                    chunk_start = window_start
+                    while chunk_start < window_end:
+                        chunk_end = min(
+                            chunk_start + timedelta(days=self.MAX_CHUNK_DAYS),
+                            window_end,
+                        )
+                        total_records += self._process_chunk(chunk_start, chunk_end, conn)
+                        chunk_start = chunk_end
 
             self.logger.debug("")
             self.logger.info(self.format_summary(total_records))

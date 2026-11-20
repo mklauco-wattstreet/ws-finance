@@ -1851,14 +1851,16 @@ class ScheduledExchangesParser(BaseParser):
 
             # Copy individual border values
             total = 0.0
+            has_any_value = False
             for col in ['scheduled_de_mw', 'scheduled_at_mw', 'scheduled_pl_mw', 'scheduled_sk_mw']:
                 value = data['columns'].get(col)
                 record[col] = value
                 if value is not None:
                     total += value
+                    has_any_value = True
 
-            # Calculate total net
-            record['scheduled_total_net_mw'] = total if total != 0.0 else None
+            # Calculate total net (NULL only when every border is missing)
+            record['scheduled_total_net_mw'] = total if has_any_value else None
 
             result.append(record)
 
