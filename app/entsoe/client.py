@@ -115,7 +115,7 @@ class EntsoeClient:
             read=max_retries,
             connect=max_retries,
             backoff_factor=backoff_factor,
-            status_forcelist=[429, 500, 502, 503, 504],
+            status_forcelist=[429, 500, 502, 503, 504, 599],
             allowed_methods=["GET"],
             raise_on_status=False
         )

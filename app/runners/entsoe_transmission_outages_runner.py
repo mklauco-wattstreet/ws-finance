@@ -301,6 +301,10 @@ class TransmissionOutagesRunner(BaseRunner):
             windows = self._windows()
             with self.database_connection() as conn:
                 borders = load_active_borders(conn, level=0)
+                # End the read transaction now: nothing else commits before the first write,
+                # and idle_in_transaction_session_timeout kills a session left idle in a
+                # transaction while the HTTP fetches run.
+                conn.rollback()
                 area_by_eic: Dict[str, int] = {}
                 for b in borders:
                     area_by_eic[b.area_a_eic] = b.area_a_id

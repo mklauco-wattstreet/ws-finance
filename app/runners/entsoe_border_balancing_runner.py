@@ -433,6 +433,10 @@ class BorderBalancingRunner(BaseRunner):
         try:
             with self.database_connection() as conn:
                 borders = load_active_borders(conn, level=self.level)
+                # End the read transaction now: nothing else commits before the first write,
+                # and idle_in_transaction_session_timeout kills a session left idle in a
+                # transaction while the HTTP fetches run.
+                conn.rollback()
                 if not borders:
                     self.logger.error(f"{self.RUNNER_NAME}: no active borders (level={self.level})")
                     self.print_footer(success=False)
