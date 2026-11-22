@@ -17,8 +17,11 @@ Examples:
 Notes:
     - Dates should be in YYYY-MM-DD format
     - --ida N is required (N = 1, 2, or 3)
-    - In auto mode, downloads from last downloaded file date + 1 to yesterday
-    - If no files exist, downloads from 2026-03-01 to yesterday
+    - In auto mode, downloads from last loaded delivery day + 1 up to the newest
+      delivery day this auction can have: tomorrow for IDA1/IDA2 (auctioned the
+      day before delivery), today for IDA3 (auctioned on the delivery day)
+    - A file that is not published yet (HTTP 404) ends the run quietly
+    - If no data exists, downloads from 2026-03-01
 """
 
 import sentry_init  # noqa: F401 - must be first to capture errors
@@ -45,6 +48,11 @@ from common import (
 
 
 OTE_BASE_URL = "https://www.ote-cr.cz/pubweb/attachments/431"
+
+# Days after today that the auto window reaches. IDA1 (15:00) and IDA2 (22:00)
+# run the day before delivery, so their newest file is for tomorrow; IDA3 runs
+# at 10:00 on the delivery day, so its newest file is for today.
+IDA_AUTO_END_OFFSET_DAYS = {1: 1, 2: 1, 3: 0}
 
 
 def get_last_ida_date_from_db(ida_idx, logger):
@@ -139,6 +147,12 @@ def run_ida_upload(script_dir, ida_base_dir, ida_idx, start_date, end_date, logg
             logger.warning(f"Upload dir not found: {dir_path}")
             continue
 
+        # A month dir created for a not-yet-published file (e.g. tomorrow is in
+        # the next month) is empty; the upload script would exit 1 on it.
+        if not any(dir_path.glob(f"IDA{ida_idx}_*.xlsx")):
+            logger.debug(f"No IDA{ida_idx} files in {dir_path}, skipping upload")
+            continue
+
         try:
             upload_script = script_dir / 'upload_ida_prices.py'
             # Pass relative path from script_dir: IDA{n}/YYYY/MM
@@ -216,7 +230,8 @@ def main():
         print_banner(f"OTE-CR IDA{ida_idx} Downloader (AUTO)", debug_mode)
 
         minimum_date = datetime(2026, 3, 1)
-        target_end_date = datetime.now()
+        end_offset = IDA_AUTO_END_OFFSET_DAYS[ida_idx]
+        target_end_date = datetime.now() + timedelta(days=end_offset)
 
         # Try DB-based date range first
         last_date = get_last_ida_date_from_db(ida_idx, logger)
@@ -237,7 +252,7 @@ def main():
                 date_pattern=date_pattern,
                 logger=logger,
                 minimum_date=minimum_date,
-                end_date_offset=0,
+                end_date_offset=end_offset,
                 redownload_latest=False
             )
 

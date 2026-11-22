@@ -16,7 +16,7 @@ Usage:
     python3 download_okte_ida.py [START_DATE END_DATE] [--days N] [--debug] [--dry-run]
 
 Examples:
-    # Auto mode - trailing 3 days (today plus the 2 before it), re-fetched
+    # Auto mode - trailing 3 days (today plus the 2 before it) plus tomorrow, re-fetched
     python3 download_okte_ida.py
     python3 download_okte_ida.py --days 7        # wider self-heal window
 
@@ -232,11 +232,14 @@ def main():
 
     if auto_mode:
         print_banner("OKTE Intraday Auction (AUTO)", debug_mode)
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=auto_days - 1)
+        today = datetime.now()
+        start_date = today - timedelta(days=auto_days - 1)
+        # Tomorrow is included: IDA1/IDA2 results are published the day before
+        # delivery. Before publication the API returns an empty list, not an error.
+        end_date = today + timedelta(days=1)
         logger.info(
             f"OKTE IDA AUTO {start_date.strftime('%Y-%m-%d')}"
-            f"..{end_date.strftime('%Y-%m-%d')} (trailing {auto_days} days)"
+            f"..{end_date.strftime('%Y-%m-%d')} (trailing {auto_days} days plus tomorrow)"
         )
     else:
         print_banner("OKTE Intraday Auction (MANUAL)", debug_mode)
