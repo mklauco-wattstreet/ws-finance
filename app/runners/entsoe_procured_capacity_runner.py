@@ -8,13 +8,27 @@ agreement is daily (type_MarketAgreement.Type=A01); native resolution is hourly
 (PT60M) priced in 4-hour blocks. Each TimeSeries is one awarded offer.
 
 Three tables are populated per processed day:
-- entsoe_procured_capacity_raw   : per-offer bid stack (replace-per-day snapshot)
+- entsoe_procured_capacity_raw   : per-offer bid stack (replace-per-day-and-reserve snapshot)
 - entsoe_procured_capacity_60min : aggregated wide summary (source-of-truth)
 - entsoe_procured_capacity_15min : 60min values forward-filled into 4 quarters
 
 The API returns a full-day document regardless of the requested sub-window, so
-this runner issues one request per (day x reserve type) — well under the
-100-instance API cap.
+this runner issues one request per (day x reserve type), paged by offset when a
+day exceeds the 100-TimeSeries API cap.
+
+Every (day, reserve type) fetch ends in exactly one of three outcomes:
+- OK          : data fetched and parsed. Raw rows of THAT reserve type for that day
+                are replaced and only THAT reserve type's columns in the 60min/15min
+                tables are updated, all in ONE transaction (one commit).
+- UNAVAILABLE : ENTSO-E answered "No matching data" (not published yet). Logged at
+                INFO; stored rows are left untouched.
+- FAILED      : timeout, 5xx, parse error, ... Logged at WARNING per request; stored
+                rows are left untouched. One ERROR is emitted per run only if EVERY
+                (day, reserve type) request of the run failed (see
+                _log_failure_summary); the next firing retries anyway.
+Only OK outcomes ever write to the database, so a stored day is never wiped or
+NULLed by an outage or a momentary "no data" answer. No DB connection is opened
+until a day's fetches are finished, so no transaction is held during HTTP calls.
 
 Usage:
     python3 -m runners.entsoe_procured_capacity_runner [--debug] [--dry-run]
@@ -25,7 +39,9 @@ import sys
 from pathlib import Path
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone, date
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional
+
+from psycopg2 import extras
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -64,6 +80,11 @@ SUMMARY_VALUE_COLUMNS = [
 SUMMARY_COLUMNS = ["trade_date", "time_interval", "delivery_datetime"] + SUMMARY_VALUE_COLUMNS
 SUMMARY_CONFLICT = ["delivery_datetime"]
 
+# Outcome of fetching one (day, reserve type).
+FETCH_OK = "ok"
+FETCH_UNAVAILABLE = "unavailable"
+FETCH_FAILED = "failed"
+
 
 class ProcuredCapacityRunner(BaseRunner):
     """Runner for ENTSO-E Procured Balancing Capacity (A15, 12.3.F) — CZ only."""
@@ -74,6 +95,7 @@ class ProcuredCapacityRunner(BaseRunner):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.client = None
+        self._requests_total = 0  # (day, reserve type) fetches attempted this run
         # CZ is the only area
         _, self.area_code, self.display_label, self.country_code = ACTIVE_PROCURED_CAPACITY_AREAS[0]
 
@@ -119,60 +141,74 @@ class ProcuredCapacityRunner(BaseRunner):
     # Safety cap on pages per (day, reserve) to avoid an unbounded loop.
     MAX_PAGES = 10
 
-    def _fetch_day_raw(self, target_date: date) -> List[Dict]:
-        """Fetch + parse all reserve types for one Prague day into raw rows.
+    @staticmethod
+    def _is_no_data_error(error: Exception) -> bool:
+        """True only for ENTSO-E's explicit "No matching data" acknowledgement.
 
-        Pages each reserve via offset until a page returns no rows. Each page's
+        Deliberately narrower than BaseRunner.is_data_unavailable_error(), which
+        also matches 503/404/409/timeouts/retry exhaustion - those are FAILED
+        fetches here, not "ENTSO-E has no data".
+        """
+        return 'No matching data' in str(error)
+
+    def _fetch_reserve_day(
+        self, target_date: date, process_type: str, reserve_type: str
+    ) -> Tuple[str, List[Dict], Optional[Exception]]:
+        """Fetch + parse one reserve type for one Prague day (all pages).
+
+        Pages via offset until a page returns no TimeSeries. Each page's
         TimeSeries mRIDs restart at 1, so offer_seq is globally offset by the
         page offset to stay unique across pages.
+
+        Returns (status, rows, error):
+          FETCH_OK          rows is non-empty
+          FETCH_UNAVAILABLE "No matching data" on the first page (or nothing
+                            usable parsed); rows is empty
+          FETCH_FAILED      any other error on ANY page - rows is empty, because
+                            a half-fetched day must never replace a stored one
         """
         period_start, period_end = self._day_window_utc(target_date)
         rows: List[Dict] = []
 
-        for process_type, reserve_type in PROCURED_CAPACITY_PROCESS_TYPES.items():
-            reserve_rows = 0
-            for page in range(self.MAX_PAGES):
-                offset = page * self.PAGE_SIZE
-                try:
-                    xml_content = self.client.fetch_procured_capacity_for_domain(
-                        period_start, period_end, self.area_code, process_type, offset=offset
-                    )
-                except Exception as e:
-                    if self.is_data_unavailable_error(e):
-                        break
-                    self.logger.error(
-                        f"  Fetch failed {reserve_type} {target_date} offset={offset}: {e}"
-                    )
-                    if self.debug:
-                        import traceback
-                        traceback.print_exc()
-                    break
+        for page in range(self.MAX_PAGES):
+            offset = page * self.PAGE_SIZE
+            try:
+                xml_content = self.client.fetch_procured_capacity_for_domain(
+                    period_start, period_end, self.area_code, process_type, offset=offset
+                )
+            except Exception as e:
+                if self._is_no_data_error(e):
+                    break  # first page: unavailable; later page: past the last page
+                return FETCH_FAILED, [], e
 
-                # TimeSeries count drives paging (the API cap is on TS instances);
-                # zero-quantity offers get dropped during parsing, so we cannot
-                # rely on the parsed-row count to decide whether more pages exist.
-                ts_count = xml_content.count('<TimeSeries>')
-                if ts_count == 0:
-                    break  # "No matching data" acknowledgement — past the last page.
+            # TimeSeries count drives paging (the API cap is on TS instances);
+            # zero-quantity offers get dropped during parsing, so we cannot
+            # rely on the parsed-row count to decide whether more pages exist.
+            ts_count = xml_content.count('<TimeSeries>')
+            if ts_count == 0:
+                break  # "No matching data" acknowledgement - past the last page.
 
+            try:
                 xml_file = self._save_xml_file(xml_content, target_date, reserve_type, offset)
                 parser = ProcuredCapacityParser(reserve_type=reserve_type)
                 parsed = parser.parse_xml(str(xml_file))
-                # Keep only rows on the target Prague day (drop DST edge spillover).
-                parsed = [r for r in parsed if r['trade_date'] == target_date]
+            except Exception as e:
+                return FETCH_FAILED, [], e
 
-                for r in parsed:
-                    r['offer_seq'] += offset
-                rows.extend(parsed)
-                reserve_rows += len(parsed)
+            # Keep only rows on the target Prague day (drop DST edge spillover).
+            parsed = [r for r in parsed if r['trade_date'] == target_date]
+            for r in parsed:
+                r['offer_seq'] += offset
+            rows.extend(parsed)
 
-                # A partial page (< PAGE_SIZE TimeSeries) is the last page.
-                if ts_count < self.PAGE_SIZE:
-                    break
+            # A partial page (< PAGE_SIZE TimeSeries) is the last page.
+            if ts_count < self.PAGE_SIZE:
+                break
 
-            self.logger.debug(f"  {reserve_type} {target_date}: {reserve_rows} raw rows")
-
-        return rows
+        self.logger.debug(f"  {reserve_type} {target_date}: {len(rows)} raw rows")
+        # Nothing usable (no data, or only zero-quantity offers): treat as
+        # unavailable so the stored day is left alone rather than emptied.
+        return (FETCH_OK if rows else FETCH_UNAVAILABLE), rows, None
 
     def _save_xml_file(
         self, xml_content: str, target_date: date, reserve_type: str, offset: int = 0
@@ -235,22 +271,89 @@ class ProcuredCapacityRunner(BaseRunner):
     # ------------------------------------------------------------------
     # Persistence
     # ------------------------------------------------------------------
-    def _replace_raw_for_dates(self, conn, dates: List[date], raw_rows: List[Dict]) -> int:
-        """Replace-per-day: delete existing raw rows for the dates, then insert."""
-        if self.dry_run:
-            self.logger.info(f"DRY RUN - Would replace raw rows for {len(dates)} day(s) "
-                             f"with {len(raw_rows)} rows")
-            return len(raw_rows)
+    @staticmethod
+    def _upsert(
+        cur, table: str, columns: List[str], records: List[Tuple],
+        conflict: List[str], update_columns: List[str],
+    ) -> None:
+        """Bulk upsert (execute_values) on an open cursor WITHOUT committing.
 
-        with conn.cursor() as cur:
-            cur.execute(f"DELETE FROM {RAW_TABLE} WHERE trade_date = ANY(%s)", (dates,))
-        conn.commit()
+        Same SQL as BaseRunner.bulk_upsert, but the caller owns the transaction
+        so several statements can be committed atomically.
+        """
+        if not records:
+            return
+        update_str = ", ".join(f"{c} = EXCLUDED.{c}" for c in update_columns)
+        update_str += ", updated_at = CURRENT_TIMESTAMP"
+        query = (
+            f"INSERT INTO {table} ({', '.join(columns)}) VALUES %s "
+            f"ON CONFLICT ({', '.join(conflict)}) DO UPDATE SET {update_str}"
+        )
+        extras.execute_values(cur, query, records, page_size=1000)
 
-        if not raw_rows:
-            return 0
+    def _persist_day(self, conn, target_date: date, fetched: Dict[str, List[Dict]]) -> int:
+        """Write one day's successfully fetched reserve types in ONE transaction.
 
-        records = [tuple(r[c] for c in RAW_COLUMNS) for r in raw_rows]
-        return self.bulk_upsert(conn, RAW_TABLE, RAW_COLUMNS, records, RAW_CONFLICT)
+        `fetched` maps reserve_type -> raw rows, for OK reserve types only.
+        - raw: DELETE that day's rows of those reserve types, then INSERT. The
+          other reserve type's raw rows are not touched.
+        - 60min/15min: aggregated from the fetched rows only, and on conflict
+          only the columns of the fetched reserve types are updated, so a
+          reserve type that failed/was unavailable keeps its stored values
+          (no NULL overwrite). A fresh hour inserts the other reserve as NULL.
+        One commit at the end: readers never see the day empty, a crash
+        rolls everything back.
+        """
+        reserves = sorted(fetched)
+        raw_rows = [r for rt in reserves for r in fetched[rt]]
+        rec_60 = self._aggregate_60min(raw_rows)
+        rec_15 = self._expand_to_15min(rec_60)
+        update_cols = [c for c in SUMMARY_VALUE_COLUMNS if c.split('_')[0] in fetched]
+        raw_records = [tuple(r[c] for c in RAW_COLUMNS) for r in raw_rows]
+        raw_update = [c for c in RAW_COLUMNS if c not in RAW_CONFLICT]
+
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"DELETE FROM {RAW_TABLE} WHERE trade_date = %s AND reserve_type = ANY(%s)",
+                    (target_date, reserves),
+                )
+                self._upsert(cur, RAW_TABLE, RAW_COLUMNS, raw_records, RAW_CONFLICT, raw_update)
+                self._upsert(cur, TABLE_60MIN, SUMMARY_COLUMNS, rec_60, SUMMARY_CONFLICT, update_cols)
+                self._upsert(cur, TABLE_15MIN, SUMMARY_COLUMNS, rec_15, SUMMARY_CONFLICT, update_cols)
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+
+        self.logger.debug(
+            f"  {target_date} [{','.join(reserves)}]: {len(raw_records)} raw, "
+            f"{len(rec_60)} x60min, {len(rec_15)} x15min"
+        )
+        return len(raw_records)
+
+    # ------------------------------------------------------------------
+    # Failure reporting
+    # ------------------------------------------------------------------
+    def _log_failure_summary(self) -> None:
+        """One aggregate line per run (called from print_footer).
+
+        ERROR only when EVERY (day, reserve type) request of the run failed;
+        a partial failure stays at WARNING. Per-request failures were already
+        logged at WARNING by record_area_failure().
+        """
+        if not self.area_failures:
+            return
+        failed = len(self.area_failures)
+        first = sorted(self.area_failures)[0]
+        message = (
+            f"{self.RUNNER_NAME}: {failed}/{self._requests_total} request(s) failed "
+            f"[{', '.join(sorted(self.area_failures))}] - first error: {self.area_failures[first]}"
+        )
+        if failed >= self._requests_total:
+            self.logger.error(message)
+        else:
+            self.logger.warning(message)
 
     # ------------------------------------------------------------------
     # Run
@@ -267,46 +370,56 @@ class ProcuredCapacityRunner(BaseRunner):
         self.logger.debug(f"Processing {len(dates)} day(s): {dates[0]}..{dates[-1]}")
 
         total_raw = 0
+        self._requests_total = 0
         try:
-            conn_ctx = self.database_connection() if not self.dry_run else None
-            conn = conn_ctx.__enter__() if conn_ctx else None
-            try:
-                for target_date in dates:
-                    raw_rows = self._fetch_day_raw(target_date)
-                    if not raw_rows:
-                        self.logger.info(f"{self.RUNNER_NAME}: no data for {target_date}")
-                        # Still clear stale rows for an empty day in backfill snapshots.
-                        if conn:
-                            self._replace_raw_for_dates(conn, [target_date], [])
-                        continue
-
-                    rec_60 = self._aggregate_60min(raw_rows)
-                    rec_15 = self._expand_to_15min(rec_60)
-
-                    if conn:
-                        self._replace_raw_for_dates(conn, [target_date], raw_rows)
-                        self.bulk_upsert(conn, TABLE_60MIN, SUMMARY_COLUMNS, rec_60, SUMMARY_CONFLICT)
-                        self.bulk_upsert(conn, TABLE_15MIN, SUMMARY_COLUMNS, rec_15, SUMMARY_CONFLICT)
-                    else:
+            for target_date in dates:
+                # 1) Fetch everything for the day first - no DB connection open.
+                fetched: Dict[str, List[Dict]] = {}
+                for process_type, reserve_type in PROCURED_CAPACITY_PROCESS_TYPES.items():
+                    self._requests_total += 1
+                    status, rows, error = self._fetch_reserve_day(
+                        target_date, process_type, reserve_type
+                    )
+                    if status == FETCH_OK:
+                        fetched[reserve_type] = rows
+                    elif status == FETCH_UNAVAILABLE:
                         self.logger.info(
-                            f"DRY RUN - {target_date}: {len(raw_rows)} raw, "
-                            f"{len(rec_60)} x60min, {len(rec_15)} x15min"
+                            f"{self.RUNNER_NAME}: no data for {reserve_type} {target_date} "
+                            f"- stored rows left untouched"
                         )
+                    else:
+                        self.record_area_failure(f"{reserve_type} {target_date}", error)
 
-                    self.track_country(self.country_code, len(raw_rows))
-                    total_raw += len(raw_rows)
-            finally:
-                if conn_ctx:
-                    conn_ctx.__exit__(None, None, None)
+                if not fetched:
+                    continue
+
+                # 2) Write: short-lived connection, one transaction per day.
+                if self.dry_run:
+                    rec_60 = self._aggregate_60min([r for rows in fetched.values() for r in rows])
+                    self.logger.info(
+                        f"DRY RUN - {target_date} [{','.join(sorted(fetched))}]: "
+                        f"{sum(len(v) for v in fetched.values())} raw, "
+                        f"{len(rec_60)} x60min, {len(rec_60) * 4} x15min"
+                    )
+                    count = sum(len(v) for v in fetched.values())
+                else:
+                    with self.database_connection() as conn:
+                        count = self._persist_day(conn, target_date, fetched)
+
+                self.track_country(self.country_code, count)
+                total_raw += count
 
             self.logger.info(self.format_summary(total_raw))
-            return True
+            all_failed = self._requests_total > 0 and len(self.area_failures) >= self._requests_total
+            self.print_footer(success=not all_failed)
+            return not all_failed
 
         except Exception as e:
             self.logger.error(f"Pipeline failed: {e}")
             if self.debug:
                 import traceback
                 traceback.print_exc()
+            self.print_footer(success=False)
             return False
 
 

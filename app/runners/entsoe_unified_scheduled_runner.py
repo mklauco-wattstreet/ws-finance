@@ -198,9 +198,10 @@ class UnifiedScheduledRunner(BaseRunner):
                                 traceback.print_exc()
                             continue
             else:
-                # D-1 data: check today + backfill up to 7 days if service was down
+                # Day-ahead data: tomorrow (as soon as ENTSO-E publishes it) + today
+                # + backfill up to 7 days if service was down
                 today = datetime.now(PRAGUE_TZ).date()
-                for day_offset in range(-7, 1):
+                for day_offset in range(-7, 2):
                     target_date = today + timedelta(days=day_offset)
                     total_records += self._run_with_availability_check(
                         target_date, ACTIVE_GENERATION_AREAS

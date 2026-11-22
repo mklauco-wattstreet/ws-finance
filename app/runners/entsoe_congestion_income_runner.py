@@ -44,10 +44,11 @@ class CongestionIncomeRunner(BaseRunner):
     ]
     CONFLICT_COLUMNS = ["delivery_datetime", "area_id", "country_code"]
 
-    # Default (non-backfill) polling window: D-2 through D, Prague local.
-    # 10 days, not 2: ENTSO-E sometimes publishes a delivery day late (or not at
+    # Default (non-backfill) polling window: D-10 through D+1, Prague local.
+    # 10 days back, not 2: ENTSO-E sometimes publishes a delivery day late (or not at
     # all for a while), and a short window would leave that day permanently holed.
-    # Cost is unchanged in practice - 11 days is 2 chunked requests per firing.
+    # D+1 so tomorrow's income is stored as soon as ENTSO-E publishes it.
+    # Cost is unchanged in practice - 12 days is still 2 chunked requests per firing.
     DEFAULT_WINDOW_DAYS_BACK = 10
 
     def __init__(self, **kwargs):
@@ -188,10 +189,10 @@ class CongestionIncomeRunner(BaseRunner):
         return total_records
 
     def _default_window_utc(self):
-        """D-2 through D (Prague local, end-exclusive), converted to UTC."""
+        """D-10 through D+1 (Prague local, end-exclusive), converted to UTC."""
         today_prague = datetime.now(PRAGUE_TZ).date()
         window_start_date = today_prague - timedelta(days=self.DEFAULT_WINDOW_DAYS_BACK)
-        window_end_date = today_prague + timedelta(days=1)  # end-exclusive -> through end of "today"
+        window_end_date = today_prague + timedelta(days=2)  # end-exclusive -> through end of "tomorrow"
 
         start_prague = datetime.combine(window_start_date, datetime.min.time()).replace(tzinfo=PRAGUE_TZ)
         end_prague = datetime.combine(window_end_date, datetime.min.time()).replace(tzinfo=PRAGUE_TZ)
@@ -226,12 +227,12 @@ class CongestionIncomeRunner(BaseRunner):
                                 traceback.print_exc()
                             continue
             else:
-                # Default polling window: D-2 through D (Prague local), always
+                # Default polling window: D-10 through D+1 (Prague local), always
                 # re-fetched in full (data is revisable / partially published
                 # intraday). Deliberately does NOT use
                 # _run_with_availability_check(), which would skip a date as
                 # soon as any row exists for it - wrong for revisable data.
-                # The window (11 days) exceeds the client's 7-day request cap,
+                # The window (12 days) exceeds the client's 7-day request cap,
                 # so it must be split into MAX_CHUNK_DAYS requests.
                 window_start, window_end = self._default_window_utc()
                 with self.database_connection() as conn:
