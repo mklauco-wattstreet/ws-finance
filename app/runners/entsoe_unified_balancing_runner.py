@@ -2,39 +2,36 @@
 """
 ENTSO-E Unified Balancing Energy Runner.
 
-Fetches activated balancing energy prices (A84) for ALL active areas,
-parses the XML into wide-format records with area_id, and uploads
-to the partitioned entsoe_balancing_energy table.
+Fetches activated balancing energy prices (A84) for all active areas into the
+partitioned entsoe_balancing_energy table (EUR/MWh, 15 min):
 
-Active areas (from entsoe_areas table):
-- CZ (Czech Republic) - area_id=1
-- DE (Germany TenneT) - area_id=2
-- AT (Austria) - area_id=3
-- PL (Poland) - area_id=4
-- SK (Slovakia) - area_id=5
+    processType A16  fcr_* (A95), afrr_* (A96), mfrr_* (A97 standard product),
+                     mfrr_specific_* (A97 specific product), rr_* (A98)
+    processType A68  afrr_local_* (A96, local selection)
 
-Wide-format columns:
-- afrr_up_price_eur: aFRR upward activation price
-- afrr_down_price_eur: aFRR downward activation price
-- mfrr_up_price_eur: mFRR upward activation price
-- mfrr_down_price_eur: mFRR downward activation price
+Each row writes only the columns its documents cover, so a series that is missing
+from an answer never overwrites stored prices with NULL.
+
+Default run: rolling 3 hours; the 03:14 run re-fetches the last 7 days, which
+also fills rows missed by failed runs.
 
 Usage:
-    python3 entsoe_unified_balancing_runner.py [--debug] [--dry-run]
-    python3 entsoe_unified_balancing_runner.py --start 2024-12-01 --end 2024-12-22
+    python3 -m runners.entsoe_unified_balancing_runner [--debug] [--dry-run]
+    python3 -m runners.entsoe_unified_balancing_runner --start 2024-12-01 --end 2024-12-22
 """
 
 import sys
 from pathlib import Path
-from datetime import datetime, timedelta
-from typing import List, Tuple
+from datetime import datetime, timedelta, timezone
+from typing import Dict, FrozenSet, List, Tuple
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from runners.base_runner import BaseRunner, PRAGUE_TZ
 from entsoe.client import EntsoeClient
-from entsoe.parsers import BalancingEnergyParser
+from entsoe.balancing_price_parser import PRICE_COLUMNS, BalancingPriceParser
+from entsoe.query import fetch_document, fmt_period
 from entsoe.constants import ACTIVE_GENERATION_AREAS
 
 
@@ -48,10 +45,11 @@ class UnifiedBalancingRunner(BaseRunner):
     COLUMNS = [
         "trade_date", "period", "area_id", "country_code", "time_interval",
         "delivery_datetime",
-        "afrr_up_price_eur", "afrr_down_price_eur", "mfrr_up_price_eur", "mfrr_down_price_eur",
-        "rr_up_price_eur", "rr_down_price_eur"
-    ]
+    ] + PRICE_COLUMNS
     CONFLICT_COLUMNS = ["delivery_datetime", "area_id", "country_code"]
+
+    PROCESS_TYPES = ("A16", "A68")
+    REFETCH_DAYS = 7
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -68,102 +66,81 @@ class UnifiedBalancingRunner(BaseRunner):
             self.logger.error(f"✗ Client initialization failed: {e}")
             return False
 
-    def _fetch_data_for_area(self, period_start, period_end, area_code: str) -> str:
-        """Fetch activated balancing energy XML for a specific area."""
-        xml_content = self.client.fetch_activated_balancing_energy_for_domain(
-            period_start, period_end, control_area=area_code
-        )
-        return xml_content
-
-    def _save_xml_file(
-        self, xml_content: str, period_start, period_end, country_code: str
-    ) -> Path:
-        """Save XML file to disk with area-specific naming."""
-        start_str = period_start.strftime('%Y%m%d%H%M')
-        end_str = period_end.strftime('%Y%m%d%H%M')
-
-        output_file = self.get_output_path(
-            f'entsoe_balancing_{country_code.lower()}_{start_str}_{end_str}.xml',
-            period_start
-        )
-
-        self.save_xml(xml_content, output_file)
-        self.logger.debug(f"  Saved: {output_file.name}")
-
-        return output_file
-
-    def _parse_data(self, xml_file: Path, area_id: int, country_code: str) -> List[dict]:
-        """Parse XML file into wide-format records with area_id and country_code."""
-        parser = BalancingEnergyParser(area_id=area_id, country_code=country_code)
-        data = parser.parse_xml(str(xml_file))
-        return data
-
-    def _prepare_records(self, data: List[dict]) -> List[Tuple]:
-        """Convert parsed data to tuples for bulk insert."""
-        records = []
-        for record in data:
-            records.append((
-                record['trade_date'],
-                record['period'],
-                record['area_id'],
-                record['country_code'],
-                record['time_interval'],
-                record['delivery_datetime'],
-                record.get('afrr_up_price_eur'),
-                record.get('afrr_down_price_eur'),
-                record.get('mfrr_up_price_eur'),
-                record.get('mfrr_down_price_eur'),
-                record.get('rr_up_price_eur'),
-                record.get('rr_down_price_eur')
+    def _fetch_rows(
+        self, period_start, period_end, process_type: str,
+        area_id: int, area_code: str, display_label: str, country_code: str
+    ) -> List[dict]:
+        """Fetch, save and parse the documents of one area and process type."""
+        documents = fetch_document(self.client, {
+            "documentType": "A84",
+            "processType": process_type,
+            "controlArea_Domain": area_code,
+            "periodStart": fmt_period(period_start),
+            "periodEnd": fmt_period(period_end),
+        })
+        rows: List[dict] = []
+        suffix = "" if process_type == "A16" else f"_{process_type.lower()}"
+        for number, xml_content in enumerate(documents or []):
+            part = f"_{number}" if number else ""
+            self.save_xml(xml_content, self.get_output_path(
+                f"entsoe_balancing_{display_label.lower()}_"
+                f"{fmt_period(period_start)}_{fmt_period(period_end)}{suffix}{part}.xml",
+                period_start
             ))
-        return records
+            parser = BalancingPriceParser(area_id, country_code, process_type)
+            rows.extend(parser.parse_xml_content(xml_content))
+        return rows
+
+    def _upsert(self, conn, rows: Dict[datetime, dict]) -> None:
+        """Upsert in groups of equally covered rows, updating only the covered columns."""
+        groups: Dict[FrozenSet[str], List[dict]] = {}
+        for row in rows.values():
+            groups.setdefault(frozenset(row["prices"]), []).append(row)
+        for covered, members in groups.items():
+            prices = [c for c in PRICE_COLUMNS if c in covered]
+            keys = [c for c in self.COLUMNS if c not in PRICE_COLUMNS]
+            records: List[Tuple] = [
+                tuple(r[k] for k in keys) + tuple(r["prices"][c] for c in prices) for r in members
+            ]
+            self.bulk_upsert(
+                conn, self.TABLE_NAME, keys + prices, records, self.CONFLICT_COLUMNS,
+                update_columns=prices, skip_unchanged=True,
+            )
 
     def _process_area(
         self, period_start, period_end,
         area_id: int, area_code: str, display_label: str, country_code: str,
         conn=None
     ) -> int:
-        """Process a single area: fetch, parse, and upload."""
-        self.logger.debug(f"  Fetching {display_label} (area_id={area_id}, country={country_code})...")
-
-        try:
-            xml_content = self._fetch_data_for_area(period_start, period_end, area_code)
-            self.logger.debug(f"    Received {len(xml_content)} bytes")
-
-            xml_file = self._save_xml_file(xml_content, period_start, period_end, display_label)
-            data = self._parse_data(xml_file, area_id, country_code)
-
-            if not data:
-                self.logger.info(f"{self.RUNNER_NAME}: no data for {country_code}")
-                return 0
-
-            self.logger.debug(f"    Parsed {len(data)} records")
-
-            records = self._prepare_records(data)
-
-            if not self.dry_run and conn:
-                self.bulk_upsert(
-                    conn,
-                    self.TABLE_NAME,
-                    self.COLUMNS,
-                    records,
-                    self.CONFLICT_COLUMNS
-                )
-            elif self.dry_run:
-                self.logger.info(f"    DRY RUN - Would upload {len(records)} records")
-
-            self.track_country(country_code, len(records))
-            return len(records)
-
-        except Exception as e:
-            if self.is_data_unavailable_error(e):
-                self.logger.info(f"{self.RUNNER_NAME}: {country_code} not available for [{period_start.strftime('%Y-%m-%d %H:%M')}-{period_end.strftime('%Y-%m-%d %H:%M')}]")
-            else:
-                # WARNING, not ERROR: one upstream outage x 6 countries x 4
-                # runs/hour x ~14 runners would otherwise flood Sentry. The
-                # aggregate is emitted once per run by print_footer().
-                self.record_area_failure(country_code, e)
-            return 0
+        """Process a single area: fetch, parse, and upload every process type."""
+        total = 0
+        for process_type in self.PROCESS_TYPES:
+            try:
+                rows: Dict[datetime, dict] = {}
+                for row in self._fetch_rows(
+                    period_start, period_end, process_type,
+                    area_id, area_code, display_label, country_code
+                ):
+                    existing = rows.setdefault(row["delivery_datetime"], row)
+                    existing["prices"].update(row["prices"])
+                if not rows:
+                    self.logger.debug(f"  {display_label} {process_type}: no data")
+                    continue
+                if self.dry_run:
+                    self.logger.info(f"    DRY RUN - Would upload {len(rows)} {display_label} {process_type} records")
+                    self.logger.debug(f"    Last row: {rows[max(rows)]}")
+                elif conn:
+                    self._upsert(conn, rows)
+                total += len(rows)
+            except Exception as e:
+                # WARNING, not ERROR: one upstream outage x areas x 4 runs/hour
+                # would flood Sentry; print_footer() emits the aggregate.
+                if conn:
+                    conn.rollback()
+                self.record_area_failure(f"{display_label}/{process_type}", e)
+        if total:
+            self.track_country(country_code, total)
+        return total
 
     def _process_chunk(self, period_start, period_end, conn=None) -> int:
         """Process a single time chunk for ALL areas."""
@@ -210,21 +187,27 @@ class UnifiedBalancingRunner(BaseRunner):
                                 traceback.print_exc()
                             continue
             else:
-                # Backfill missing past days, then fetch today's rolling window
-                today = datetime.now(PRAGUE_TZ).date()
-                for day_offset in range(-7, 0):
-                    target_date = today + timedelta(days=day_offset)
-                    total_records += self._run_with_availability_check(
-                        target_date, ACTIVE_GENERATION_AREAS
-                    )
-
-                # Today: rolling 3h window for fresh data
+                now = datetime.now(PRAGUE_TZ)
                 period_start, period_end = self.get_time_range(hours=3)
-                if not self.dry_run:
-                    with self.database_connection() as conn:
-                        total_records += self._process_chunk(period_start, period_end, conn)
+                # One run per night re-fetches the last days in full.
+                if now.hour == 3 and now.minute < 29:
+                    first_day = now.date() - timedelta(days=self.REFETCH_DAYS)
+                    night_start = datetime.combine(
+                        first_day, datetime.min.time()
+                    ).replace(tzinfo=PRAGUE_TZ).astimezone(timezone.utc)
+                    today_start = datetime.combine(
+                        now.date(), datetime.min.time()
+                    ).replace(tzinfo=PRAGUE_TZ).astimezone(timezone.utc)
+                    windows = [(period_start, period_end), (night_start, today_start)]
                 else:
-                    total_records += self._process_chunk(period_start, period_end)
+                    windows = [(period_start, period_end)]
+                if self.dry_run:
+                    for start, end in windows:
+                        total_records += self._process_chunk(start, end)
+                else:
+                    with self.database_connection() as conn:
+                        for start, end in windows:
+                            total_records += self._process_chunk(start, end, conn)
 
             self.logger.debug("")
             self.logger.info(self.format_summary(total_records))

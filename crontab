@@ -223,6 +223,12 @@
 # Window: yesterday 00:00 through the end of today (Prague); whole window re-fetched (preliminary values are replaced by final ones).
 14,29,44,59 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && flock -n /tmp/entsoe_border_balancing.lock /usr/local/bin/python3 -m runners.entsoe_border_balancing_runner --max-runtime 840 >> /var/log/entsoe_border_balancing.log 2>&1 || echo "[cron] border_balancing: skipped (previous run still holding the lock) or exited non-zero" >> /var/log/entsoe_border_balancing.log
 
+# ENTSO-E - CZ aFRR and mFRR energy bids (A37), every 15 min: last 3 hours plus missing slots of the last 7 days
+14,29,44,59 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && flock -n /tmp/entsoe_balancing_bids.lock /usr/local/bin/python3 -m runners.entsoe_balancing_bids_runner --max-runtime 840 >> /var/log/entsoe_balancing_bids.log 2>&1 || echo "[cron] entsoe_balancing_bids: skipped (previous run still holding the lock) or exited non-zero" >> /var/log/entsoe_balancing_bids.log
+
+# ENTSO-E - CZ 4-second aFRR prices (A84 / A67), every 15 min: last 3 hours; the 03:14 run also re-fetches two days
+14,29,44,59 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && flock -n /tmp/entsoe_afrr_price_4s.lock /usr/local/bin/python3 -m runners.entsoe_afrr_price_4s_runner --max-runtime 840 >> /var/log/entsoe_afrr_price_4s.log 2>&1 || echo "[cron] entsoe_afrr_price_4s: skipped (previous run still holding the lock) or exited non-zero" >> /var/log/entsoe_afrr_price_4s.log
+
 # CEPS - Cross-border power flows per border profile (1-min -> 15-min aggregate), every 15 min
 # Explicit --dataset only (not part of --dataset all). Pipeline has no --max-runtime; window yesterday..tomorrow.
 14,29,44,59 * * * * export $(cat /etc/environment_for_cron | xargs) && cd /app && flock -n /tmp/ceps_crossborder_flows.lock /usr/local/bin/python3 -m ceps.ceps_soap_pipeline --dataset crossborder_flows >> /var/log/ceps_crossborder_flows.log 2>&1 || echo "[cron] ceps crossborder_flows: skipped (previous run still holding the lock) or exited non-zero" >> /var/log/ceps_crossborder_flows.log

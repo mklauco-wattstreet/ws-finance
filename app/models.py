@@ -765,11 +765,11 @@ class EntsoeBalancingEnergy(Base):
     """ENTSO-E activated balancing energy prices (A84) - TSO intervention.
 
     Captures activation prices for balancing reserves (EUR/MWh):
-    - afrr_up/down: aFRR (A95) activation prices
-    - mfrr_up/down: mFRR (A96) activation prices
-    - rr_up/down: Replacement Reserve (A97) activation prices
+    - fcr: A95, afrr: A96, mfrr: A97 standard product, rr: A98 (processType A16)
+    - mfrr_specific: A97 specific product (processType A16)
+    - afrr_local: A96, local selection (processType A68)
 
-    BusinessTypes: A95 (aFRR), A96 (mFRR), A97 (RR)
+    Before migration 093 the afrr/mfrr/rr columns were shifted by one product.
     """
     __tablename__ = 'entsoe_balancing_energy'
     __table_args__ = (
@@ -791,6 +791,12 @@ class EntsoeBalancingEnergy(Base):
     mfrr_down_price_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
     rr_up_price_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
     rr_down_price_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    fcr_up_price_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    fcr_down_price_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    mfrr_specific_up_price_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    mfrr_specific_down_price_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    afrr_local_up_price_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    afrr_local_down_price_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
     created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
     updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
 
@@ -2816,5 +2822,75 @@ class EntsoeAreaBalancingExchange(Base):
     import_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 4))
     export_mwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 4))
     doc_status: Mapped[Optional[str]] = mapped_column(String(3))
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+
+
+class EntsoeBalancingBids(Base):
+    """Individual balancing energy bids, A37/B74 (migration 093). LIST-partitioned by country_code (CZ).
+
+    aFRR bids are published twice (acquiring_eic PICASSO and own area) with different ids.
+    """
+    __tablename__ = 'entsoe_balancing_bids'
+    __table_args__ = (
+        PrimaryKeyConstraint('delivery_datetime', 'area_id', 'country_code', 'process', 'bid_mrid',
+                             name='entsoe_balancing_bids_pkey'),
+        CheckConstraint("process IN ('afrr', 'mfrr')", name='entsoe_balancing_bids_process_check'),
+        CheckConstraint("direction IN ('up', 'down')", name='entsoe_balancing_bids_direction_check'),
+        {'schema': DB_SCHEMA}
+    )
+
+    delivery_datetime: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    area_id: Mapped[int] = mapped_column(Integer, ForeignKey(_AREA_FK, name='entsoe_balancing_bids_area_fkey'), nullable=False)
+    country_code: Mapped[str] = mapped_column(String(5), nullable=False)
+    process: Mapped[str] = mapped_column(String(12), nullable=False)
+    bid_mrid: Mapped[str] = mapped_column(String(80), nullable=False)
+    delivery_end: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    period: Mapped[int] = mapped_column(Integer, nullable=False)
+    time_interval: Mapped[str] = mapped_column(String(11), nullable=False)
+    direction: Mapped[str] = mapped_column(String(4), nullable=False)
+    product: Mapped[Optional[str]] = mapped_column(String(10))
+    acquiring_eic: Mapped[Optional[str]] = mapped_column(String(16))
+    quantity_mw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3))
+    price_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    divisible: Mapped[Optional[bool]] = mapped_column(Boolean)
+    status: Mapped[Optional[str]] = mapped_column(String(3))
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+
+
+class EntsoeAfrrPrice4s(Base):
+    """4-second aFRR prices, A84/A67 (migration 093). LIST-partitioned by country_code (CZ)."""
+    __tablename__ = 'entsoe_afrr_price_4s'
+    __table_args__ = (
+        PrimaryKeyConstraint('delivery_datetime', 'area_id', 'country_code', name='entsoe_afrr_price_4s_pkey'),
+        {'schema': DB_SCHEMA}
+    )
+
+    delivery_datetime: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    area_id: Mapped[int] = mapped_column(Integer, ForeignKey(_AREA_FK, name='entsoe_afrr_price_4s_area_fkey'), nullable=False)
+    country_code: Mapped[str] = mapped_column(String(5), nullable=False)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    afrr_up_price_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    afrr_down_price_eur: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 3))
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+    updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
+
+
+class ImbalancePriceParameters(Base):
+    """Constants of the Czech imbalance price formula (migration 093)."""
+    __tablename__ = 'imbalance_price_parameters'
+    __table_args__ = (
+        PrimaryKeyConstraint('parameter', 'valid_from', name='imbalance_price_parameters_pkey'),
+        {'schema': DB_SCHEMA}
+    )
+
+    parameter: Mapped[str] = mapped_column(String(50), nullable=False)
+    valid_from: Mapped[date] = mapped_column(Date, nullable=False)
+    valid_to: Mapped[Optional[date]] = mapped_column(Date)
+    value: Mapped[Decimal] = mapped_column(Numeric(15, 4), nullable=False)
+    unit: Mapped[str] = mapped_column(String(20), nullable=False)
+    source: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
     updated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), server_default='CURRENT_TIMESTAMP')
