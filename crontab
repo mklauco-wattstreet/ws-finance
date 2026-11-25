@@ -289,6 +289,11 @@
 # OTE IDA Excel files - keep 7 days
 15 02 * * * find /app/scripts/IDA1 /app/scripts/IDA2 /app/scripts/IDA3 -type f -name "*.xlsx" -mtime +7 -delete 2>/dev/null
 
+# OTE SOAP request/response XML files are written to /app/downloads/ote_soap/<YYYY-MM-DD>/.
+# The parsed data is in the database. At 01:00 every day folder except today's is removed,
+# so no XML older than today remains. The runs at 00:57, 01:00 and 01:02 write into today's folder and are not affected.
+0 1 * * * find /app/downloads/ote_soap -mindepth 1 -maxdepth 1 -type d ! -name "$(TZ=Europe/Prague date +\%F)" -exec rm -rf {} + 2>/dev/null
+
 # ============================================================================
 # Log rotation - Keep only last 96 hours (4 days) of logs
 # ============================================================================
